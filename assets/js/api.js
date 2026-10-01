@@ -1,0 +1,209 @@
+// ═══════════════════════════════════════════════════════════════════════════
+//  Accès réseau : le Worker (flux vidéo, sauvegarde), Helix (compte connecté)
+//  et GQL (métadonnées publiques, sans connexion).
+// ═══════════════════════════════════════════════════════════════════════════
+
+import { store } from './store.js'
+
+export const API_URL = 'https://test2.kurzmathis4.workers.dev'
+export const HELIX_CLIENT_ID = 'uyvqdqrz614y5wx5l4kev6c4ln7u9a'
+export const GQL_CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko'
+/** Seule adresse de retour déclarée chez Twitch : elle ne doit pas changer. */
+export const REDIRECT_URI = 'https://test2-fawn-eta.vercel.app/'
+/** `chat:read` / `chat:edit` en plus de l'ancien périmètre : sans eux, l'IRC
+ *  refuse le jeton et on ne peut que lire le chat en anonyme. */
+export const SCOPES = ['user:read:follows', 'chat:read', 'chat:edit']
+
+const LOGIN_RE = /^[a-z0-9_]{1,25}$/
+
+export function cleanLogin(raw) {
+  const login = String(raw || '').trim().toLowerCase().replace(/^@/, '')
+  return LOGIN_RE.test(login) ? login : null
+}
+
+async function json(url, init) {
+  const res = await fetch(url, init)
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status}`)
+    err.status = res.status
+    throw err
+  }
+  return res.json()
+}
+
+// ── GQL public ─────────────────────────────────────────────────────────────
+/** Toujours avec des variables : un nom saisi n'est jamais recollé tel quel
+ *  dans le texte de la requête. */
+export async function gql(query, variables = {}) {
+  const data = await json('https://gql.twitch.tv/gql', {
+    method: 'POST',
+    headers: { 'Client-ID': GQL_CLIENT_ID, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables }),
+  })
+  return data?.data ?? null
+}
+
+/** Infos d'une chaîne : identité, et le live en cours s'il y en a un. */
+export async function getChannelInfo(login) {
+  const data = await gql(`query($l: String!) {
+    user(login: $l) {
+      id login displayName profileImageURL(width: 150)
+      stream { id title viewersCount createdAt game { displayName name } previewImageURL(width: 640, height: 360) }
+      broadcastSettings { title game { displayName } }
+    }
+  }`, { l: login })
+  return data?.user ?? null
+}
+
+export async function searchChannels(query) {
+  const data = await gql(`query($q: String!) {
+    searchUsers(userQuery: $q, first: 6) {
+      edges { node { login displayName profileImageURL(width: 70) stream { viewersCount } } }
+    }
+  }`, { q: query })
+  return (data?.searchUsers?.edges ?? []).map((e) => e.node).filter(Boolean)
+}
+
+/** Forme commune des cartes de live, quelle que soit la source. */
+function streamFromGQL(n) {
+  return {
+    login: n?.broadcaster?.login ?? '',
+    name: n?.broadcaster?.displayName ?? n?.broadcaster?.login ?? '',
+    avatar: n?.broadcaster?.profileImageURL ?? '',
+    title: n?.title ?? '',
+    game: n?.game?.displayName ?? '',
+    viewers: n?.viewersCount ?? 0,
+    thumb: n?.previewImageURL ?? '',
+    startedAt: n?.createdAt ?? null,
+  }
+}
+
+export function streamFromHelix(s) {
+  return {
+    login: s.user_login,
+    name: s.user_name || s.user_login,
+    avatar: '',
+    title: s.title ?? '',
+    game: s.game_name ?? '',
+    viewers: s.viewer_count ?? 0,
+    thumb: String(s.thumbnail_url ?? '').replace('{width}', '440').replace('{height}', '248'),
+    startedAt: s.started_at ?? null,
+  }
+}
+
+/** Top des lives, sans connexion : la requête GQL est publique. L'ancien
+ *  site passait par Helix et réservait donc l'accueil aux comptes connectés. */
+export async function getTopStreams(language) {
+  const data = await gql(`query($n: Int!, $langs: [Language!]) {
+    streams(first: $n, options: { broadcasterLanguages: $langs }) {
+      edges { node {
+        title viewersCount createdAt previewImageURL(width: 440, height: 248)
+        broadcaster { login displayName profileImageURL(width: 50) }
+        game { displayName }
+      } }
+    }
+  }`, { n: 24, langs: language ? [language.toUpperCase()] : null })
+  return (data?.streams?.edges ?? []).map((e) => streamFromGQL(e.node)).filter((s) => s.login)
+}
+
+/** Photos de profil d'une liste de chaînes, en une requête. */
+export async function getAvatars(logins) {
+  if (!logins.length) return {}
+  try {
+    const data = await gql('query($l: [String!]) { users(logins: $l) { login profileImageURL(width: 50) } }', { l: logins.slice(0, 100) })
+    const out = {}
+    for (const u of data?.users ?? []) if (u?.login) out[u.login] = u.profileImageURL
+    return out
+  } catch {
+    return {}
+  }
+}
+
+export async function getVodMeta(id) {
+  const data = await gql(`query($id: ID!) {
+    video(id: $id) {
+      id title lengthSeconds createdAt
+      previewThumbnailURL(width: 320, height: 180)
+      owner { id login displayName profileImageURL(width: 70) }
+      game { displayName }
+    }
+  }`, { id })
+  return data?.video ?? null
+}
+
+// ── Worker ─────────────────────────────────────────────────────────────────
+export function getLive(login) {
+  return json(`${API_URL}/api/get-live?name=${encodeURIComponent(login)}&proxy=${store.useProxy}`)
+}
+
+export function getVodLinks(id) {
+  return json(`${API_URL}/api/get-m3u8?id=${encodeURIComponent(id)}&proxy=${store.useProxy}`)
+}
+
+export function getChannelVideos(login) {
+  return json(`${API_URL}/api/get-channel-videos?name=${encodeURIComponent(login)}`)
+}
+
+export async function syncPull(userId) {
+  try {
+    return await json(`${API_URL}/api/sync/get?userId=${encodeURIComponent(userId)}`)
+  } catch {
+    return null
+  }
+}
+
+export async function syncPush(userId, data) {
+  try {
+    await fetch(`${API_URL}/api/sync/post`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, data }),
+    })
+  } catch { /* la sauvegarde distante est un plus, pas une dépendance */ }
+}
+
+// ── Helix (compte connecté) ────────────────────────────────────────────────
+function helix(path) {
+  return json(`https://api.twitch.tv/helix/${path}`, {
+    headers: { Authorization: `Bearer ${store.token}`, 'Client-Id': HELIX_CLIENT_ID },
+  })
+}
+
+/** Vérifie le jeton et renvoie son titulaire et ses droits. `null` = expiré. */
+export async function validateToken(token) {
+  try {
+    const res = await fetch('https://id.twitch.tv/oauth2/validate', {
+      headers: { Authorization: `OAuth ${token}` },
+    })
+    if (!res.ok) return null
+    const v = await res.json()
+    return { userId: v.user_id, login: v.login, scopes: v.scopes ?? [] }
+  } catch {
+    // Hors ligne : on ne déconnecte pas pour autant.
+    return { userId: null, login: null, scopes: [], offline: true }
+  }
+}
+
+export async function getMe() {
+  const data = await helix('users')
+  return data?.data?.[0] ?? null
+}
+
+export async function getFollowedStreams(userId) {
+  const data = await helix(`streams/followed?user_id=${encodeURIComponent(userId)}&first=40`)
+  const streams = (data?.data ?? []).map(streamFromHelix)
+  // Helix ne donne pas les photos de profil : complétées en une requête.
+  const avatars = await getAvatars(streams.map((s) => s.login))
+  for (const s of streams) s.avatar = avatars[s.login] ?? ''
+  return streams
+}
+
+export function loginUrl() {
+  const params = new URLSearchParams({
+    client_id: HELIX_CLIENT_ID,
+    redirect_uri: REDIRECT_URI,
+    response_type: 'token',
+    scope: SCOPES.join(' '),
+  })
+  return `https://id.twitch.tv/oauth2/authorize?${params}`
+}
