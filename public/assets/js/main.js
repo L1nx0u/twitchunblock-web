@@ -39,7 +39,7 @@ document.addEventListener('DOMContentLoaded', boot)
 
 async function boot() {
   initLang(store.prefs.lang)
-  if (!isIOS) loadHls()   // prêt avant le premier clic
+  loadHls()   // prêt avant le premier clic
   applyStatic()
   renderIcons()
   bindGlobal()
@@ -818,7 +818,9 @@ function closeSheet() {
 function currentStreamUrl() {
   const links = state.watch?.links
   if (!links) return ''
-  return links[player.quality] ?? Object.values(links)[0] ?? ''
+  const link = links[player.quality] ?? Object.values(links)[0] ?? ''
+  // Proxy coupé : l'appli externe reçoit l'adresse directe de Twitch.
+  return store.useProxy ? link : api.directUrl(link)
 }
 
 function openInSheet() {

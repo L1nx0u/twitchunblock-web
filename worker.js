@@ -190,10 +190,17 @@ async function handleProxy(url, request) {
     if (target.includes('.m3u8')) {
         newHeaders.set("Content-Type", "application/vnd.apple.mpegurl");
         const finalUrl = res.url, base = finalUrl.substring(0, finalUrl.lastIndexOf('/') + 1);
+        const proxify = (u) => {
+            const full = u.startsWith('http') ? u : base + u;
+            return (u.includes('.m3u8') || isVod) ? `${workerOrigin}/api/proxy?url=${encodeURIComponent(full)}&isVod=${isVod}` : full;
+        };
         const newText = (await res.text()).split('\n').map(l => {
-            const line = l.trim(); if (!line || line.startsWith('#')) return line;
-            const full = line.startsWith('http') ? line : base + line;
-            return (line.includes('.m3u8') || isVod) ? `${workerOrigin}/api/proxy?url=${encodeURIComponent(full)}&isVod=${isVod}` : full;
+            const line = l.trim(); if (!line) return line;
+            // Balises avec une adresse (EXT-X-MAP du fMP4, EXT-X-KEY…) : sans
+            // réécriture, « init-0.mp4 » était résolu par rapport au Worker
+            // (404) et les VODs chargeaient à l'infini.
+            if (line.startsWith('#')) return line.replace(/URI="([^"]+)"/g, (_m, u) => `URI="${proxify(u)}"`);
+            return proxify(line);
         }).join('\n');
         return new Response(newText, { status: res.status, headers: newHeaders });
     }

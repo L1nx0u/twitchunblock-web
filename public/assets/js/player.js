@@ -9,6 +9,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { t } from './i18n.js'
+import { fixProxiedUrl } from './api.js'
 import { $, esc, formatClock, icon, isIOS } from './util.js'
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
@@ -261,16 +262,22 @@ export class Player {
       this.tryPlay()
     }
 
-    // Sur iPhone et iPad, le HLS natif : c'est lui qui garde l'image dans
-    // l'image, AirPlay et le son en arrière-plan. Ailleurs, hls.js, qui
-    // donne la latence du direct et se remet seul des coupures réseau.
+    // hls.js dès qu'il est utilisable — iPhone compris depuis iOS 17.1 —,
+    // comme l'ancienne version du site : lui seul permet de corriger à la
+    // volée les adresses que le Worker ne réécrit pas (voir fixProxiedUrl).
+    // Le HLS natif ne sert qu'en dernier recours.
     const native = Boolean(v.canPlayType('application/vnd.apple.mpegurl'))
-    const useNative = native && isIOS
-    const Hls = useNative ? null : await loadHls()
+    const Hls = await loadHls()
     if (token !== this.attachToken) return
 
-    if (!useNative && Hls?.isSupported()) {
+    if (Hls?.isSupported()) {
       const hls = new Hls({
+        // Rouvrir la requête avec l'adresse corrigée : c'est le point
+        // d'accroche que hls.js offre pour réécrire une URL avant envoi.
+        xhrSetup: (xhr, reqUrl) => {
+          const fixed = fixProxiedUrl(reqUrl, url)
+          if (fixed !== reqUrl) xhr.open('GET', fixed, true)
+        },
         backBufferLength: 90,
         maxBufferLength: 30,
         liveSyncDurationCount: 3,

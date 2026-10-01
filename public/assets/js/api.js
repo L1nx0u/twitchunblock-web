@@ -132,12 +132,50 @@ export async function getVodMeta(id) {
 }
 
 // ── Worker ─────────────────────────────────────────────────────────────────
+// Dans le navigateur, la lecture passe TOUJOURS par le proxy : le CDN des
+// VODs de Twitch ne renvoie aucun en-tête CORS, un lien direct est donc
+// bloqué — chargement infini et « CORS error » dans la console. Le réglage
+// « proxy » ne concerne plus que les liens donnés aux applis externes
+// (VLC, Infuse…), voir `directUrl`.
 export function getLive(login) {
-  return json(`${API_URL}/api/get-live?name=${encodeURIComponent(login)}&proxy=${store.useProxy}`)
+  return json(`${API_URL}/api/get-live?name=${encodeURIComponent(login)}&proxy=true`)
 }
 
 export function getVodLinks(id) {
-  return json(`${API_URL}/api/get-m3u8?id=${encodeURIComponent(id)}&proxy=${store.useProxy}`)
+  return json(`${API_URL}/api/get-m3u8?id=${encodeURIComponent(id)}&proxy=true`)
+}
+
+/** Adresse d'origine derrière un lien du proxy, pour les applis externes. */
+export function directUrl(link) {
+  try {
+    const u = new URL(link)
+    if (u.origin === API_URL && u.pathname === '/api/proxy') return u.searchParams.get('url') || link
+  } catch {}
+  return link
+}
+
+/**
+ * Corrige les adresses relatives que le Worker ne réécrit pas.
+ *
+ * Twitch sert désormais ses VODs en fMP4, avec un segment d'initialisation
+ * déclaré par `#EXT-X-MAP:URI="init-0.mp4"`. Le Worker réécrit les lignes de
+ * segments mais pas les attributs URI des balises : le lecteur résolvait
+ * donc `init-0.mp4` par rapport au Worker (`/api/init-0.mp4`, 404) et la
+ * vidéo ne démarrait jamais. On renvoie ces adresses vers le proxy, à côté
+ * de la playlist d'origine.
+ */
+export function fixProxiedUrl(url, playlistUrl) {
+  try {
+    const u = new URL(url)
+    if (u.origin !== API_URL || u.pathname === '/api/proxy') return url
+    const source = new URL(playlistUrl).searchParams.get('url')
+    if (!source) return url
+    const name = u.pathname.replace(/^\/api\//, '').replace(/^\//, '')
+    const target = new URL(name + u.search, source).href
+    return `${API_URL}/api/proxy?url=${encodeURIComponent(target)}&isVod=true`
+  } catch {
+    return url
+  }
 }
 
 export function getChannelVideos(login) {
