@@ -4,7 +4,7 @@
 
 import * as api from './api.js'
 import { store } from './store.js'
-import { LANGS, applyStatic, initLang, setLang, t, lang } from './i18n.js'
+import { LANGS, applyStatic, deviceLang, initLang, setLang, t, lang } from './i18n.js'
 import { Player, loadHls, qualityLabel } from './player.js'
 import { ChatView } from './chat/view.js'
 import {
@@ -32,6 +32,7 @@ let player = null
 let chat = null
 let infoTimer = null
 let uptimeTimer = null
+let channelTimer = null
 let lastSave = 0
 
 // ── Démarrage ──────────────────────────────────────────────────────────────
@@ -486,6 +487,7 @@ async function searchChannel(raw) {
 
 function renderChannel(keyword = '') {
   const { login, info, videos } = state.channel
+  watchChannelLive()
   const name = info?.displayName || login
   const avatar = info?.profileImageURL || ''
   const live = info?.stream
@@ -495,8 +497,8 @@ function renderChannel(keyword = '') {
       <div class="hero-live">
         <div class="hero-badges">
           <span class="pill live">${esc(t('live_now'))}</span>
-          <span class="muted">${icon('eye', 14)} ${esc(formatViewers(live.viewersCount))}</span>
-          <span class="muted">${icon('clock', 14)} ${esc(uptimeSince(live.createdAt))}</span>
+          <span class="muted">${icon('eye', 14)} <span id="channel-viewers">${esc(formatViewers(live.viewersCount))}</span></span>
+          <span class="muted">${icon('clock', 14)} <span id="channel-uptime">${esc(uptimeSince(live.createdAt))}</span></span>
         </div>
         <p class="hero-title">${esc(live.title)}</p>
         ${live.game ? `<p class="hero-game">${icon('gamepad', 14)} ${esc(live.game.displayName)}</p>` : ''}
@@ -544,6 +546,31 @@ function renderChannel(keyword = '') {
     again.focus()
     again.setSelectionRange(pos, pos)
   }, 200))
+}
+
+/**
+ * Page streamer : le temps de live avance chaque seconde et les spectateurs
+ * sont relus chaque minute. Rendue une seule fois, la page restait figée.
+ */
+function watchChannelLive() {
+  clearInterval(channelTimer)
+  const ch = state.channel
+  if (!ch?.info?.stream) return
+  let ticks = 0
+  channelTimer = setInterval(async () => {
+    if (state.channel !== ch) return clearInterval(channelTimer)
+    const s = ch.info?.stream
+    const el = $('#channel-uptime')
+    if (el && s?.createdAt) el.textContent = uptimeSince(s.createdAt)
+    if (++ticks % 60 || state.tab !== 'channel') return
+    const fresh = await api.getChannelInfo(ch.login).catch(() => null)
+    if (!fresh || state.channel !== ch) return
+    const wasLive = Boolean(ch.info?.stream)
+    ch.info = fresh
+    const v = $('#channel-viewers')
+    if (wasLive !== Boolean(fresh.stream)) renderChannel($('#vod-filter')?.value?.trim().toLowerCase() ?? '')
+    else if (v && fresh.stream) v.textContent = formatViewers(fresh.stream.viewersCount)
+  }, 1000)
 }
 
 function offlineFor(publishedAt, lengthSeconds) {
@@ -871,7 +898,11 @@ function openSettings() {
     <div class="sheet-section" id="settings-account"></div>
     <div class="sheet-section">
       <h3>${esc(t('language'))}</h3>
-      <div class="segmented full" id="set-lang">${LANGS.map((l) => `<button type="button" data-l="${l.id}" class="${l.id === lang() ? 'active' : ''}">${esc(l.label)}</button>`).join('')}</div>
+      <div class="segmented full" id="set-lang">
+        <button type="button" data-l="auto" class="${p.lang ? '' : 'active'}">${esc(t('lang_auto'))}</button>
+        ${LANGS.map((l) => `<button type="button" data-l="${l.id}" class="${p.lang === l.id ? 'active' : ''}">${esc(l.label)}</button>`).join('')}
+      </div>
+      <p class="muted small lang-hint">${esc(t('lang_auto_sub', { l: LANGS.find((x) => x.id === deviceLang())?.label ?? 'English' }))}</p>
     </div>
     <div class="sheet-section">
       <h3>${esc(t('playback'))}</h3>
@@ -895,12 +926,18 @@ function openSettings() {
     if (e.target.closest('[data-sheet-close]')) return closeSheet()
     const l = e.target.closest('[data-l]')?.dataset.l
     if (l) {
-      store.prefs.lang = setLang(l)
+      // « Appareil » n'enregistre rien : la langue suivra l'appareil, y
+      // compris s'il change de langue plus tard.
+      store.prefs.lang = l === 'auto' ? null : l
+      setLang(l === 'auto' ? deviceLang() : l)
       store.savePrefs()
       applyStatic()
       renderAccount()
-      for (const b of $$('#set-lang [data-l]')) b.classList.toggle('active', b.dataset.l === l)
       refreshTexts()
+      // La feuille elle-même est refaite dans la nouvelle langue.
+      const scroll = sheet.scrollTop
+      openSettings()
+      $('#sheet').scrollTop = scroll
     }
   }
   sheet.onchange = (e) => {

@@ -492,6 +492,8 @@ input[type='search']::-webkit-search-cancel-button { filter: invert(1) opacity(0
 .pin-head { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; font-size: 11px; font-weight: 700; letter-spacing: 0.03em; color: var(--purple); }
 .pin-head span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pin-head .icon-btn { color: var(--muted); }
+.chat-pin-btn { color: var(--purple); }
+.lang-hint { margin-top: 8px; }
 .pin-body { line-height: 1.5; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .chat-pinned.open .pin-body { display: block; max-height: 40vh; overflow-y: auto; }
 .pin-sender { font-weight: 700; margin-right: 2px; }

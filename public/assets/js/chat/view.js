@@ -50,6 +50,7 @@ export class ChatView {
       <header class="chat-head">
         <span class="chat-title">${icon('chat', 16)}<span class="chat-title-text"></span></span>
         <span class="chat-status"></span>
+        <button class="icon-btn sm chat-pin-btn" type="button" hidden data-i18n-title="show_pinned">${icon('pin', 17)}</button>
         <button class="icon-btn sm chat-hide" type="button" data-i18n-title="close">${icon('x', 18)}</button>
       </header>
       <div class="chat-pinned" hidden></div>
@@ -93,17 +94,25 @@ export class ChatView {
       card: $('.user-card', this.root),
       inputRow: $('.chat-input-row', this.root),
       pinned: $('.chat-pinned', this.root),
+      pinBtn: $('.chat-pin-btn', this.root),
     }
 
     this.el.list.addEventListener('scroll', () => this.onScroll(), { passive: true })
     this.el.resume.addEventListener('click', () => this.scrollToBottom(true))
     this.el.list.addEventListener('click', (e) => this.onListClick(e))
     $('.chat-hide', this.root).addEventListener('click', () => this.o.onHide?.())
+    // Masqué, le message épinglé reste à portée : une punaise dans l'en-tête.
+    this.el.pinBtn.addEventListener('click', () => {
+      this.dismissedPin = null
+      this.el.pinBtn.hidden = true
+      if (this.pin) { this.el.pinned.hidden = true; this.renderPinned(this.pin, true) }
+    })
     this.el.pinned.addEventListener('click', (e) => {
       if (e.target.closest('a')) return
       if (e.target.closest('[data-pin-close]')) {
         this.dismissedPin = this.pin?.id ?? null
         this.el.pinned.hidden = true
+        this.el.pinBtn.hidden = false
         return
       }
       this.el.pinned.classList.toggle('open')
@@ -176,10 +185,12 @@ export class ChatView {
     this.pinTimer = setInterval(load, 30_000)
   }
 
-  renderPinned(pin) {
+  renderPinned(pin, force = false) {
     const box = this.el.pinned
-    const changed = pin?.id !== this.pin?.id
+    const changed = force || pin?.id !== this.pin?.id
     this.pin = pin
+    // La punaise n'a de sens que s'il y a un message épinglé masqué.
+    this.el.pinBtn.hidden = !pin || pin.id !== this.dismissedPin
     if (!pin || pin.id === this.dismissedPin) { box.hidden = true; return }
     if (!changed && !box.hidden) return
     box.classList.remove('open')
@@ -217,6 +228,7 @@ export class ChatView {
     this.pin = null
     this.dismissedPin = null
     this.el.pinned.hidden = true
+    this.el.pinBtn.hidden = true
     this.client?.stop()
     this.client = null
     this.mode = null

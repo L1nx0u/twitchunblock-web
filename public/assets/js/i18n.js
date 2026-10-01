@@ -45,9 +45,9 @@ const STRINGS = {
     chat_history: 'Messages précédents', emotes: 'Emotes', emotes_channel: 'Cette chaîne', emotes_global: 'Globales',
     emote_search_ph: 'Chercher une emote', user_messages: 'Ses messages', mention: 'Mentionner', reply: 'Répondre',
     deleted: 'message supprimé', first_msg: 'Premier message', reply_to: 'En réponse à @{u}',
-    chatters: 'Présents', pinned: 'Message épinglé', pinned_by: 'Épinglé par {u}',
+    chatters: 'Présents', show_pinned: 'Afficher le message épinglé', pinned: 'Message épinglé', pinned_by: 'Épinglé par {u}',
     // Réglages
-    settings: 'Réglages', language: 'Langue', account: 'Compte', playback: 'Lecture',
+    settings: 'Réglages', language: 'Langue', lang_auto: 'Appareil', lang_auto_sub: 'Suit la langue de ton appareil ({l}).', account: 'Compte', playback: 'Lecture',
     proxy: 'Proxy pour les applis externes', proxy_sub: 'Concerne les liens ouverts dans VLC, Outplayer ou Infuse. Coupé, l’appli reçoit l’adresse directe de Twitch et ne charge pas le serveur. La lecture sur le site passe toujours par le proxy.',
     chat_settings: 'Chat', timestamps: 'Afficher l’heure', keep_deleted: 'Garder les messages supprimés (barrés)',
     load_history: 'Charger les messages précédents', chat_size: 'Taille du texte',
@@ -94,8 +94,8 @@ const STRINGS = {
     chat_history: 'Earlier messages', emotes: 'Emotes', emotes_channel: 'This channel', emotes_global: 'Global',
     emote_search_ph: 'Search emotes', user_messages: 'Their messages', mention: 'Mention', reply: 'Reply',
     deleted: 'message deleted', first_msg: 'First message', reply_to: 'Replying to @{u}',
-    chatters: 'Present', pinned: 'Pinned message', pinned_by: 'Pinned by {u}',
-    settings: 'Settings', language: 'Language', account: 'Account', playback: 'Playback',
+    chatters: 'Present', show_pinned: 'Show pinned message', pinned: 'Pinned message', pinned_by: 'Pinned by {u}',
+    settings: 'Settings', language: 'Language', lang_auto: 'Device', lang_auto_sub: 'Follows your device language ({l}).', account: 'Account', playback: 'Playback',
     proxy: 'Proxy for external apps', proxy_sub: 'Applies to links opened in VLC, Outplayer or Infuse. Off, the app gets Twitch’s direct address and doesn’t load the server. Playback on the site always goes through the proxy.',
     chat_settings: 'Chat', timestamps: 'Show timestamps', keep_deleted: 'Keep deleted messages (struck through)',
     load_history: 'Load earlier messages', chat_size: 'Text size',
@@ -142,8 +142,8 @@ const STRINGS = {
     chat_history: 'Mensajes anteriores', emotes: 'Emotes', emotes_channel: 'Este canal', emotes_global: 'Globales',
     emote_search_ph: 'Buscar emotes', user_messages: 'Sus mensajes', mention: 'Mencionar', reply: 'Responder',
     deleted: 'mensaje eliminado', first_msg: 'Primer mensaje', reply_to: 'Respondiendo a @{u}',
-    chatters: 'Presentes', pinned: 'Mensaje fijado', pinned_by: 'Fijado por {u}',
-    settings: 'Ajustes', language: 'Idioma', account: 'Cuenta', playback: 'Reproducción',
+    chatters: 'Presentes', show_pinned: 'Mostrar mensaje fijado', pinned: 'Mensaje fijado', pinned_by: 'Fijado por {u}',
+    settings: 'Ajustes', language: 'Idioma', lang_auto: 'Dispositivo', lang_auto_sub: 'Sigue el idioma de tu dispositivo ({l}).', account: 'Cuenta', playback: 'Reproducción',
     proxy: 'Proxy para apps externas', proxy_sub: 'Afecta a los enlaces abiertos en VLC, Outplayer o Infuse. Desactivado, la app recibe la dirección directa de Twitch y no carga el servidor. La reproducción en el sitio siempre pasa por el proxy.',
     chat_settings: 'Chat', timestamps: 'Mostrar la hora', keep_deleted: 'Mantener mensajes eliminados (tachados)',
     load_history: 'Cargar mensajes anteriores', chat_size: 'Tamaño del texto',
@@ -160,9 +160,20 @@ export const LANGS = [
 
 let current = 'en'
 
+/** Langue de l'appareil : la première de ses langues préférées que le site
+ *  connaît (navigator.languages est déjà triée par préférence). */
+export function deviceLang() {
+  const list = navigator.languages?.length ? navigator.languages : [navigator.language || 'en']
+  for (const l of list) {
+    const code = String(l).slice(0, 2).toLowerCase()
+    if (STRINGS[code]) return code
+  }
+  return 'en'
+}
+
+/** `saved` vide ou `auto` : on suit l'appareil. */
 export function initLang(saved) {
-  const nav = (navigator.language || 'en').slice(0, 2)
-  current = STRINGS[saved] ? saved : STRINGS[nav] ? nav : 'en'
+  current = STRINGS[saved] ? saved : deviceLang()
   document.documentElement.lang = current
   return current
 }
