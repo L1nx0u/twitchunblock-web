@@ -31,6 +31,7 @@ const state = {
 let player = null
 let chat = null
 let infoTimer = null
+let uptimeTimer = null
 let lastSave = 0
 
 // ── Démarrage ──────────────────────────────────────────────────────────────
@@ -641,12 +642,21 @@ async function openLive(rawLogin) {
   pushSync()
   renderRecentChannels()
 
+  // Spectateurs et titre : rafraîchis toutes les 30 s. Le temps de live,
+  // lui, est recalculé chaque seconde à partir de l'heure de début — il
+  // restait figé sur sa valeur d'ouverture.
   clearInterval(infoTimer)
   infoTimer = setInterval(async () => {
     if (state.watch !== token) return clearInterval(infoTimer)
     const fresh = await api.getChannelInfo(login).catch(() => null)
     if (fresh && state.watch === token) { token.info = fresh; renderLiveInfo(fresh, links) }
-  }, 60_000)
+  }, 30_000)
+  clearInterval(uptimeTimer)
+  uptimeTimer = setInterval(() => {
+    if (state.watch !== token) return clearInterval(uptimeTimer)
+    const el = $('#watch-uptime')
+    if (el && token.startedAt) el.textContent = uptimeSince(token.startedAt)
+  }, 1000)
 }
 
 function renderLiveInfo(info, links) {
@@ -655,12 +665,13 @@ function renderLiveInfo(info, links) {
   const s = info?.stream
   const title = s?.title || links?.title || ''
   const game = s?.game?.displayName || links?.game || ''
+  if (state.watch && s?.createdAt) state.watch.startedAt = s.createdAt
   $('#watch-title').textContent = name
   $('#mini-title').textContent = `${name}${title ? ` · ${title}` : ''}`
   setAvatar(avatar)
   $('#watch-sub').innerHTML = `
     <span class="pill live sm">${esc(t('live_now'))}</span>
-    ${s ? `<span>${icon('eye', 13)} ${esc(formatViewers(s.viewersCount))}</span><span>${icon('clock', 13)} ${esc(uptimeSince(s.createdAt))}</span>` : ''}`
+    ${s ? `<span>${icon('eye', 13)} ${esc(formatViewers(s.viewersCount))}</span><span>${icon('clock', 13)} <span id="watch-uptime">${esc(uptimeSince(s.createdAt))}</span></span>` : ''}`
   $('#watch-info').innerHTML = `
     <div class="wi-text">
       <h1 title="${esc(title)}">${esc(title)}</h1>
@@ -746,6 +757,7 @@ function onPlaybackTime(cur, duration) {
 
 function stopPlayback() {
   clearInterval(infoTimer)
+  clearInterval(uptimeTimer)
   player.destroy()
   chat.close()
   lastSave = 0

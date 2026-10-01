@@ -7,6 +7,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { LiveChat } from './live.js'
+import { fetchPinned } from './pinned.js'
 import { VodChat } from './vod.js'
 import { parseBadgeTag } from './badges.js'
 import { emoteCatalog, suggestEmotes } from './emotes.js'
@@ -51,6 +52,7 @@ export class ChatView {
         <span class="chat-status"></span>
         <button class="icon-btn sm chat-hide" type="button" data-i18n-title="close">${icon('x', 18)}</button>
       </header>
+      <div class="chat-pinned" hidden></div>
       <div class="chat-list" role="log" aria-live="off" tabindex="0"></div>
       <button class="chat-resume" type="button" hidden>${icon('arrowDown', 14)}<span></span></button>
       <div class="chat-empty" hidden></div>
@@ -90,12 +92,22 @@ export class ChatView {
       login: $('.chat-login', this.root),
       card: $('.user-card', this.root),
       inputRow: $('.chat-input-row', this.root),
+      pinned: $('.chat-pinned', this.root),
     }
 
     this.el.list.addEventListener('scroll', () => this.onScroll(), { passive: true })
     this.el.resume.addEventListener('click', () => this.scrollToBottom(true))
     this.el.list.addEventListener('click', (e) => this.onListClick(e))
     $('.chat-hide', this.root).addEventListener('click', () => this.o.onHide?.())
+    this.el.pinned.addEventListener('click', (e) => {
+      if (e.target.closest('a')) return
+      if (e.target.closest('[data-pin-close]')) {
+        this.dismissedPin = this.pin?.id ?? null
+        this.el.pinned.hidden = true
+        return
+      }
+      this.el.pinned.classList.toggle('open')
+    })
 
     this.el.input.addEventListener('keydown', (e) => this.onKey(e))
     this.el.input.addEventListener('input', () => this.updateSuggestions())
@@ -146,6 +158,39 @@ export class ChatView {
       onEvent: (type, payload) => this.onEvent(type, payload),
     })
     this.client.start()
+    this.startPinned(channel)
+  }
+
+  // ── Message épinglé ────────────────────────────────────────────────────
+  /** Interrogé à l'ouverture puis toutes les 30 s : un épinglage peut
+   *  arriver, changer ou disparaître en cours de live. */
+  startPinned(channel) {
+    clearInterval(this.pinTimer)
+    const load = async () => {
+      let pin = null
+      try { pin = await fetchPinned(channel) } catch { return }
+      if (this.mode !== 'live' || this.channel !== channel) return
+      this.renderPinned(pin)
+    }
+    load()
+    this.pinTimer = setInterval(load, 30_000)
+  }
+
+  renderPinned(pin) {
+    const box = this.el.pinned
+    const changed = pin?.id !== this.pin?.id
+    this.pin = pin
+    if (!pin || pin.id === this.dismissedPin) { box.hidden = true; return }
+    if (!changed && !box.hidden) return
+    box.classList.remove('open')
+    box.innerHTML = `
+      <div class="pin-head">
+        ${icon('pin', 14)}
+        <span>${esc(pin.pinnedBy ? t('pinned_by', { u: pin.pinnedBy }) : t('pinned'))}</span>
+        <button class="icon-btn xs" type="button" data-pin-close aria-label="${esc(t('close'))}">${icon('x', 14)}</button>
+      </div>
+      <div class="pin-body"><span class="pin-sender" style="color:${esc(pin.color)}">${esc(pin.sender)}</span> ${this.renderTokens(pin.tokens, this.o.session().login)}</div>`
+    box.hidden = false
   }
 
   openVod({ videoId, channelId, channelLogin, startAt }) {
@@ -168,6 +213,10 @@ export class ChatView {
   }
 
   close() {
+    clearInterval(this.pinTimer)
+    this.pin = null
+    this.dismissedPin = null
+    this.el.pinned.hidden = true
     this.client?.stop()
     this.client = null
     this.mode = null

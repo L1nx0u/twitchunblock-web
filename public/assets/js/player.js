@@ -233,6 +233,11 @@ export class Player {
     this.kind = kind
     this.root.dataset.kind = kind
     this.el.progress.hidden = kind !== 'vod'
+    // Rempli tout de suite : sinon la pastille du direct restait vide tant
+    // que la vidéo n'avait pas démarré.
+    this.el.liveText.textContent = t('live_now')
+    this.el.live.classList.remove('behind')
+    this.el.latency.textContent = ''
     this.video.playbackRate = 1
     const keys = sortQualities(Object.keys(links))
     const pref = this.o.prefs.quality

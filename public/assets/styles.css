@@ -483,6 +483,19 @@ input[type='search']::-webkit-search-cancel-button { filter: invert(1) opacity(0
 .chat-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 .chat-status { flex: 1; min-width: 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-status[data-state='disconnected'] { color: var(--danger); }
+/* Message épinglé : deux lignes, déplié au toucher. */
+.chat-pinned {
+  flex: none; margin: 8px 8px 0; padding: 8px 10px 9px; border-radius: 10px;
+  background: var(--card-hi); border: 1px solid rgba(145, 70, 255, 0.35);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3); cursor: pointer;
+}
+.pin-head { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; font-size: 11px; font-weight: 700; letter-spacing: 0.03em; color: var(--purple); }
+.pin-head span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pin-head .icon-btn { color: var(--muted); }
+.pin-body { line-height: 1.5; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.chat-pinned.open .pin-body { display: block; max-height: 40vh; overflow-y: auto; }
+.pin-sender { font-weight: 700; margin-right: 2px; }
+.pin-body a { color: var(--purple); text-decoration: underline; text-underline-offset: 2px; }
 .chat-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 0 12px; overscroll-behavior: contain; scrollbar-width: thin; }
 
 .msg { padding: 3px 12px; line-height: 1.6; overflow-wrap: anywhere; cursor: pointer; }
