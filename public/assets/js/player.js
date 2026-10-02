@@ -268,6 +268,14 @@ export class Player {
       this.tryPlay()
     }
 
+    // Clip : un simple MP4, lu tel quel.
+    if (/\.mp4(\?|$)/i.test(url)) {
+      v.src = url
+      v.addEventListener('loadedmetadata', start, { once: true })
+      v.load()
+      return
+    }
+
     // hls.js dès qu'il est utilisable — iPhone compris depuis iOS 17.1 —,
     // comme l'ancienne version du site : lui seul permet de corriger à la
     // volée les adresses que le Worker ne réécrit pas (voir fixProxiedUrl).

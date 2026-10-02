@@ -62,7 +62,9 @@ async function boot() {
   const params = new URLSearchParams(location.search)
   const vod = params.get('id') ?? params.get('vod')
   const channel = api.cleanLogin(params.get('channel'))
-  if (vod && /^\d{6,}$/.test(vod)) openVod(vod)
+  const clip = params.get('clip')
+  if (clip && /^[A-Za-z0-9_-]{3,100}$/.test(clip)) openClip(clip)
+  else if (vod && /^\d{6,}$/.test(vod)) openVod(vod)
   else if (channel) { setTab('channel'); searchChannel(channel); openLive(channel) }
   setTab(state.tab)
 }
@@ -246,6 +248,10 @@ function bindGlobal() {
     if (live) return openLive(live.dataset.live)
     const vod = e.target.closest('[data-vod]')
     if (vod) return openVod(vod.dataset.vod)
+    const clip = e.target.closest('[data-clip]')
+    if (clip) return openClip(clip.dataset.clip)
+    const period = e.target.closest('[data-clip-period]')
+    if (period) return loadChannelClips(period.dataset.clipPeriod)
     const chan = e.target.closest('[data-channel]')
     if (chan) {
       setTab('channel')
@@ -640,7 +646,18 @@ function renderChannel(keyword = '') {
       </div>
       ${keyword ? `<p class="muted filter-count">${esc(filtered.length ? t('filter_count', { n: filtered.length, k: keyword }) : t('filter_none', { k: keyword }))}</p>` : ''}
       <div class="grid vods">${filtered.length ? filtered.map((v) => vodCard(v, name)).join('') : (keyword ? '' : emptyState(t('no_vod'), 'film'))}</div>
+    </section>
+    <section class="block">
+      <div class="block-head">
+        <h2>${icon('scissors', 18)}<span>${esc(t('clips'))}</span></h2>
+        <div class="segmented sm">
+          ${[['LAST_DAY', 'period_day'], ['LAST_WEEK', 'period_week'], ['LAST_MONTH', 'period_month'], ['ALL_TIME', 'period_all']]
+            .map(([p, k]) => `<button type="button" data-clip-period="${p}" class="${(state.clipPeriod ?? 'LAST_WEEK') === p ? 'active' : ''}">${esc(t(k))}</button>`).join('')}
+        </div>
+      </div>
+      <div class="grid vods" id="channel-clips"></div>
     </section>`
+  loadChannelClips()
 
   const filter = $('#vod-filter')
   filter.addEventListener('input', debounce(() => {
@@ -707,6 +724,7 @@ function setupPlayer() {
     // Retard de l'image à compenser dans le chat, si le réglage est actif.
     getDelay: () => (store.prefs.chatSync ? player.liveDelay() : 0),
     onOpenChannel: (login) => openLive(login),
+    onOpenClip: (slug) => openClip(slug),
     onPrefsChange: () => store.savePrefs(),
     session: () => session,
     onLogin: () => login(),
@@ -897,6 +915,81 @@ function renderLiveInfo(info, links) {
     </div>`
 }
 
+// ── Clips ────────────────────────────────────────────────────────────────
+async function openClip(slug) {
+  stopPlayback()
+  state.watch = { kind: 'clip', id: slug, info: null, links: null, offset: null }
+  const token = state.watch
+  showWatch('vod', t('clip'))
+  setUrl({ clip: slug })
+  const clip = await api.getClip(slug).catch(() => null)
+  if (state.watch !== token) return
+  if (!clip || !Object.keys(clip.links).length) return showWatchError(t('err_clip'))
+  token.links = clip.links
+  token.info = clip
+  token.login = clip.broadcaster?.login ?? null
+  $('#watch-loading').hidden = true
+  player.load({ links: clip.links, kind: 'vod', startAt: 0 })
+  // Chat de la VOD d'origine, si elle existe encore.
+  if (clip.video?.id && Number.isFinite(clip.videoOffsetSeconds)) {
+    token.offset = clip.videoOffsetSeconds
+    chat.openVod({ videoId: clip.video.id, channelId: clip.broadcaster?.id ?? null, channelLogin: token.login, startAt: token.offset })
+  }
+  const name = clip.broadcaster?.displayName || token.login || ''
+  $('#watch-title').textContent = name
+  $('#mini-title').textContent = clip.title || t('clip')
+  setAvatar(clip.broadcaster?.profileImageURL)
+  $('#watch-sub').innerHTML = `<span class="pill vod sm">${esc(t('clip'))}</span><span>${icon('eye', 13)} ${esc(formatViewers(clip.viewCount ?? 0))}</span><span>${icon('clock', 13)} ${esc(formatClock(clip.durationSeconds ?? 0))}</span>`
+  $('#watch-info').innerHTML = `
+    <div class="wi-text">
+      <h1 title="${esc(clip.title ?? '')}">${esc(clip.title ?? '')}</h1>
+      ${clip.game?.displayName ? `<p class="hero-game">${icon('gamepad', 14)} ${esc(clip.game.displayName)}</p>` : ''}
+    </div>
+    <div class="wi-actions">
+      ${token.login ? `<button class="btn ghost sm" type="button" data-action="see-vods">${icon('film', 16)}<span>${esc(t('see_vods'))}</span></button>` : ''}
+      ${clip.video?.id ? `<button class="btn ghost sm" type="button" data-vod="${esc(clip.video.id)}">${icon('play', 16)}<span>${esc(t('full_vod'))}</span></button>` : ''}
+    </div>`
+}
+
+function clipCard(c) {
+  const date = new Date(c.createdAt)
+  const dateStr = Number.isFinite(date.getTime()) ? date.toLocaleDateString(lang(), { day: 'numeric', month: 'short' }) : ''
+  return `
+    <article class="card vod-card" data-clip="${esc(c.slug)}" tabindex="0">
+      <div class="thumb">
+        <img src="${esc(c.thumbnailURL)}" alt="" loading="lazy" decoding="async">
+        <span class="pill duration">${esc(formatClock(c.durationSeconds ?? 0))}</span>
+        <span class="pill views">${icon('eye', 12)} ${esc(formatViewers(c.viewCount ?? 0))}</span>
+      </div>
+      <div class="card-body">
+        <div class="card-text">
+          <h3 title="${esc(c.title)}">${esc(c.title)}</h3>
+          <p class="meta">${esc([dateStr, c.curator?.displayName ? t('clipped_by', { u: c.curator.displayName }) : ''].filter(Boolean).join(' · '))}</p>
+        </div>
+      </div>
+    </article>`
+}
+
+/** Section Clips de la page chaîne, chargée à part (période au choix). */
+async function loadChannelClips(period = state.clipPeriod ?? 'LAST_WEEK') {
+  const login = state.channel?.login
+  const box = $('#channel-clips')
+  if (!login || !box) return
+  state.clipPeriod = period
+  for (const b of document.querySelectorAll('[data-clip-period]')) b.classList.toggle('active', b.dataset.clipPeriod === period)
+  // Gardés en mémoire : la page est redessinée à chaque frappe du filtre.
+  const key = `${login}|${period}`
+  state.clipCache ??= new Map()
+  let clips = state.clipCache.get(key)
+  if (!clips) {
+    box.innerHTML = skeleton(4, 'vod')
+    clips = await api.getClips(login, period).catch(() => null)
+    if (clips) state.clipCache.set(key, clips)
+  }
+  if (state.channel?.login !== login || state.clipPeriod !== period || !$('#channel-clips')) return
+  $('#channel-clips').innerHTML = clips?.length ? clips.map(clipCard).join('') : emptyState(t('no_clips'), 'film')
+}
+
 async function openVod(id, preset) {
   const vodId = String(id)
   stopPlayback()
@@ -959,6 +1052,8 @@ function setAvatar(url) {
 
 function onPlaybackTime(cur, duration) {
   const w = state.watch
+  // Clip : le chat de la VOD d'origine suit, décalé de la position du clip.
+  if (w?.kind === 'clip') { if (w.offset != null) chat.tick(w.offset + cur); return }
   if (!w || w.kind !== 'vod') return
   chat.tick(cur)
   if (cur > 0 && Math.abs(cur - lastSave) > 5) {

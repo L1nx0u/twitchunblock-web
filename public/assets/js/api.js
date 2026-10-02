@@ -269,3 +269,45 @@ export function loginUrl() {
   })
   return `https://id.twitch.tv/oauth2/authorize?${params}`
 }
+
+// ── Clips ──────────────────────────────────────────────────────────────────
+/** Clips d'une chaîne, les plus vus sur la période (LAST_DAY, LAST_WEEK,
+ *  LAST_MONTH, ALL_TIME). */
+export async function getClips(login, period = 'LAST_WEEK') {
+  const data = await gql(`query($l: String!, $p: ClipsPeriod) {
+    user(login: $l) { clips(first: 24, criteria: { period: $p, sort: VIEWS_DESC }) { edges { node {
+      slug title viewCount durationSeconds createdAt thumbnailURL(width: 480, height: 272)
+      curator { displayName }
+    } } } }
+  }`, { l: login, p: period })
+  return (data?.user?.clips?.edges ?? []).map((e) => e.node).filter((c) => c?.slug)
+}
+
+/** Un clip prêt à lire : MP4 signé, et de quoi rejouer le chat de la VOD
+ *  d'origine à cet instant quand elle existe encore. */
+export async function getClip(slug) {
+  const data = await gql(`query($s: ID!) { clip(slug: $s) {
+    slug title viewCount durationSeconds createdAt
+    broadcaster { id login displayName profileImageURL(width: 70) }
+    game { displayName }
+    video { id } videoOffsetSeconds
+    playbackAccessToken(params: { platform: "web", playerType: "site", playerBackend: "mediaplayer" }) { signature value }
+    videoQualities { quality frameRate sourceURL }
+  } }`, { s: slug })
+  const c = data?.clip
+  if (!c?.playbackAccessToken || !c.videoQualities?.length) return null
+  const sig = `sig=${encodeURIComponent(c.playbackAccessToken.signature)}&token=${encodeURIComponent(c.playbackAccessToken.value)}`
+  const links = {}
+  for (const q of c.videoQualities) {
+    if (!/^https:\/\//.test(q.sourceURL ?? '')) continue
+    const label = `${q.quality}p${q.frameRate >= 50 ? Math.round(q.frameRate) : ''}`
+    links[label] = `${q.sourceURL}${q.sourceURL.includes('?') ? '&' : '?'}${sig}`
+  }
+  return { ...c, links }
+}
+
+/** « clips.twitch.tv/Slug » ou « twitch.tv/chaine/clip/Slug » → Slug. */
+export function clipSlugFrom(url) {
+  const m = String(url).match(/^(?:https?:\/\/)?(?:www\.|m\.)?(?:clips\.twitch\.tv\/|twitch\.tv\/[a-z0-9_]+\/clip\/)([A-Za-z0-9_-]{3,100})/i)
+  return m ? m[1] : null
+}

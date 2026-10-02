@@ -12,7 +12,7 @@ import { VodChat } from './vod.js'
 import { parseBadgeTag } from './badges.js'
 import { emoteCatalog, suggestEmotes } from './emotes.js'
 import { plainText, systemMessage } from './message.js'
-import { gql } from '../api.js'
+import { clipSlugFrom, gql } from '../api.js'
 import { t } from '../i18n.js'
 import { $, debounce, esc, formatClock, icon, toast } from '../util.js'
 
@@ -623,7 +623,9 @@ export class ChatView {
         }
         case 'link': {
           const href = /^https?:\/\//i.test(tk.value) ? tk.value : `https://${tk.value}`
-          return `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer nofollow">${esc(tk.value)}</a>`
+          // Lien de clip : lu ici plutôt que sur Twitch.
+          const clip = clipSlugFrom(tk.value)
+          return `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer nofollow"${clip ? ` data-clip-link="${esc(clip)}"` : ''}>${esc(tk.value)}</a>`
         }
         default:
           return esc(tk.value)
@@ -833,6 +835,8 @@ export class ChatView {
 
   // ── Fiche utilisateur ──────────────────────────────────────────────────
   onListClick(e) {
+    const clip = e.target.closest('[data-clip-link]')
+    if (clip && this.o.onOpenClip) { e.preventDefault(); return this.o.onOpenClip(clip.dataset.clipLink) }
     const open = e.target.closest('[data-open-channel]')
     if (open) return this.o.onOpenChannel?.(open.dataset.openChannel)
     const mention = e.target.closest('.mention')
