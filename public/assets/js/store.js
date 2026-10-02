@@ -29,6 +29,7 @@ const DEFAULT_PREFS = {
   chatSize: 14,
   chatOpen: true,
   shareUsage: true,
+  chatSync: true,
   volume: 1,
   muted: false,
 }

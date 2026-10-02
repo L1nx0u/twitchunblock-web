@@ -672,6 +672,8 @@ function setupPlayer() {
   })
   chat = new ChatView($('#chat'), {
     prefs: store.prefs,
+    // Retard de l'image à compenser dans le chat, si le réglage est actif.
+    getDelay: () => (store.prefs.chatSync ? player.liveDelay() : 0),
     session: () => session,
     onLogin: () => login(),
     onHide: () => toggleChat(false),
@@ -982,6 +984,7 @@ function openSettings() {
     </div>
     <div class="sheet-section">
       <h3>${esc(t('chat_settings'))}</h3>
+      ${toggle('set-sync', t('chat_sync'), p.chatSync, t('chat_sync_sub'))}
       ${toggle('set-ts', t('timestamps'), p.timestamps)}
       ${toggle('set-deleted', t('keep_deleted'), p.keepDeleted)}
       ${toggle('set-history', t('load_history'), p.loadHistory)}
@@ -1029,6 +1032,7 @@ function openSettings() {
   sheet.onchange = (e) => {
     const id = e.target.id
     if (id === 'set-ts') p.timestamps = e.target.checked
+    if (id === 'set-sync') p.chatSync = e.target.checked
     if (id === 'set-deleted') p.keepDeleted = e.target.checked
     if (id === 'set-history') p.loadHistory = e.target.checked
     if (id === 'set-usage') {

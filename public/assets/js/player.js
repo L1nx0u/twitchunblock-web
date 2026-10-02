@@ -377,6 +377,28 @@ export class Player {
     this.flash(delta > 0 ? `+${delta} s` : `${delta} s`)
   }
 
+  /**
+   * Retard réel de l'image sur le direct, en secondes : l'heure à laquelle
+   * l'image affichée a été filmée (EXT-X-PROGRAM-DATE-TIME, inscrite par
+   * Twitch à la réception) comparée à maintenant. C'est ce qui sépare le
+   * chat — en temps réel — de ce qu'on voit, encodage compris ; la seule
+   * distance au bord de la playlist (`hls.latency`) en oubliait une part.
+   */
+  liveDelay() {
+    if (this.kind !== 'live') return 0
+    let playing = null
+    const pd = this.hls?.playingDate
+    if (pd instanceof Date && Number.isFinite(pd.getTime())) playing = pd.getTime()
+    else if (typeof this.video.getStartDate === 'function') {
+      // HLS natif (Safari) : date de début du flux + position.
+      const start = this.video.getStartDate()?.getTime()
+      if (Number.isFinite(start) && start > 0) playing = start + this.video.currentTime * 1000
+    }
+    let delay = playing ? (Date.now() - playing) / 1000 : this.hls?.latency
+    if (!Number.isFinite(delay) || delay < 0) return 0
+    return Math.min(delay, 90)
+  }
+
   goLive() {
     const v = this.video
     if (this.hls?.liveSyncPosition) v.currentTime = this.hls.liveSyncPosition
@@ -441,8 +463,8 @@ export class Player {
       this.el.live.classList.toggle('behind', !atEdge)
       this.el.liveText.textContent = atEdge ? t('live_now') : `${t('live_now')} −${formatClock(behind)}`
       this.el.live.title = atEdge ? '' : t('go_live')
-      const lat = this.hls?.latency
-      this.el.latency.textContent = Number.isFinite(lat) && lat > 0 ? `${lat.toFixed(1)} s` : ''
+      const lat = this.liveDelay()
+      this.el.latency.textContent = lat > 0 ? `${lat.toFixed(1)} s` : ''
     }
     this.o.onTime?.(cur, v.duration)
   }

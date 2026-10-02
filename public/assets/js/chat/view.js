@@ -40,6 +40,9 @@ export class ChatView {
     this.replyTo = null
     this.suggestIndex = 0
     this.suggestions = []
+    /** Messages du direct mis en attente pour coller à l'image. */
+    this.delayed = []
+    this.delayTimer = null
     this.build()
   }
 
@@ -225,6 +228,9 @@ export class ChatView {
 
   close() {
     clearInterval(this.pinTimer)
+    clearInterval(this.delayTimer)
+    this.delayTimer = null
+    this.delayed = []
     this.pin = null
     this.dismissedPin = null
     this.el.pinned.hidden = true
@@ -272,7 +278,7 @@ export class ChatView {
         break
       case 'add':
         this.el.empty.hidden = true
-        this.enqueue(payload)
+        this.deliver(payload)
         break
       case 'batch':
         this.el.empty.hidden = true
@@ -282,9 +288,16 @@ export class ChatView {
         this.prepend(payload)
         break
       case 'moderate':
+        // Les messages encore en attente sont modérés aussi : sinon un
+        // message supprimé apparaîtrait quelques secondes après sa suppression.
+        for (const d of this.delayed) {
+          if (payload.id ? d.msg.id === payload.id : d.msg.userName === payload.user) d.msg.isDeleted = true
+        }
+        if (!this.o.prefs.keepDeleted) this.delayed = this.delayed.filter((d) => !d.msg.isDeleted)
         this.moderate(payload)
         break
       case 'clear':
+        this.delayed = []
         this.messages = []
         this.queue = []
         this.el.list.replaceChildren()
@@ -306,6 +319,28 @@ export class ChatView {
   }
 
   // ── Rendu des messages ─────────────────────────────────────────────────
+  /**
+   * Synchronisation avec l'image. Le chat arrive en temps réel, la vidéo avec
+   * plusieurs secondes de retard : sans compensation, on lit la réaction
+   * avant de voir ce qui la provoque. Chaque message est retenu le temps du
+   * retard mesuré à son arrivée, puis affiché. Nos propres messages, eux,
+   * s'affichent tout de suite.
+   */
+  deliver(msg) {
+    const delay = this.mode === 'live' && !msg.isSelf ? (this.o.getDelay?.() ?? 0) : 0
+    if (delay < 0.5) { this.enqueue(msg); return }
+    this.delayed.push({ msg, at: Date.now() + delay * 1000 })
+    if (!this.delayTimer) this.delayTimer = setInterval(() => this.releaseDelayed(), 100)
+  }
+
+  releaseDelayed() {
+    const now = Date.now()
+    let n = 0
+    while (n < this.delayed.length && this.delayed[n].at <= now) n++
+    if (n) for (const d of this.delayed.splice(0, n)) this.enqueue(d.msg)
+    if (!this.delayed.length) { clearInterval(this.delayTimer); this.delayTimer = null }
+  }
+
   /** Les chats très actifs envoient des dizaines de messages par seconde :
    *  on les regroupe par image pour ne recalculer la mise en page qu'une fois. */
   enqueue(msg) {
