@@ -119,6 +119,7 @@ export class Player {
             <span class="p-time vod-only"></span>
             <button class="p-live live-only" type="button"><span class="dot"></span><span class="p-live-text"></span></button>
             <span class="p-latency live-only"></span>
+            <button class="p-btn p-chapters vod-only" type="button" hidden data-i18n-title="chapters">${icon('list', 18)}<span class="p-chap-label"></span>${icon('chevronUp', 14)}</button>
             <span class="p-spacer"></span>
             <button class="p-btn p-quality" type="button" data-i18n-title="quality">${icon('settings', 20)}<span class="p-q-label"></span></button>
             <button class="p-btn p-chat" type="button" data-i18n-title="chat">${icon('chat', 20)}</button>
@@ -138,7 +139,7 @@ export class Player {
       played: q('.p-played'), knob: q('.p-knob'), tip: q('.p-tip'),
       play: q('.p-play'), back: q('.p-back'), fwd: q('.p-fwd'), mute: q('.p-mute'), vol: q('.p-vol'),
       time: q('.p-time'), live: q('.p-live'), liveText: q('.p-live-text'), latency: q('.p-latency'),
-      quality: q('.p-quality'), qLabel: q('.p-q-label'), chat: q('.p-chat'), pip: q('.p-pip'), fs: q('.p-fs'), theatre: q('.p-theatre'),
+      quality: q('.p-quality'), qLabel: q('.p-q-label'), chat: q('.p-chat'), pip: q('.p-pip'), fs: q('.p-fs'), theatre: q('.p-theatre'), chapBtn: q('.p-chapters'), chapLabel: q('.p-chap-label'),
       menu: q('.p-menu'),
     }
 
@@ -173,6 +174,8 @@ export class Player {
     on(this.el.mute, () => this.toggleMute())
     on(this.el.live, () => this.goLive())
     on(this.el.quality, () => this.toggleMenu())
+    on(this.el.chapBtn, () => this.toggleChapters())
+    this.video.addEventListener('timeupdate', () => this.updateChapterLabel())
     on(this.el.chat, () => this.o.onToggleChat())
     on(this.el.pip, () => this.togglePiP())
     on(this.el.fs, () => this.toggleFullscreen())
@@ -527,6 +530,9 @@ export class Player {
   setChapters(list) {
     this.chapters = list ?? []
     for (const n of this.el.progress.querySelectorAll('.p-chap')) n.remove()
+    this.el.chapBtn.hidden = this.chapters.length < 2
+    this.el.chapLabel.textContent = ''
+    this.updateChapterLabel()
     // Durée réelle de la vidéo dès qu'elle est connue : le dernier chapitre
     // d'une VOD encore en cours d'enregistrement a une durée nulle.
     const d = this.video.duration
@@ -640,7 +646,35 @@ export class Player {
     this.showUI()
   }
 
-  closeMenu() { this.el.menu.hidden = true; this.scheduleHide() }
+  /** Liste des chapitres : reste ouverte jusqu'au choix (ou un clic ailleurs). */
+  toggleChapters() {
+    if (!this.el.menu.hidden && this.el.menu.dataset.kind === 'chapters') return this.closeMenu()
+    const cur = this.currentChapter()
+    let html = `<div class="p-menu-title">${esc(t('chapters'))}</div>`
+    html += this.chapters.map((c) => `<button type="button" data-c="${c.start}" class="${c === cur ? 'on' : ''}">
+      <span class="p-chap-row"><b>${esc(formatClock(c.start))}</b> ${esc(c.title)}</span>${c === cur ? icon('check', 16) : ''}</button>`).join('')
+    this.el.menu.innerHTML = html
+    this.el.menu.dataset.kind = 'chapters'
+    this.el.menu.hidden = false
+    this.el.menu.querySelector('.on')?.scrollIntoView({ block: 'nearest' })
+    this.showUI()
+  }
+
+  currentChapter() {
+    const t0 = this.video.currentTime
+    let cur = null
+    for (const c of this.chapters ?? []) if (c.start <= t0 + 0.5) cur = c
+    return cur
+  }
+
+  updateChapterLabel() {
+    if (!(this.chapters?.length > 1)) return
+    const cur = this.currentChapter()
+    const label = cur?.title ?? ''
+    if (this.el.chapLabel.textContent !== label) this.el.chapLabel.textContent = label
+  }
+
+  closeMenu() { this.el.menu.hidden = true; delete this.el.menu.dataset.kind; this.scheduleHide() }
 
   onMenuClick(e) {
     e.stopPropagation()
@@ -648,6 +682,7 @@ export class Player {
     if (!b) return
     if (b.dataset.q) this.setQuality(b.dataset.q)
     if (b.dataset.s) this.video.playbackRate = Number(b.dataset.s)
+    if (b.dataset.c) { this.video.currentTime = Number(b.dataset.c); this.updateChapterLabel() }
     this.closeMenu()
   }
 
