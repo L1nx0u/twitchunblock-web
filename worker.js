@@ -4,7 +4,7 @@ const CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
 const RESPONSE_HEADERS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Cache-Control, Range',
+    'Access-Control-Allow-Headers': 'Content-Type, Cache-Control, Range, Authorization',
     'Access-Control-Expose-Headers': 'Content-Length, Content-Range'
 };
 
@@ -33,7 +33,7 @@ export default {
                 case '/api/proxy': return await handleProxy(url, request);
                 
                 // Routes Sync (Sauvegarde Cloud)
-                case '/api/sync/get': return await handleSyncGet(url, env);
+                case '/api/sync/get': return await handleSyncGet(url, request, env);
                 case '/api/sync/post': return await handleSyncPost(request, env);
 
                 // Comptage d'utilisation (app iOS et site)
@@ -49,10 +49,49 @@ export default {
 };
 
 // --- SYSTÈME DE SYNCHRONISATION CLOUD (KV) ---
-async function handleSyncGet(url, env) {
+// ── Authentification de la sauvegarde ─────────────────────────────────────
+// Avant, il suffisait de connaître l'identifiant Twitch de quelqu'un — il est
+// public — pour lire ou écraser son historique. Chaque requête doit
+// maintenant présenter le jeton Twitch de l'utilisateur (en-tête
+// `Authorization: Bearer …`), que Twitch confirme, et il doit appartenir à
+// l'identifiant visé.
+//
+// Twitch demande de toute façon de valider un jeton au moins toutes les
+// heures. Le résultat est gardé en mémoire 30 minutes (au mieux : chaque
+// instance du Worker a la sienne), pour ne pas appeler Twitch à chaque
+// requête.
+const tokenCache = new Map();   // empreinte du jeton → { userId, until }
+async function tokenUserId(request) {
+    const auth = request.headers.get('Authorization') || '';
+    const token = auth.replace(/^(Bearer|OAuth)\s+/i, '').trim();
+    if (!token || token.length > 200) return null;
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+    const key = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    const hit = tokenCache.get(key);
+    if (hit && hit.until > Date.now()) return hit.userId;
+    const res = await fetch('https://id.twitch.tv/oauth2/validate', { headers: { Authorization: `OAuth ${token}` } });
+    if (!res.ok) { tokenCache.delete(key); return null; }
+    const v = await res.json();
+    const userId = v && v.user_id ? String(v.user_id) : null;
+    if (!userId) return null;
+    if (tokenCache.size > 500) tokenCache.clear();
+    tokenCache.set(key, { userId, until: Date.now() + 30 * 60 * 1000 });
+    return userId;
+}
+
+async function authorizeSync(request, userId) {
+    if (!/^\d{1,20}$/.test(userId)) return jsonError("User ID invalide", 400);
+    const owner = await tokenUserId(request);
+    if (!owner) return jsonError("Jeton Twitch manquant ou expiré", 401);
+    if (owner !== userId) return jsonError("Ce jeton n'appartient pas à cet utilisateur", 403);
+    return null;
+}
+
+async function handleSyncGet(url, request, env) {
     if (!env.TWITCH_DATA) return jsonError("Erreur Serveur: KV 'TWITCH_DATA' non lié au Worker.", 500);
-    const userId = url.searchParams.get('userId');
-    if (!userId) return jsonError("User ID manquant", 400);
+    const userId = String(url.searchParams.get('userId') || '');
+    const denied = await authorizeSync(request, userId);
+    if (denied) return denied;
 
     const data = await env.TWITCH_DATA.get(`user_${userId}`, { type: "json" });
     return jsonResponse(data || { history: [], progress: {} });
@@ -64,9 +103,9 @@ async function handleSyncPost(request, env) {
 
     let body;
     try { body = await request.json(); } catch (e) { return jsonError("JSON invalide", 400); }
-    // Identifiant Twitch : des chiffres, rien d'autre — pas de clé libre dans le KV.
     const userId = String(body.userId || '');
-    if (!/^\d{1,20}$/.test(userId)) return jsonError("User ID invalide", 400);
+    const denied = await authorizeSync(request, userId);
+    if (denied) return denied;
 
     // L'app iOS et le site écrivent tous deux ici. Remplacer bêtement l'objet
     // laissait chacun effacer ce que l'autre avait envoyé ; on fusionne :
@@ -202,32 +241,62 @@ async function handleGetM3U8(url, workerOrigin) {
 }
 
 // --- LE PROXY ---
+// Hôtes que le proxy accepte de relayer : Twitch (playlists, segments,
+// VODs) et Luminous. Sans cette liste, /api/proxy relayait n'importe quelle
+// adresse — un proxy ouvert à tout Internet, aux frais du Worker.
+const PROXY_HOSTS = ['ttvnw.net', 'jtvnw.net', 'twitch.tv', 'cloudfront.net', 'luminous.dev', 'twitchcdn.net'];
+function proxyAllowed(target) {
+    try {
+        const u = new URL(target);
+        return u.protocol === 'https:' && PROXY_HOSTS.some((h) => u.hostname === h || u.hostname.endsWith('.' + h));
+    } catch (e) { return false; }
+}
+
 async function handleProxy(url, request) {
-    const target = url.searchParams.get('url'); if (!target) return new Response("URL manquante", { status: 400 });
+    const target = url.searchParams.get('url'); if (!target) return new Response("URL manquante", { status: 400, headers: RESPONSE_HEADERS });
+    if (!proxyAllowed(target)) return new Response("Hôte non autorisé", { status: 403, headers: RESPONSE_HEADERS });
     const isVod = url.searchParams.get('isVod') === 'true', workerOrigin = url.origin;
-    
-    let fetchHeaders = { ...REQUEST_HEADERS }; 
+
+    let fetchHeaders = { ...REQUEST_HEADERS };
     if (request.headers.get("Range")) fetchHeaders["Range"] = request.headers.get("Range");
-    
-    const res = await fetch(target, { headers: fetchHeaders }); 
-    const newHeaders = new Headers(res.headers); 
-    newHeaders.set("Access-Control-Allow-Origin", "*"); 
-    newHeaders.set("Access-Control-Expose-Headers", "*"); 
-    
-    if (target.includes('.m3u8')) {
+
+    const res = await fetch(target, { headers: fetchHeaders });
+    const newHeaders = new Headers(res.headers);
+    newHeaders.set("Access-Control-Allow-Origin", "*");
+    newHeaders.set("Access-Control-Expose-Headers", "*");
+
+    // Playlist reconnue à son type, pas seulement à son extension : celles
+    // de Luminous (« /live/<chaîne>?allow_source=true ») et les variantes
+    // qu'elles listent (« …playlist.ttvnw.net/v1/playlist/… ») n'ont pas de
+    // « .m3u8 ». Non reconnues, elles passaient sans réécriture.
+    const type = res.headers.get('content-type') || '';
+    if (target.includes('.m3u8') || /mpegurl/i.test(type)) {
         newHeaders.set("Content-Type", "application/vnd.apple.mpegurl");
         const finalUrl = res.url, base = finalUrl.substring(0, finalUrl.lastIndexOf('/') + 1);
-        const proxify = (u) => {
-            const full = u.startsWith('http') ? u : base + u;
-            return (u.includes('.m3u8') || isVod) ? `${workerOrigin}/api/proxy?url=${encodeURIComponent(full)}&isVod=${isVod}` : full;
+        const proxyUrl = (full) => `${workerOrigin}/api/proxy?url=${encodeURIComponent(full)}&isVod=${isVod}`;
+        // Une sous-playlist passe TOUJOURS par le proxy : ses jetons sont liés
+        // à l'adresse IP qui l'a demandée — celle du Worker ou de Luminous —,
+        // et le navigateur s'y faisait refuser (403). Les segments d'un
+        // direct, eux, partent en direct : leur CDN accepte tout le monde.
+        const isPlaylistUrl = (full) => full.includes('.m3u8') || /(^|\.)playlist\.ttvnw\.net\//.test(new URL(full).hostname + '/') || /luminous\.dev$/.test(new URL(full).hostname);
+        const proxify = (u, playlist) => {
+            const full = u.startsWith('http') ? u : new URL(u, base).href;
+            return (isVod || playlist || isPlaylistUrl(full)) ? proxyUrl(full) : full;
         };
+        let nextIsPlaylist = false;
         const newText = (await res.text()).split('\n').map(l => {
             const line = l.trim(); if (!line) return line;
-            // Balises avec une adresse (EXT-X-MAP du fMP4, EXT-X-KEY…) : sans
-            // réécriture, « init-0.mp4 » était résolu par rapport au Worker
-            // (404) et les VODs chargeaient à l'infini.
-            if (line.startsWith('#')) return line.replace(/URI="([^"]+)"/g, (_m, u) => `URI="${proxify(u)}"`);
-            return proxify(line);
+            if (line.startsWith('#')) {
+                // La ligne qui suit EXT-X-STREAM-INF est une sous-playlist.
+                if (line.startsWith('#EXT-X-STREAM-INF')) nextIsPlaylist = true;
+                const tagIsPlaylist = line.startsWith('#EXT-X-MEDIA') || line.startsWith('#EXT-X-I-FRAME-STREAM-INF');
+                // Balises avec une adresse (EXT-X-MAP du fMP4, EXT-X-KEY,
+                // pistes audio EXT-X-MEDIA…).
+                return line.replace(/URI="([^"]+)"/g, (_m, u) => `URI="${proxify(u, tagIsPlaylist)}"`);
+            }
+            const out = proxify(line, nextIsPlaylist);
+            nextIsPlaylist = false;
+            return out;
         }).join('\n');
         return new Response(newText, { status: res.status, headers: newHeaders });
     }

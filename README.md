@@ -90,6 +90,11 @@ Video always goes through the Worker: Twitch's VOD CDN only accepts requests com
 
 The iOS app uses the same Worker.
 
+### Security
+- **History backups are private**: every read or write must carry the owner's Twitch token. The Worker has Twitch confirm it and checks it belongs to that account — knowing someone's (public) Twitch ID is no longer enough.
+- **The proxy only relays Twitch and Luminous** (`ttvnw.net`, `jtvnw.net`, `twitch.tv`, `cloudfront.net`, `luminous.dev`), over HTTPS — it is not an open proxy.
+- Usage pings only accept random UUIDs and store no IP address.
+
 ---
 
 ## Usage count

@@ -174,6 +174,12 @@ export function directUrl(link) {
 export function fixProxiedUrl(url, playlistUrl) {
   try {
     const u = new URL(url)
+    // Sous-playlists de direct (Luminous, playlist.ttvnw.net) laissées en
+    // direct par le Worker : leurs jetons sont liés à l'adresse IP du Worker,
+    // le navigateur s'y faisait refuser (403) et « Auto » ne démarrait pas.
+    if (/(^|\.)playlist\.ttvnw\.net$|(^|\.)luminous\.dev$/.test(u.hostname)) {
+      return `${API_URL}/api/proxy?url=${encodeURIComponent(url)}&isVod=false`
+    }
     if (u.origin !== API_URL || u.pathname === '/api/proxy') return url
     const source = new URL(playlistUrl).searchParams.get('url')
     if (!source) return url
@@ -189,9 +195,13 @@ export function getChannelVideos(login) {
   return json(`${API_URL}/api/get-channel-videos?name=${encodeURIComponent(login)}`)
 }
 
+// La sauvegarde exige le jeton Twitch de son propriétaire : le Worker le fait
+// confirmer par Twitch et vérifie qu'il correspond à l'identifiant.
+const authHeader = () => (store.token ? { Authorization: `Bearer ${store.token}` } : {})
+
 export async function syncPull(userId) {
   try {
-    return await json(`${API_URL}/api/sync/get?userId=${encodeURIComponent(userId)}`)
+    return await json(`${API_URL}/api/sync/get?userId=${encodeURIComponent(userId)}`, { headers: authHeader() })
   } catch {
     return null
   }
@@ -202,7 +212,7 @@ export async function syncPush(userId, data) {
     const body = JSON.stringify({ userId, data })
     await fetch(`${API_URL}/api/sync/post`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
       body,
       // Permet à l'envoi de finir quand l'onglet se ferme (limite : 64 Ko).
       keepalive: body.length < 60_000,
