@@ -32,6 +32,10 @@ const DEFAULT_PREFS = {
   chatSync: true,
   autoRaid: true,
   highlightWords: [],
+  hideBots: false,
+  hideCommands: false,
+  mutedWords: [],
+  blockedUsers: [],
   volume: 1,
   muted: false,
 }

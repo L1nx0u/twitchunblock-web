@@ -300,6 +300,12 @@ const actions = {
   logout,
   settings: () => openSettings(),
   'refresh-discover': () => { loadFollowed(); loadTop(state.topLang) },
+  'clear-blocked': () => {
+    store.prefs.blockedUsers = []
+    store.savePrefs()
+    toast(t('hidden_cleared'))
+    openSettings()
+  },
   'clear-channels': () => { store.clearHistory('channel'); pushSync(); renderRecentChannels() },
   'watch-minimize': () => minimizeWatch(),
   'watch-expand': () => expandWatch(),
@@ -701,6 +707,7 @@ function setupPlayer() {
     // Retard de l'image à compenser dans le chat, si le réglage est actif.
     getDelay: () => (store.prefs.chatSync ? player.liveDelay() : 0),
     onOpenChannel: (login) => openLive(login),
+    onPrefsChange: () => store.savePrefs(),
     session: () => session,
     onLogin: () => login(),
     onHide: () => toggleChat(false),
@@ -1095,6 +1102,16 @@ function openSettings() {
       ${toggle('set-ts', t('timestamps'), p.timestamps)}
       ${toggle('set-deleted', t('keep_deleted'), p.keepDeleted)}
       ${toggle('set-history', t('load_history'), p.loadHistory)}
+      ${toggle('set-bots', t('hide_bots'), p.hideBots, t('hide_bots_sub'))}
+      ${toggle('set-cmds', t('hide_commands'), p.hideCommands, t('hide_commands_sub'))}
+      <label class="setting setting-col">
+        <span class="setting-text"><span>${esc(t('muted_words'))}</span><small>${esc(t('muted_words_sub'))}</small></span>
+        <input class="text-input" type="text" id="set-muted" autocomplete="off" spellcheck="false" maxlength="300" value="${esc((p.mutedWords ?? []).join(', '))}">
+      </label>
+      ${(p.blockedUsers ?? []).length ? `<div class="setting">
+        <span class="setting-text"><span>${esc(t('hidden_users', { n: p.blockedUsers.length }))}</span><small>${esc(p.blockedUsers.slice(-6).join(', '))}</small></span>
+        <button class="btn sm ghost" type="button" data-action="clear-blocked">${esc(t('clear'))}</button>
+      </div>` : ''}
       <label class="setting setting-col">
         <span class="setting-text"><span>${esc(t('highlight_words'))}</span><small>${esc(t('highlight_words_sub'))}</small></span>
         <input class="text-input" type="text" id="set-words" autocomplete="off" spellcheck="false" maxlength="300" value="${esc((p.highlightWords ?? []).join(', '))}">
@@ -1147,6 +1164,11 @@ function openSettings() {
     if (id === 'set-raid') p.autoRaid = e.target.checked
     if (id === 'set-deleted') p.keepDeleted = e.target.checked
     if (id === 'set-history') p.loadHistory = e.target.checked
+    if (id === 'set-bots') p.hideBots = e.target.checked
+    if (id === 'set-cmds') p.hideCommands = e.target.checked
+    if (id === 'set-muted') {
+      p.mutedWords = e.target.value.split(',').map((w) => w.trim().toLowerCase()).filter(Boolean).slice(0, 50)
+    }
     if (id === 'set-words') {
       p.highlightWords = e.target.value.split(',').map((w) => w.trim().toLowerCase()).filter(Boolean).slice(0, 30)
     }

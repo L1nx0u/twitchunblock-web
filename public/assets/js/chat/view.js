@@ -14,9 +14,13 @@ import { emoteCatalog, suggestEmotes } from './emotes.js'
 import { plainText, systemMessage } from './message.js'
 import { gql } from '../api.js'
 import { t } from '../i18n.js'
-import { $, debounce, esc, formatClock, icon } from '../util.js'
+import { $, debounce, esc, formatClock, icon, toast } from '../util.js'
 
 const MAX_NODES = 300
+
+/** Bots courants : masquables d'un réglage. */
+const KNOWN_BOTS = new Set(['nightbot', 'streamelements', 'moobot', 'fossabot', 'streamlabs', 'wizebot', 'soundalerts',
+  'sery_bot', 'botisimo', 'own3d', 'kofistreambot', 'pokemoncommunitygame', 'deepbot', 'coebot', 'phantombot', 'creatisbot', 'blerp'])
 
 function formatPoints(n) {
   return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n)
@@ -446,14 +450,14 @@ export class ChatView {
         break
       case 'add':
         this.el.empty.hidden = true
-        this.deliver(payload)
+        if (!this.isFiltered(payload)) this.deliver(payload)
         break
       case 'batch':
         this.el.empty.hidden = true
-        for (const m of payload) this.enqueue(m)
+        for (const m of payload) if (!this.isFiltered(m)) this.enqueue(m)
         break
       case 'prepend':
-        this.prepend(this.o.prefs.keepDeleted ? payload : payload.filter((m) => !m.isDeleted))
+        this.prepend(payload.filter((m) => (this.o.prefs.keepDeleted || !m.isDeleted) && !this.isFiltered(m)))
         break
       case 'moderate':
         // Les messages encore en attente sont modérés aussi : sinon un
@@ -839,6 +843,35 @@ export class ChatView {
     this.showCard(row.dataset.user, msg)
   }
 
+  /** Filtres du chat (réglages) : utilisateurs masqués, bots, commandes,
+   *  mots masqués. Nos propres messages et ceux du système passent toujours. */
+  isFiltered(m) {
+    if (m.isSelf || (m.userId === 'system' && !m.userName)) return false
+    const p = this.o.prefs
+    const login = String(m.userName || '').toLowerCase()
+    if (login && p.blockedUsers?.includes(login)) return true
+    if (p.hideBots && KNOWN_BOTS.has(login)) return true
+    const text = m.tokens.map((tk) => tk.value ?? tk.emote?.name ?? '').join(' ')
+    if (p.hideCommands && text.trimStart().startsWith('!')) return true
+    if (p.mutedWords?.length) {
+      const low = text.toLowerCase()
+      if (p.mutedWords.some((w) => low.includes(w))) return true
+    }
+    return false
+  }
+
+  /** Masquer / réafficher quelqu'un (fiche utilisateur). */
+  toggleBlocked(login) {
+    const p = this.o.prefs
+    const list = new Set(p.blockedUsers ?? [])
+    const hide = !list.has(login)
+    if (hide) list.add(login); else list.delete(login)
+    p.blockedUsers = [...list].slice(-500)
+    this.o.onPrefsChange?.()
+    if (hide) for (const n of this.el.list.querySelectorAll('.msg[data-user]')) if (n.dataset.user === login) n.remove()
+    return hide
+  }
+
   async showCard(login, msg) {
     if (!login) return
     const theirs = this.messages.filter((m) => m.userName === login).slice(-25)
@@ -858,10 +891,11 @@ export class ChatView {
         </div>
         <button class="icon-btn sm" type="button" data-act="close">${icon('x', 18)}</button>
       </div>
-      ${canReply ? `<div class="user-card-actions">
-        <button class="btn sm" type="button" data-act="mention">@ ${esc(t('mention'))}</button>
-        ${msg ? `<button class="btn sm" type="button" data-act="reply">${icon('reply', 14)} ${esc(t('reply'))}</button>` : ''}
-      </div>` : ''}
+      <div class="user-card-actions">
+        ${canReply ? `<button class="btn sm" type="button" data-act="mention">@ ${esc(t('mention'))}</button>
+        ${msg ? `<button class="btn sm" type="button" data-act="reply">${icon('reply', 14)} ${esc(t('reply'))}</button>` : ''}` : ''}
+        <button class="btn sm ghost" type="button" data-act="block">${icon(this.o.prefs.blockedUsers?.includes(login) ? 'eye' : 'eyeOff', 14)} ${esc(t(this.o.prefs.blockedUsers?.includes(login) ? 'unhide_user' : 'hide_user'))}</button>
+      </div>
       <div class="user-card-label">${esc(t('user_messages'))}</div>
       <div class="user-card-msgs">${theirs.length
         ? theirs.map((m) => `<div class="uc-msg${m.isDeleted ? ' deleted' : ''}"><span class="msg-time">${esc(this.mode === 'vod' && m.offset !== null ? formatClock(m.offset) : new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}</span> ${this.renderTokens(m.tokens, null)}</div>`).join('')
@@ -884,6 +918,11 @@ export class ChatView {
     if (!act) return
     const card = this.el.card
     if (act === 'close') return this.hideCard()
+    if (act === 'block') {
+      const hidden = this.toggleBlocked(card.dataset.login)
+      toast(t(hidden ? 'user_hidden' : 'user_unhidden', { u: card.dataset.login }))
+      return this.hideCard()
+    }
     if (act === 'mention') {
       const m = this.messages.find((x) => x.userName === card.dataset.login)
       this.insertText(`@${m?.displayName ?? card.dataset.login}`)
