@@ -35,6 +35,10 @@ export default {
                 // Routes Sync (Sauvegarde Cloud)
                 case '/api/sync/get': return await handleSyncGet(url, env);
                 case '/api/sync/post': return await handleSyncPost(request, env);
+
+                // Comptage d'utilisation (app iOS et site)
+                case '/api/ping': return await handlePing(request, env);
+                case '/api/stats': return await handleStats(env);
                 
                 default: return new Response("Not Found", { status: 404, headers: RESPONSE_HEADERS });
             }
@@ -252,6 +256,104 @@ async function storyboardHack(seekUrl) {
         }));
         return found;
     } catch(e) { return {}; }
+}
+
+// En-têtes pour Luminous : un Referer pointant sur la chaîne demandée.
+// La fonction était appelée sans exister : l'appel levait une ReferenceError,
+// avalée par le catch, et la route servait toujours le flux Twitch officiel,
+// avec les publicités — Luminous n'était jamais réellement essayé.
+function getRequestHeaders(login) {
+    return { ...REQUEST_HEADERS, 'Referer': `https://www.twitch.tv/${login}` };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Comptage d'utilisation — app iOS et site.
+//
+//  Une clé par installation (app) ou par navigateur (site) : `usage_<uuid>`,
+//  valeur vide, tout dans les métadonnées. Stocké : un identifiant tiré au
+//  hasard, des dates (sans l'heure), une version, la plateforme. Pas
+//  d'adresse IP, pas d'en-tête, rien du compte Twitch. Les clés expirent
+//  seules au bout de 35 jours. Préfixe `usage_` : aucune collision avec la
+//  sauvegarde (`user_`).
+// ═══════════════════════════════════════════════════════════════════════════
+const USAGE_PREFIX = 'usage_';
+const USAGE_RETENTION_DAYS = 35;
+const PLATFORMS = ['ios', 'web'];
+
+// POST /api/ping — { id, version, platform } enregistre ; { id, forget: true } efface.
+async function handlePing(request, env) {
+    if (request.method !== 'POST') return jsonError('Method Not Allowed', 405);
+    if (!env.TWITCH_DATA) return jsonError("KV 'TWITCH_DATA' non lié au Worker.", 500);
+    let body;
+    try { body = await request.json(); } catch (e) { return jsonError('JSON invalide', 400); }
+
+    // Uniquement des UUID : pas question de laisser écrire des clés libres.
+    const id = String(body.id || '');
+    if (!/^[0-9a-fA-F-]{36}$/.test(id)) return jsonError('ID invalide', 400);
+
+    if (body.forget === true) {
+        await env.TWITCH_DATA.delete(USAGE_PREFIX + id);
+        return jsonResponse({ ok: true, forgotten: true });
+    }
+
+    const day = new Date().toISOString().slice(0, 10);
+    let prev = {};
+    try { prev = (await env.TWITCH_DATA.getWithMetadata(USAGE_PREFIX + id)).metadata || {}; } catch (e) {}
+    // Un même jour ne compte qu'une fois, quel que soit le nombre d'ouvertures.
+    const days = prev.last === day ? (prev.days || 1) : (prev.days || 0) + 1;
+    const platform = PLATFORMS.includes(body.platform) ? body.platform : 'ios';
+
+    await env.TWITCH_DATA.put(USAGE_PREFIX + id, '', {
+        expirationTtl: 60 * 60 * 24 * USAGE_RETENTION_DAYS,
+        metadata: { first: prev.first || day, last: day, days, v: String(body.version || '?').slice(0, 16), p: platform }
+    });
+    return jsonResponse({ ok: true, days });
+}
+
+// GET /api/stats — compteurs agrégés, au total et par plateforme.
+async function handleStats(env) {
+    if (!env.TWITCH_DATA) return jsonError("KV 'TWITCH_DATA' non lié au Worker.", 500);
+    const todayMs = Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
+    const blank = () => ({ today: 0, week: 0, month: 0, known: 0 });
+    const total = blank();
+    const platforms = Object.fromEntries(PLATFORMS.map((p) => [p, blank()]));
+    const versions = {};
+    const loyalty = { once: 0, few: 0, regular: 0, daily: 0 };
+    let returning = 0, totalDays = 0, oldestFirst = null, cursor;
+
+    // list() renvoie les métadonnées sans lecture par clé ; 1000 clés par page.
+    do {
+        const page = await env.TWITCH_DATA.list({ prefix: USAGE_PREFIX, limit: 1000, cursor });
+        for (const key of page.keys) {
+            const meta = key.metadata || {};
+            const then = Date.parse((meta.last || '') + 'T00:00:00Z');
+            const age = Number.isNaN(then) ? Infinity : Math.floor((todayMs - then) / 86400000);
+            const bucket = platforms[meta.p] || platforms.ios;
+            for (const c of [total, bucket]) {
+                c.known++;
+                if (age === 0) c.today++;
+                if (age <= 7) c.week++;
+                if (age <= 30) c.month++;
+            }
+            if (age <= 30) { const v = `${meta.p || 'ios'} ${meta.v || '?'}`; versions[v] = (versions[v] || 0) + 1; }
+            const d = meta.days || 1;
+            totalDays += d;
+            if (d >= 2) returning++;
+            if (d === 1) loyalty.once++; else if (d < 7) loyalty.few++; else if (d < 30) loyalty.regular++; else loyalty.daily++;
+            if (meta.first && (!oldestFirst || meta.first < oldestFirst)) oldestFirst = meta.first;
+        }
+        cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+
+    const payload = {
+        ...total, platforms, returning, loyalty,
+        avgDays: total.known ? Math.round((totalDays / total.known) * 10) / 10 : 0,
+        oldestFirst,
+        versions: Object.entries(versions).map(([version, count]) => ({ version, count })).sort((a, b) => b.count - a.count),
+        generatedAt: new Date().toISOString()
+    };
+    // no-store : sinon « Actualiser » pourrait resservir les mêmes chiffres.
+    return new Response(JSON.stringify(payload), { headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 }
 
 function jsonResponse(obj) { return new Response(JSON.stringify(obj), { headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json' } }); }

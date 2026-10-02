@@ -28,6 +28,7 @@ const DEFAULT_PREFS = {
   loadHistory: true,
   chatSize: 14,
   chatOpen: true,
+  shareUsage: true,
   volume: 1,
   muted: false,
 }

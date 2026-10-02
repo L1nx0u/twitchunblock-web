@@ -7,6 +7,7 @@ import { store } from './store.js'
 import { LANGS, applyStatic, deviceLang, initLang, setLang, t, lang } from './i18n.js'
 import { Player, loadHls, qualityLabel } from './player.js'
 import { ChatView } from './chat/view.js'
+import * as usage from './usage.js'
 import {
   $, $$, debounce, esc, formatClock, formatDuration, formatViewers, icon, isIOS, isMobile,
   thumb, toast, uptimeSince,
@@ -48,6 +49,8 @@ async function boot() {
   renderContinue()
   renderRecentChannels()
   startLiveTicker()
+  usage.ping(store.prefs.shareUsage)
+  setInterval(() => usage.ping(store.prefs.shareUsage), 15 * 60 * 1000)
 
   // Jeton déjà là (session précédente, ou retour de connexion sans popup).
   if (store.token) await adoptToken(store.token, { silent: true })
@@ -952,6 +955,11 @@ function openSettings() {
       </label>
     </div>
     <div class="sheet-section">
+      <h3>${esc(t('usage'))}</h3>
+      <div class="usage-stats" id="usage-stats"><p class="muted small">${esc(t('loading'))}</p></div>
+      ${toggle('set-usage', t('share_usage'), p.shareUsage, t('share_usage_sub'))}
+    </div>
+    <div class="sheet-section">
       <h3>${esc(t('about'))}</h3>
       <p class="muted small">${esc(t('about_text'))}</p>
       <div class="sheet-group">
@@ -961,6 +969,7 @@ function openSettings() {
       ${creditsHtml()}
     </div>`)
   renderSettingsAccount()
+  renderUsageStats()
 
   const sheet = $('#sheet')
   sheet.onclick = (e) => {
@@ -986,6 +995,11 @@ function openSettings() {
     if (id === 'set-ts') p.timestamps = e.target.checked
     if (id === 'set-deleted') p.keepDeleted = e.target.checked
     if (id === 'set-history') p.loadHistory = e.target.checked
+    if (id === 'set-usage') {
+      p.shareUsage = e.target.checked
+      if (p.shareUsage) usage.ping(true)
+      else usage.forget()
+    }
     store.savePrefs()
     chat.applyPrefs()
   }
@@ -996,6 +1010,27 @@ function openSettings() {
     store.savePrefs()
     chat.applyPrefs()
   }
+}
+
+/** Combien de gens utilisent le site et l'app : aujourd'hui, 7 et 30 jours. */
+async function renderUsageStats() {
+  const box = $('#usage-stats')
+  if (!box) return
+  let s = null
+  try { s = await usage.fetchStats() } catch {}
+  if (!$('#usage-stats')) return
+  if (!s) { box.innerHTML = `<p class="muted small">${esc(t('usage_unavailable'))}</p>`; return }
+  const web = s.platforms?.web ?? { today: 0, week: 0, month: 0 }
+  const ios = s.platforms?.ios ?? { today: s.today, week: s.week, month: s.month }
+  const row = (label, k) => `
+    <div class="usage-cell">
+      <span class="usage-label">${esc(label)}</span>
+      <strong>${esc(formatViewers(s[k] ?? 0))}</strong>
+      <span class="usage-split">${icon('globe', 12)} ${esc(formatViewers(web[k] ?? 0))} · iOS ${esc(formatViewers(ios[k] ?? 0))}</span>
+    </div>`
+  box.innerHTML = `
+    <div class="usage-grid">${row(t('usage_today'), 'today')}${row(t('usage_week'), 'week')}${row(t('usage_month'), 'month')}</div>
+    <p class="muted small">${esc(t('usage_note'))}</p>`
 }
 
 function renderSettingsAccount() {

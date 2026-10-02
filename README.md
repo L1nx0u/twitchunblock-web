@@ -1,131 +1,151 @@
 # TwitchUnblock — Web
 
-Regarder les lives et les VODs Twitch dans le navigateur, sans abonnement, avec le vrai chat.
+Watch Twitch lives and VODs in your browser, no subscription needed, with the real chat.
 
-**Site : https://test2-fawn-eta.vercel.app**
+**Website: https://test2-fawn-eta.vercel.app**
 
-Version web de [TwitchUnblock](https://github.com/MXFia19/TwitchUnblock), l'app iOS. Les deux partagent le même backend, un Worker Cloudflare.
+> 📱 **Also on iPhone and iPad** — [TwitchUnblock for iOS](https://github.com/MXFia19/TwitchUnblock) is the native app this website comes from: same backend, plus channel points, an immersive landscape player, a sleep timer and more. Install it through AltStore, SideStore or Feather.
 
 ---
 
-## Fonctionnalités
+## Features
 
-### Accueil
-- **Top des lives**, France ou monde, visible sans se connecter
-- **Chaînes suivies** une fois connecté avec Twitch, avec les photos de profil
-- **Reprendre** : les VODs commencées, avec leur barre de progression
-- Temps de live et spectateurs tenus à jour en continu
+### Home
+- **Top streams**, France or worldwide — no login required
+- **Followed channels** once logged in with Twitch, with profile pictures
+- **Continue watching**: VODs you started, with their progress bar
+- Live durations and viewer counts kept up to date
 
 ### Streamer
-- Recherche avec suggestions pendant la frappe
-- Statut du live (titre, jeu, spectateurs, durée), ou depuis quand la chaîne est hors ligne
-- Toutes les rediffusions, filtrables par mot-clé ou par date
-- Streamers récents
+- Search with suggestions as you type
+- Live status (title, game, viewers, uptime), or how long the channel has been offline
+- Every past broadcast, filterable by keyword or date
+- Recent streamers
 
-### Lecteur
-- Commandes maison, pensées pour le chat : le plein écran garde la vidéo **et** le chat, posé par-dessus
-- Qualité au choix, dont « Auto » qui affiche le débit réellement utilisé
-- Vitesse de lecture, ±10 s, double-tap sur mobile, raccourcis clavier
-- Image dans l'image, bouton « retour au direct », latence affichée en live
-- Reprise automatique des VODs là où on s'était arrêté
-- Fenêtre réduite : la lecture continue pendant qu'on navigue
-- « Ouvrir dans… » VLC, Outplayer, Infuse, ou copie du lien du flux
+### Player
+- Custom controls built around the chat: fullscreen keeps both the video **and** the chat, laid over it
+- Quality picker, including “Auto”, which shows the bitrate actually in use
+- Playback speed, ±10 s, double-tap on mobile, keyboard shortcuts
+- Picture in picture, “back to live” button, live latency
+- VODs resume where you left off
+- Mini player: playback keeps going while you browse
+- “Open in…” VLC, Outplayer, Infuse, or copy the stream link
 
 ### Chat
-- Connecté directement à l'IRC de Twitch, sans iframe
-- Emotes Twitch, **BTTV**, **FFZ** et **7TV**, badges, couleurs de pseudo lisibles sur fond sombre
-- Messages récents chargés à l'arrivée : on ne tombe jamais dans un chat vide
-- **Message épinglé** en haut du chat, masquable puis réaffichable
-- Écriture une fois connecté : autocomplétion des emotes et des pseudos, sélecteur d'emotes, réponses
-- Fiche d'un utilisateur au clic : ses derniers messages, mentionner, répondre
-- Modération respectée : messages supprimés barrés ou retirés
-- Défilement en pause quand on remonte, avec un bouton « nouveaux messages »
-- **Chat des VODs**, rejoué au rythme de la vidéo
+- Connected straight to Twitch IRC — no iframe
+- Twitch, **BTTV**, **FFZ** and **7TV** emotes, badges, username colours readable on a dark background
+- Recent messages loaded on arrival: you never land in an empty chat
+- **Pinned message** at the top of the chat — hide it, bring it back
+- Chat once logged in: emote and username autocomplete, emote picker, replies
+- Click someone to see their latest messages, mention them or reply
+- Moderation honoured: deleted messages struck through or removed
+- Scrolling pauses when you scroll up, with a “new messages” button
+- **VOD chat**, replayed in sync with the video
 
-### Le reste
-- Français, anglais, espagnol — la langue de l'appareil par défaut
-- Historique et progression synchronisés entre appareils quand on est connecté
-- Interface adaptée au mobile : barre d'onglets en bas, réglages en feuille, vue paysage
+### Everything else
+- French, English, Spanish — follows your device language by default
+- History and progress synced across devices when logged in
+- Anonymous usage count, shown in the settings (see below)
+- Mobile-first layout: bottom tab bar, settings sheet, landscape view
 
 ---
 
-## Structure du dépôt
+## Repository layout
 
 ```
-public/              Le site, servi tel quel par Vercel (aucune compilation)
+public/              The website, served as-is by Vercel (no build step)
   index.html
   assets/
     styles.css
     js/
-      main.js        Navigation, accueil, page streamer, réglages
-      player.js      Lecteur vidéo (hls.js)
-      api.js         Accès au Worker, à Helix et à GQL — configuration en tête
-      i18n.js        Traductions
-      store.js       Historique, progression, préférences (localStorage)
-      util.js        Échappement, formats, icônes
-      chat/          Chat : IRC, emotes, badges, message épinglé, replay des VODs
-worker.js            Backend : Worker Cloudflare
-wrangler.toml        Configuration du Worker
-vercel.json          Configuration du site sur Vercel
+      main.js        Navigation, home, streamer page, settings
+      player.js      Video player (hls.js)
+      api.js         Worker, Helix and GQL access — configuration at the top
+      usage.js       Anonymous usage count
+      i18n.js        Translations
+      store.js       History, progress, preferences (localStorage)
+      util.js        Escaping, formatting, icons
+      chat/          Chat: IRC, emotes, badges, pinned message, VOD replay
+worker.js            Backend: Cloudflare Worker
+wrangler.toml        Worker configuration
+vercel.json          Website configuration on Vercel
 ```
 
-Le site est en JavaScript natif (modules ES), sans framework ni étape de compilation.
+The website is plain JavaScript (ES modules) — no framework, no build step.
 
 ---
 
-## Comment ça marche
+## How it works
 
 ```
-Navigateur ──► Worker Cloudflare ──► Twitch (playlists, segments vidéo)
+Browser ──► Cloudflare Worker ──► Twitch (playlists, video segments)
     │
-    ├──► GQL Twitch     infos publiques : lives, chaînes, VODs, chat des VODs
-    ├──► Helix Twitch   compte connecté : chaînes suivies
-    ├──► IRC Twitch     chat en direct (WebSocket)
-    └──► BTTV / FFZ / 7TV / recent-messages   emotes et historique du chat
+    ├──► Twitch GQL     public data: streams, channels, VODs, VOD chat
+    ├──► Twitch Helix   logged-in account: followed channels
+    ├──► Twitch IRC     live chat (WebSocket)
+    └──► BTTV / FFZ / 7TV / recent-messages   emotes and chat history
 ```
 
-La vidéo passe toujours par le Worker : le CDN des VODs de Twitch n'accepte que les requêtes venant de `twitch.tv`, un lien direct serait bloqué par le navigateur. Le Worker sert aussi la sauvegarde de l'historique (KV Cloudflare).
+Video always goes through the Worker: Twitch's VOD CDN only accepts requests coming from `twitch.tv`, so a direct link would be blocked by the browser. The Worker also stores history backups and the usage count (Cloudflare KV).
+
+The iOS app uses the same Worker.
+
+---
+
+## Usage count
+
+To know whether people actually use the website and the app, each browser (and each app install) sends a small signal to the Worker at most once an hour. The settings show distinct people today, over 7 days and over 30 days, split between website and iOS app.
+
+| Sent | Never sent |
+|---|---|
+| A random ID generated in the browser | Twitch account, username |
+| The website version | IP address (not stored by the Worker) |
+| `web` or `ios` | Channels watched, history |
+
+Keys expire on their own after 35 days. Anyone can turn it off in the settings, which also deletes their ID from the server.
+
+Raw numbers: `GET https://test2.kurzmathis4.workers.dev/api/stats`
 
 ---
 
 ## Configuration
 
-Tout est en tête de `public/assets/js/api.js` :
+Everything lives at the top of `public/assets/js/api.js`:
 
-| Constante | Rôle |
+| Constant | Purpose |
 |---|---|
-| `API_URL` | Adresse du Worker |
-| `HELIX_CLIENT_ID` | Identifiant de l'application Twitch (connexion) |
-| `REDIRECT_URI` | Adresse de retour après connexion — doit être déclarée telle quelle dans la console développeur Twitch |
-| `EXTERNAL_LINKS_VIA_PROXY` | Liens donnés à VLC / Outplayer / Infuse : par le Worker (`true`) ou en direct depuis Twitch (`false`) |
+| `API_URL` | Worker address |
+| `HELIX_CLIENT_ID` | Twitch application ID (login) |
+| `REDIRECT_URI` | Where Twitch sends you back after login — must be registered exactly as-is in the Twitch developer console |
+| `EXTERNAL_LINKS_VIA_PROXY` | Links handed to VLC / Outplayer / Infuse: through the Worker (`true`) or straight from Twitch (`false`) |
 
 ---
 
-## Déploiement
+## Deployment
 
-### Site (Vercel)
-Chaque push sur `main` est déployé automatiquement. `vercel.json` indique de servir le dossier `public/` sans compilation.
+### Website (Vercel)
+Every push to `main` is deployed automatically. `vercel.json` serves the `public/` folder with no build step.
 
 ### Worker (Cloudflare)
 ```bash
 npx wrangler deploy
 ```
-Le namespace KV `TWITCH_DATA` (sauvegarde de l'historique) est déclaré dans `wrangler.toml`.
+The `TWITCH_DATA` KV namespace (history backups and usage count) is declared in `wrangler.toml`.
 
-### En local
+### Locally
 ```bash
 cd public
 python3 -m http.server 8080
-# puis http://localhost:8080
+# then open http://localhost:8080
 ```
-La connexion Twitch ne fonctionne qu'à l'adresse déclarée dans `REDIRECT_URI`.
+Twitch login only works at the address set in `REDIRECT_URI`.
 
 ---
 
-## Crédits
+## Credits
 
-Créé par [MXFia19](https://github.com/MXFia19).
+Made by [MXFia19](https://github.com/MXFia19).
 
-Merci à [hls.js](https://github.com/video-dev/hls.js), [BetterTTV](https://betterttv.com), [FrankerFaceZ](https://www.frankerfacez.com), [7TV](https://7tv.app), [recent-messages](https://recent-messages.robotty.de), [Lucide](https://lucide.dev) pour les icônes et [Inter](https://rsms.me/inter/) pour la police.
+Thanks to [hls.js](https://github.com/video-dev/hls.js), [BetterTTV](https://betterttv.com), [FrankerFaceZ](https://www.frankerfacez.com), [7TV](https://7tv.app), [recent-messages](https://recent-messages.robotty.de), [Lucide](https://lucide.dev) for the icons and [Inter](https://rsms.me/inter/) for the font.
 
-Projet indépendant, sans lien avec Twitch.
+Independent project, not affiliated with Twitch.
