@@ -14,6 +14,9 @@ import { $, esc, formatClock, icon, isIOS } from './util.js'
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
 const HIDE_AFTER = 2800
+// Empreinte du fichier attendu (identique sur les deux CDN) : un CDN
+// compromis ne peut pas substituer son propre script.
+const HLS_INTEGRITY = 'sha384-9v3HcdYrO3D+OPDTjZ40RXocgE4GtXVCd3/mCS62JsM93JXgI1afJVuwjFvsu6ni'
 const HLS_SOURCES = [
   'https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js',
@@ -31,6 +34,8 @@ export function loadHls() {
       if (i >= HLS_SOURCES.length) return resolve(null)
       const s = document.createElement('script')
       s.src = HLS_SOURCES[i]
+      s.integrity = HLS_INTEGRITY
+      s.crossOrigin = 'anonymous'
       s.async = true
       s.onload = () => resolve(window.Hls ?? null)
       s.onerror = () => { s.remove(); next(i + 1) }
@@ -256,6 +261,7 @@ export class Player {
     const token = (this.attachToken = (this.attachToken ?? 0) + 1)
 
     const start = () => {
+      if (token !== this.attachToken) return   // vidéo remplacée entre-temps
       if (startAt > 1 && this.kind === 'vod') {
         try { v.currentTime = startAt } catch {}
       }

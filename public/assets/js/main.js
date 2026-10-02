@@ -110,6 +110,14 @@ function login() {
 }
 
 function logout() {
+  // Jeton révoqué chez Twitch, pas seulement oublié ici.
+  if (session.token) {
+    fetch('https://id.twitch.tv/oauth2/revoke', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: api.HELIX_CLIENT_ID, token: session.token }),
+    }).catch(() => {})
+  }
   store.token = null
   Object.assign(session, { token: null, userId: null, login: null, avatar: null, scopes: [] })
   renderAccount()
@@ -123,8 +131,13 @@ window.addEventListener('message', (e) => {
   if (e.origin !== location.origin) return
   const raw = typeof e.data === 'string' ? e.data : ''
   if (!raw.includes('access_token=')) return
-  const token = new URLSearchParams(raw.replace(/^#/, '')).get('access_token')
-  if (token) adoptToken(token)
+  const params = new URLSearchParams(raw.replace(/^#/, ''))
+  const token = params.get('access_token')
+  let expected = null
+  try { expected = localStorage.getItem('tu_oauth_state') } catch {}
+  if (!token || !expected || params.get('state') !== expected) return
+  try { localStorage.removeItem('tu_oauth_state') } catch {}
+  adoptToken(token)
 })
 
 function renderAccount() {
@@ -404,11 +417,17 @@ async function loadFollowed({ silent = false } = {}) {
   head.classList.remove('logged-out')
   if (!session.userId) return
   if (!silent) grid.innerHTML = skeleton(4)
+  const token = session.token
   try {
     const streams = await api.getFollowedStreams(session.userId)
+    if (session.token !== token) return   // déconnecté entre-temps
+    followedRetried = false
     grid.innerHTML = streams.length ? streams.map(streamCard).join('') : emptyState(t('no_live_followed'), 'heart')
   } catch (err) {
-    if (err.status === 401) { await adoptToken(session.token); return }
+    if (session.token !== token) return
+    // Une seule nouvelle tentative : un jeton valide mais refusé par Helix
+    // (autre application, droit manquant) relançait la boucle sans fin.
+    if (err.status === 401 && !followedRetried) { followedRetried = true; await adoptToken(session.token); return }
     // En rafraîchissement silencieux, une panne passagère garde l'existant.
     if (!silent) grid.innerHTML = emptyState(t('err_loading'), 'refresh')
   }
@@ -534,6 +553,8 @@ function pickSuggestion(login) {
   searchChannel(login)
 }
 
+let searchSeq = 0
+let followedRetried = false
 async function searchChannel(raw) {
   const parts = String(raw || '').trim().split(/\s+/)
   const login = api.cleanLogin(parts[0])
@@ -542,10 +563,12 @@ async function searchChannel(raw) {
   if (!login) { out.innerHTML = ''; return }
 
   out.innerHTML = `<div class="channel-hero skeleton"></div><div class="grid vods">${skeleton(8, 'vod')}</div>`
+  const seq = ++searchSeq
   const [info, videos] = await Promise.all([
     api.getChannelInfo(login).catch(() => null),
     api.getChannelVideos(login).catch(() => null),
   ])
+  if (seq !== searchSeq) return   // une recherche plus récente a pris la main
   if (!info && (!videos || videos.error)) {
     out.innerHTML = emptyState(t('not_found'), 'search')
     return

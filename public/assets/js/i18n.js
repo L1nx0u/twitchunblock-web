@@ -193,7 +193,7 @@ export const lang = () => current
 /** Traduit une clé, avec remplacement des `{param}`. */
 export function t(key, params) {
   let s = STRINGS[current]?.[key] ?? STRINGS.en[key] ?? key
-  if (params) for (const [k, v] of Object.entries(params)) s = s.replaceAll(`{${k}}`, v)
+  if (params) for (const [k, v] of Object.entries(params)) s = s.replaceAll(`{${k}}`, () => String(v))
   return s
 }
 

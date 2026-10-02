@@ -172,6 +172,13 @@ export class VodChat {
       this.cursor++
     }
     if (batch.length) this.emit('batch', batch)
+    // Les commentaires déjà affichés ne servent plus : sur une longue VOD,
+    // le tampon gardait toute la discussion en mémoire.
+    if (this.cursor > 1000) {
+      this.buffer.splice(0, this.cursor - 200)
+      this.cursor = 200
+    }
+    if (this.known.size > 20000) this.known.clear()
   }
 
   emit(type, payload) {

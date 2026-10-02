@@ -40,9 +40,12 @@ export function loadGlobalEmotes() {
 }
 
 export async function loadChannelEmotes(channelId, login) {
-  if (!channelId || loadedChannelId === channelId) return
-  loadedChannelId = channelId
+  if (loadedChannelId === channelId && channelId) return
+  // Toujours vider : sans identifiant (infos de la chaîne indisponibles),
+  // les emotes de la chaîne précédente restaient affichées.
+  loadedChannelId = channelId || null
   channel.clear()
+  if (!channelId) return
 
   const [bttv, ffz, stv] = await Promise.all([
     getJSON(`https://api.betterttv.net/3/cached/users/twitch/${channelId}`),

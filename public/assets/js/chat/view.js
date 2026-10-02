@@ -362,6 +362,9 @@ export class ChatView {
     // En pause, on ne retire rien : le texte qu'on est en train de lire ne
     // doit pas glisser sous les yeux.
     if (extra > 0 && this.stick) for (let i = 0; i < extra; i++) this.el.list.firstElementChild?.remove()
+    // En pause aussi, une limite haute : un chat très actif laissé remonté
+    // accumulait des nœuds sans fin.
+    else if (extra > MAX_NODES * 4) for (let i = 0; i < extra - MAX_NODES * 4; i++) this.el.list.firstElementChild?.remove()
 
     if (this.stick) this.scrollToBottom()
     else {

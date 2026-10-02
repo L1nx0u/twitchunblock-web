@@ -24,15 +24,23 @@
     (function () {
       var hash = location.hash
       if (hash.indexOf('access_token=') === -1) return
-      var token = new URLSearchParams(hash.slice(1)).get('access_token')
+      var params = new URLSearchParams(hash.slice(1))
+      var token = params.get('access_token')
+      history.replaceState(null, '', location.pathname + location.search)
       if (!token) return
+      // `state` : jeton remis seulement s'il répond à NOTRE demande de
+      // connexion. Sans ce contrôle, n'importe quel site pouvait envoyer
+      // vers « …/#access_token=<son jeton> » et connecter le visiteur à un
+      // autre compte (où partaient ensuite son historique et ses messages).
+      var expected = null
+      try { expected = localStorage.getItem('tu_oauth_state') } catch (e) {}
+      if (!expected || params.get('state') !== expected) return
       if (window.opener && window.opener !== window) {
         try { window.opener.postMessage(hash, location.origin) } catch (e) {}
         window.close()
         return
       }
-      try { localStorage.setItem('twitch_token', token) } catch (e) {}
-      history.replaceState(null, '', location.pathname + location.search)
+      try { localStorage.removeItem('tu_oauth_state'); localStorage.setItem('twitch_token', token) } catch (e) {}
     })()
   </script>
   <script type="module" src="assets/js/main.js"></script>

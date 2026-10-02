@@ -86,6 +86,7 @@ export class LiveChat {
     ws.onmessage = (ev) => {
       if (gen !== this.generation) return
       // Twitch agrège plusieurs commandes dans une même trame.
+      ws.lastSeen = Date.now()
       for (const line of String(ev.data).split('\r\n')) if (line) this.handle(line)
     }
 
@@ -99,8 +100,13 @@ export class LiveChat {
 
     clearInterval(this.pingTimer)
     this.pingTimer = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) ws.send('PING :tmi.twitch.tv')
-    }, 240_000)
+      if (ws.readyState !== WebSocket.OPEN) return
+      // Connexion à moitié morte : rien reçu depuis le dernier PING (Twitch
+      // répond PONG) → on ferme, onclose relance la connexion.
+      if (ws.pinged && (ws.lastSeen ?? 0) < ws.pinged) return ws.close()
+      ws.pinged = Date.now()
+      ws.send('PING :tmi.twitch.tv')
+    }, 120_000)
   }
 
   scheduleRetry(gen) {
@@ -126,6 +132,9 @@ export class LiveChat {
   send(text, replyParentId) {
     const body = String(text).trim()
     if (!body || !this.canSend || this.ws?.readyState !== WebSocket.OPEN) return false
+    // Identifiant venu des balises IRC : vérifié, un retour à la ligne y
+    // ajouterait une commande IRC.
+    if (replyParentId && !/^[0-9a-f-]{36}$/i.test(replyParentId)) replyParentId = null
     const prefix = replyParentId ? `@reply-parent-msg-id=${replyParentId} ` : ''
     this.ws.send(`${prefix}PRIVMSG #${this.o.channel} :${body}`)
     this.emit('add', selfMessage(body, this.o.login ?? '', this.myColor))

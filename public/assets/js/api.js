@@ -257,7 +257,11 @@ export async function getFollowedStreams(userId) {
 }
 
 export function loginUrl() {
+  // Valeur aléatoire vérifiée au retour (index.html et main.js).
+  const state = crypto.randomUUID?.() ?? String(Math.random()).slice(2) + Date.now()
+  try { localStorage.setItem('tu_oauth_state', state) } catch {}
   const params = new URLSearchParams({
+    state,
     client_id: HELIX_CLIENT_ID,
     redirect_uri: REDIRECT_URI,
     response_type: 'token',

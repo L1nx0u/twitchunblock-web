@@ -36,10 +36,14 @@ const DEFAULT_PREFS = {
 
 export const store = {
   // ── Session Twitch ──────────────────────────────────────────────────────
-  get token() { return localStorage.getItem('twitch_token') },
+  // try/catch : stockage bloqué (navigation privée stricte…) ne doit pas
+  // empêcher le site de démarrer.
+  get token() { try { return localStorage.getItem('twitch_token') } catch { return null } },
   set token(v) {
-    if (v) localStorage.setItem('twitch_token', v)
-    else localStorage.removeItem('twitch_token')
+    try {
+      if (v) localStorage.setItem('twitch_token', v)
+      else localStorage.removeItem('twitch_token')
+    } catch {}
   },
 
 
