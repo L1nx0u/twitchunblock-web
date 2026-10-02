@@ -31,6 +31,7 @@ const DEFAULT_PREFS = {
   shareUsage: true,
   chatSync: true,
   autoRaid: true,
+  highlightWords: [],
   volume: 1,
   muted: false,
 }

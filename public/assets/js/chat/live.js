@@ -9,7 +9,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { parseIRC, prefixNick, ircText, unescapeTag } from './irc.js'
-import { fromIRC, systemMessage, selfMessage } from './message.js'
+import { fromIRC, noticeMessages, systemMessage, selfMessage } from './message.js'
 import { loadChannelBadges, loadGlobalBadges } from './badges.js'
 import { loadChannelEmotes, loadGlobalEmotes } from './emotes.js'
 
@@ -174,12 +174,7 @@ export class LiveChat {
       case 'USERNOTICE': {
         // Abonnements, raids, annonces : le texte système, puis le message
         // éventuel de l'utilisateur.
-        const sys = unescapeTag(irc.tags['system-msg'] ?? '')
-        if (sys) this.emit('add', systemMessage(sys))
-        if (ircText(irc)) {
-          const msg = fromIRC(irc, false)
-          if (msg) this.emit('add', { ...msg, isHighlight: true })
-        }
+        for (const m of noticeMessages(irc, false)) this.emit('add', m)
         break
       }
       case 'NOTICE': {
@@ -242,9 +237,21 @@ export class LiveChat {
       const older = []
       for (const line of json.messages) {
         const irc = typeof line === 'string' ? parseIRC(line) : null
-        if (irc?.command !== 'PRIVMSG') continue
-        const msg = fromIRC(irc, true)
-        if (msg) older.push(msg)
+        if (!irc) continue
+        if (irc.command === 'PRIVMSG') {
+          const msg = fromIRC(irc, true)
+          // Supprimé depuis par la modération : signalé par le service.
+          if (msg) older.push(irc.tags['rm-deleted'] === '1' ? { ...msg, isDeleted: true } : msg)
+        } else if (irc.command === 'USERNOTICE') {
+          older.push(...noticeMessages(irc, true))
+        } else if (irc.command === 'CLEARCHAT') {
+          // Banni ou exclu : ses messages déjà rejoués sont retirés aussi.
+          const target = irc.params[irc.params.length - 1]?.toLowerCase()
+          if (target && !target.startsWith('#')) for (const m of older) if (m.userName === target) m.isDeleted = true
+        } else if (irc.command === 'CLEARMSG') {
+          const id = irc.tags['target-msg-id']
+          for (const m of older) if (m.id === id) m.isDeleted = true
+        }
       }
       if (older.length) this.emit('prepend', older)
     } catch { /* service tiers : le chat démarre simplement vide */ }

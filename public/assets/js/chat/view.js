@@ -453,7 +453,7 @@ export class ChatView {
         for (const m of payload) this.enqueue(m)
         break
       case 'prepend':
-        this.prepend(payload)
+        this.prepend(this.o.prefs.keepDeleted ? payload : payload.filter((m) => !m.isDeleted))
         break
       case 'moderate':
         // Les messages encore en attente sont modérés aussi : sinon un
@@ -558,15 +558,29 @@ export class ChatView {
 
   renderMessage(m) {
     const div = document.createElement('div')
+    if (m.notice === 'raid') {
+      // Raid entrant : carte avec un lien vers la chaîne qui arrive.
+      div.className = 'msg sys notice-raid'
+      div.innerHTML = `${icon('users', 15)}<span>${esc(m.systemMsg || t('raid_incoming', { u: m.raiderName, n: m.viewers }))}</span>`
+        + (m.raider ? `<button class="btn ghost xs" type="button" data-open-channel="${esc(m.raider)}">${esc(t('see_channel'))}</button>` : '')
+      return div
+    }
     if (m.systemMsg) {
-      div.className = 'msg sys'
+      div.className = 'msg sys' + (m.notice === 'sub' ? ' notice-sub' : '')
       div.textContent = m.systemMsg
       return div
     }
 
     const me = this.o.session().login
-    const mentionsMe = me && m.tokens.some((tk) => tk.kind === 'mention' && tk.value.toLowerCase() === me)
+    const words = this.o.prefs.highlightWords ?? []
+    // Mentionné (avec ou sans @) ou mot-clé surveillé : surligné.
+    const mentionsMe = !m.isSelf && m.tokens.some((tk) => {
+      const v = String(tk.value ?? '').toLowerCase().replace(/^@/, '').replace(/[.,!?:;]+$/, '')
+      return (me && (tk.kind === 'mention' || tk.kind === 'text') && v === me)
+        || (tk.kind === 'text' && words.includes(v))
+    })
     div.className = 'msg'
+      + (m.announce ? ' announce' : '')
       + (m.isHighlight ? ' hl' : '')
       + (m.isFirstMessage ? ' first' : '')
       + (mentionsMe ? ' me' : '')
@@ -574,6 +588,7 @@ export class ChatView {
       + (m.isDeleted ? ' deleted' : '')
     div.dataset.id = m.id
     div.dataset.user = m.userName
+    if (m.announce) div.style.setProperty('--announce', m.announce)
 
     let html = ''
     if (m.replyTo) {
@@ -814,6 +829,8 @@ export class ChatView {
 
   // ── Fiche utilisateur ──────────────────────────────────────────────────
   onListClick(e) {
+    const open = e.target.closest('[data-open-channel]')
+    if (open) return this.o.onOpenChannel?.(open.dataset.openChannel)
     const mention = e.target.closest('.mention')
     if (mention) return this.showCard(mention.dataset.user, null)
     const row = e.target.closest('.msg:not(.sys)')

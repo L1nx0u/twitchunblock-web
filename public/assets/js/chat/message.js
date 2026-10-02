@@ -40,13 +40,17 @@ function fallbackColor(name) {
   return FALLBACK[h % FALLBACK.length]
 }
 
+/** Lien sans « https:// » (« t.me/x », « discord.gg/abc ») : seulement les
+ *  extensions courantes, pour ne pas transformer « lol.xd » en lien. */
+const BARE_LINK = /^[a-z0-9][a-z0-9-]*(\.[a-z0-9-]+)*\.(com|net|org|tv|gg|me|io|fr|be|ch|de|es|it|uk|co|app|dev|ly|link|to|ru|eu|xyz|shop|store)(\/\S*)?$/
+
 /** Découpe un segment de texte libre en liens, mentions, emotes tierces et mots. */
 export function tokenizeSegment(segment) {
   const out = []
   for (const word of segment.split(' ')) {
     if (!word) continue
     const lower = word.toLowerCase()
-    if (/^(https?:\/\/|www\.)\S+\.\S+/.test(lower)) {
+    if (/^(https?:\/\/|www\.)\S+\.\S+/.test(lower) || BARE_LINK.test(lower)) {
       out.push({ kind: 'link', value: word })
     } else if (word.startsWith('@') && word.length > 1) {
       out.push({ kind: 'mention', value: word.slice(1) })
@@ -168,8 +172,48 @@ export function fromVodComment(node) {
   })
 }
 
-export function systemMessage(text) {
-  return base({ systemMsg: text, userId: 'system' })
+export function systemMessage(text, extra = {}) {
+  return base({ systemMsg: text, userId: 'system', ...extra })
+}
+
+const ANNOUNCE_COLORS = { PRIMARY: '#9146ff', BLUE: '#387aff', GREEN: '#00c853', ORANGE: '#ff9a00', PURPLE: '#bf94ff' }
+
+/**
+ * USERNOTICE (abonnement, raid entrant, annonce…) : le texte système, puis le
+ * message éventuel de l'utilisateur. Partagé par le direct et l'historique.
+ */
+export function noticeMessages(irc, historical = false) {
+  const out = []
+  const kind = irc.tags['msg-id'] ?? ''
+  const sys = unescapeTag(irc.tags['system-msg'] ?? '')
+  let timestamp = Date.now()
+  if (historical) {
+    const ms = Number(irc.tags['tmi-sent-ts'])
+    if (Number.isFinite(ms) && ms > 0) timestamp = ms
+  }
+  if (kind === 'raid') {
+    // Raid entrant : qui arrive, avec combien de monde, et un lien vers sa chaîne.
+    const login = irc.tags['msg-param-login'] ?? irc.tags.login ?? ''
+    out.push(systemMessage(sys, {
+      notice: 'raid', timestamp, isHistorical: historical,
+      raider: /^[a-z0-9_]{1,25}$/i.test(login) ? login.toLowerCase() : null,
+      raiderName: unescapeTag(irc.tags['msg-param-displayName'] ?? login),
+      viewers: Number(irc.tags['msg-param-viewerCount']) || 0,
+    }))
+    return out
+  }
+  if (sys && kind !== 'announcement') {
+    out.push(systemMessage(sys, { notice: /sub|gift/.test(kind) ? 'sub' : 'other', timestamp, isHistorical: historical }))
+  }
+  if (ircText(irc)) {
+    const msg = fromIRC(irc, historical)
+    if (msg) {
+      out.push(kind === 'announcement'
+        ? { ...msg, isHighlight: true, announce: ANNOUNCE_COLORS[irc.tags['msg-param-color']] ?? ANNOUNCE_COLORS.PRIMARY }
+        : { ...msg, isHighlight: true })
+    }
+  }
+  return out
 }
 
 /** Notre propre message : Twitch ne le renvoie pas, on l'affiche nous-mêmes. */

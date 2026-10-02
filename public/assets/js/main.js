@@ -700,6 +700,7 @@ function setupPlayer() {
     prefs: store.prefs,
     // Retard de l'image à compenser dans le chat, si le réglage est actif.
     getDelay: () => (store.prefs.chatSync ? player.liveDelay() : 0),
+    onOpenChannel: (login) => openLive(login),
     session: () => session,
     onLogin: () => login(),
     onHide: () => toggleChat(false),
@@ -1094,6 +1095,10 @@ function openSettings() {
       ${toggle('set-ts', t('timestamps'), p.timestamps)}
       ${toggle('set-deleted', t('keep_deleted'), p.keepDeleted)}
       ${toggle('set-history', t('load_history'), p.loadHistory)}
+      <label class="setting setting-col">
+        <span class="setting-text"><span>${esc(t('highlight_words'))}</span><small>${esc(t('highlight_words_sub'))}</small></span>
+        <input class="text-input" type="text" id="set-words" autocomplete="off" spellcheck="false" maxlength="300" value="${esc((p.highlightWords ?? []).join(', '))}">
+      </label>
       <label class="setting">
         <span class="setting-text"><span>${esc(t('chat_size'))}</span></span>
         <span class="size-ctl"><input type="range" id="set-size" min="12" max="20" step="1" value="${p.chatSize}"><output>${p.chatSize}</output></span>
@@ -1142,6 +1147,9 @@ function openSettings() {
     if (id === 'set-raid') p.autoRaid = e.target.checked
     if (id === 'set-deleted') p.keepDeleted = e.target.checked
     if (id === 'set-history') p.loadHistory = e.target.checked
+    if (id === 'set-words') {
+      p.highlightWords = e.target.value.split(',').map((w) => w.trim().toLowerCase()).filter(Boolean).slice(0, 30)
+    }
     if (id === 'set-usage') {
       p.shareUsage = e.target.checked
       if (p.shareUsage) usage.ping(true)
