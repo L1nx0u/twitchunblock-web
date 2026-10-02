@@ -311,3 +311,15 @@ export function clipSlugFrom(url) {
   const m = String(url).match(/^(?:https?:\/\/)?(?:www\.|m\.)?(?:clips\.twitch\.tv\/|twitch\.tv\/[a-z0-9_]+\/clip\/)([A-Za-z0-9_-]{3,100})/i)
   return m ? m[1] : null
 }
+
+/** Chapitres d'une VOD (changements de jeu). */
+export async function getVodChapters(id) {
+  const data = await gql(`query($id: ID!) { video(id: $id) { moments(first: 50, momentRequestType: VIDEO_CHAPTER_MARKERS) {
+    edges { node { positionMilliseconds durationMilliseconds description } }
+  } } }`, { id })
+  return (data?.video?.moments?.edges ?? [])
+    .map((e) => e.node)
+    .filter(Boolean)
+    .map((n) => ({ start: (n.positionMilliseconds ?? 0) / 1000, duration: (n.durationMilliseconds ?? 0) / 1000, title: n.description ?? '' }))
+    .sort((a, b) => a.start - b.start)
+}

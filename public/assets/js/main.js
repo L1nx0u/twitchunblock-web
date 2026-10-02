@@ -1039,6 +1039,7 @@ async function openVod(id, preset) {
 
   $('#watch-loading').hidden = true
   player.load({ links: links.links, kind: 'vod', startAt })
+  api.getVodChapters(vodId).then((ch) => { if (state.watch === token) player.setChapters(ch) }).catch(() => {})
   chat.openVod({ videoId: vodId, channelId: meta?.owner?.id ?? null, channelLogin: meta?.owner?.login ?? null, startAt })
   if (startAt) toast(t('resume_at', { t: formatClock(startAt) }))
 

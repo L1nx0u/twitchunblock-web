@@ -246,6 +246,7 @@ export class Player {
     this.kind = kind
     this.root.dataset.kind = kind
     this.el.progress.hidden = kind !== 'vod'
+    this.setChapters([])
     // Rempli tout de suite : sinon la pastille du direct restait vide tant
     // que la vidéo n'avait pas démarré.
     this.el.liveText.textContent = t('live_now')
@@ -521,12 +522,36 @@ export class Player {
     this.hoverTip(e)
   }
 
+  /** Chapitres de la VOD (changements de jeu) : repères sur la barre, et
+   *  nom du chapitre dans l'infobulle. */
+  setChapters(list) {
+    this.chapters = list ?? []
+    for (const n of this.el.progress.querySelectorAll('.p-chap')) n.remove()
+    // Durée réelle de la vidéo dès qu'elle est connue : le dernier chapitre
+    // d'une VOD encore en cours d'enregistrement a une durée nulle.
+    const d = this.video.duration
+    const total = Math.max(Number.isFinite(d) ? d : 0, ...this.chapters.map((c) => c.start + c.duration))
+    if (this.chapters.length < 2 || !total) return
+    if (!this.chapDurHooked) {
+      this.chapDurHooked = true
+      this.video.addEventListener('durationchange', () => { if (this.chapters?.length > 1) this.setChapters(this.chapters) })
+    }
+    for (const c of this.chapters.slice(1)) {
+      if (c.start >= total - 1) continue
+      const mark = document.createElement('i')
+      mark.className = 'p-chap'
+      mark.style.left = `${(c.start / total) * 100}%`
+      this.el.progress.appendChild(mark)
+    }
+  }
+
   hoverTip(e) {
     const target = this.positionFrom(e)
     if (target === null) return
     const rect = this.el.progress.getBoundingClientRect()
     const x = Math.max(24, Math.min(rect.width - 24, e.clientX - rect.left))
-    this.el.tip.textContent = formatClock(target)
+    const chap = this.chapters?.length > 1 ? this.chapters.findLast((c) => c.start <= target) : null
+    this.el.tip.textContent = chap ? `${formatClock(target)} · ${chap.title}` : formatClock(target)
     this.el.tip.style.left = `${x}px`
     this.el.tip.hidden = false
   }
