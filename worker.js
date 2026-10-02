@@ -61,17 +61,40 @@ async function handleSyncGet(url, env) {
 async function handleSyncPost(request, env) {
     if (request.method !== 'POST') return jsonError("Method Not Allowed", 405);
     if (!env.TWITCH_DATA) return jsonError("Erreur Serveur: KV 'TWITCH_DATA' non lié au Worker.", 500);
-    
-    try {
-        const body = await request.json();
-        const userId = body.userId;
-        if (!userId) return jsonError("User ID manquant", 400);
-        
-        await env.TWITCH_DATA.put(`user_${userId}`, JSON.stringify(body.data));
-        return jsonResponse({ success: true });
-    } catch (e) {
-        return jsonError("JSON invalide", 400);
+
+    let body;
+    try { body = await request.json(); } catch (e) { return jsonError("JSON invalide", 400); }
+    // Identifiant Twitch : des chiffres, rien d'autre — pas de clé libre dans le KV.
+    const userId = String(body.userId || '');
+    if (!/^\d{1,20}$/.test(userId)) return jsonError("User ID invalide", 400);
+
+    // L'app iOS et le site écrivent tous deux ici. Remplacer bêtement l'objet
+    // laissait chacun effacer ce que l'autre avait envoyé ; on fusionne :
+    //   • historique : celui du client fait foi (il a déjà fusionné le serveur
+    //     à l'ouverture, et c'est lui qui connaît les suppressions) ;
+    //   • progression : pour chaque VOD, la position la plus avancée ;
+    //   • champ absent de l'envoi : on garde celui du serveur.
+    const key = `user_${userId}`;
+    const incoming = body.data || {};
+    const current = (await env.TWITCH_DATA.get(key, { type: 'json' })) || {};
+    const progress = { ...(current.progress || {}) };
+    for (const [id, t] of Object.entries(incoming.progress || {})) {
+        const v = Number(t);
+        if (/^\d+$/.test(id) && Number.isFinite(v) && v > (Number(progress[id]) || 0)) progress[id] = Math.round(v);
     }
+    const next = {
+        history: Array.isArray(incoming.history) ? incoming.history.slice(0, 50) : (current.history || []),
+        progress
+    };
+
+    // Rien de neuf : pas d'écriture. Le palier gratuit du KV n'en offre
+    // que 1 000 par jour, contre 100 000 lectures.
+    const before = JSON.stringify({ history: current.history || [], progress: current.progress || {} });
+    const after = JSON.stringify(next);
+    if (before === after) return jsonResponse({ success: true, unchanged: true });
+
+    await env.TWITCH_DATA.put(key, after);
+    return jsonResponse({ success: true });
 }
 
 // --- HANDLERS CLASSIQUES ---

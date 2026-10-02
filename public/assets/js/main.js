@@ -161,9 +161,41 @@ async function pullSync() {
   renderRecentChannels()
 }
 
-const pushSync = debounce(() => {
-  if (session.userId) api.syncPush(session.userId, { history: store.history, progress: store.allProgress() })
-}, 5000)
+// Envoi économe. Avant, chaque sauvegarde de progression (toutes les 5 s de
+// lecture) partait au serveur : ~700 écritures par heure de VOD et par
+// personne, pour un KV gratuit plafonné à 1 000 écritures par jour au total.
+// Désormais un changement ne fait que marquer la sauvegarde « à envoyer » ;
+// l'envoi a lieu à la fermeture du lecteur, quand la page passe en arrière-
+// plan, ou au plus toutes les 10 minutes — et jamais si rien n'a changé.
+const SYNC_EVERY = 10 * 60_000
+let syncDirty = false
+let lastSyncBody = ''
+let lastSyncAt = 0
+
+/** Un changement à sauvegarder. Aucun envoi immédiat. */
+function pushSync() { syncDirty = true }
+
+function flushSync({ force = false } = {}) {
+  if (!syncDirty || !session.userId) return
+  if (!force && Date.now() - lastSyncAt < SYNC_EVERY) return
+  // Seule la progression des VODs de l'historique part : le Worker garde
+  // déjà les autres (il fusionne), inutile d'alourdir chaque envoi.
+  const vods = new Set(store.history.filter((h) => h.type === 'vod').map((h) => String(h.term)))
+  const progress = Object.fromEntries(Object.entries(store.allProgress())
+    .filter(([id]) => vods.has(id)).map(([id, t]) => [id, Math.round(t)]))
+  const data = { history: store.history, progress }
+  const body = JSON.stringify(data)
+  syncDirty = false
+  if (body === lastSyncBody) return
+  lastSyncBody = body
+  lastSyncAt = Date.now()
+  api.syncPush(session.userId, data)
+}
+
+setInterval(() => flushSync(), 60_000)
+// Fermeture d'onglet, changement d'appli sur mobile : dernier envoi.
+document.addEventListener('visibilitychange', () => { if (document.hidden) flushSync({ force: true }) })
+window.addEventListener('pagehide', () => flushSync({ force: true }))
 
 // ── Navigation ─────────────────────────────────────────────────────────────
 function setTab(tab) {
@@ -633,6 +665,9 @@ function setupPlayer() {
     onToggleChat: () => toggleChat(),
     isChatOpen: () => store.prefs.chatOpen,
     onTime: (cur, duration) => onPlaybackTime(cur, duration),
+    // Une pause est un bon moment pour sauvegarder — sans dépasser un envoi
+    // par minute si l'on enchaîne pause et lecture.
+    onPause: () => { if (Date.now() - lastSyncAt > 60_000) flushSync({ force: true }) },
     onError: () => showWatchError(state.watch?.kind === 'live' ? t('err_live') : t('err_vod')),
   })
   chat = new ChatView($('#chat'), {
@@ -847,6 +882,7 @@ function closeWatch() {
   const watch = $('#watch')
   if (player.isFullscreen) document.exitFullscreen?.().catch(() => {})
   stopPlayback()
+  flushSync({ force: true })
   state.watch = null
   watch.classList.remove('open')
   document.documentElement.classList.remove('watching')

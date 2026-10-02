@@ -53,7 +53,9 @@ export const store = {
   addHistory(term, type, display, extra = {}) {
     const key = String(term).toLowerCase()
     this.history = this.history.filter((h) => String(h.term).toLowerCase() !== key)
-    this.history.unshift({ term: String(term), type, display: display || String(term), ...extra })
+    // `addedAt` : l'app iOS l'exige pour relire l'historique ; sans lui, un
+    // seul élément venu du site faisait échouer toute la synchronisation.
+    this.history.unshift({ term: String(term), type, display: display || String(term), ...extra, addedAt: Date.now() })
     if (this.history.length > 30) this.history.length = 30
     this.saveHistory()
   },

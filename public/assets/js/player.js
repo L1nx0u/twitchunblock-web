@@ -144,7 +144,7 @@ export class Player {
 
     // ── Vidéo ────────────────────────────────────────────────────────────
     v.addEventListener('play', () => this.syncPlay())
-    v.addEventListener('pause', () => { this.syncPlay(); this.showUI() })
+    v.addEventListener('pause', () => { this.syncPlay(); this.showUI(); this.o.onPause?.() })
     v.addEventListener('waiting', () => { this.el.spinner.hidden = false })
     v.addEventListener('playing', () => { this.el.spinner.hidden = true; this.scheduleHide() })
     v.addEventListener('canplay', () => { this.el.spinner.hidden = true })
