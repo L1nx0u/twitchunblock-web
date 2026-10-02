@@ -30,6 +30,7 @@ const DEFAULT_PREFS = {
   chatOpen: true,
   shareUsage: true,
   chatSync: true,
+  autoRaid: true,
   volume: 1,
   muted: false,
 }

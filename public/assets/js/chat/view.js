@@ -18,6 +18,10 @@ import { $, debounce, esc, formatClock, icon } from '../util.js'
 
 const MAX_NODES = 300
 
+function formatPoints(n) {
+  return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n)
+}
+
 export class ChatView {
   /**
    * @param {HTMLElement} root
@@ -56,6 +60,7 @@ export class ChatView {
         <button class="icon-btn sm chat-hide" type="button" data-i18n-title="close">${icon('x', 18)}</button>
       </header>
       <div class="chat-pinned" hidden role="region"></div>
+      <div class="chat-events"></div>
       <button class="pin-chip" type="button" hidden>${icon('pin', 13)}<span data-i18n="pinned_short">${esc(t('pinned_short'))}</span></button>
       <div class="chat-list" role="log" aria-live="off" tabindex="0"></div>
       <button class="chat-resume" type="button" hidden>${icon('arrowDown', 14)}<span></span></button>
@@ -98,6 +103,7 @@ export class ChatView {
       inputRow: $('.chat-input-row', this.root),
       pinned: $('.chat-pinned', this.root),
       pinBtn: $('.pin-chip', this.root),
+      events: $('.chat-events', this.root),
     }
 
     this.el.list.addEventListener('scroll', () => this.onScroll(), { passive: true })
@@ -254,6 +260,101 @@ export class ChatView {
     }
   }
 
+  /** Changement signalé en temps réel (Hermes) : relecture immédiate. */
+  refreshPinned() {
+    if (this.mode !== 'live' || !this.channel) return
+    const channel = this.channel
+    fetchPinned(channel).then((pin) => {
+      if (this.mode === 'live' && this.channel === channel) this.renderPinned(pin)
+    }).catch(() => {})
+  }
+
+  // ── Raid ───────────────────────────────────────────────────────────────
+  /** Bandeau « X part en raid chez Y » avec compte à rebours. */
+  showRaid(raid, { onFollow, onCancel, auto }) {
+    let box = $('.chat-raid', this.el.events)
+    if (!box) {
+      box = document.createElement('div')
+      box.className = 'chat-raid'
+      this.el.events.prepend(box)
+    }
+    const target = esc(raid.target_display_name || raid.target_login || '')
+    const avatar = /^https:\/\//.test(raid.target_profile_image ?? '') ? raid.target_profile_image.replace('%s', '70x70') : ''
+    box.innerHTML = `
+      ${avatar ? `<img class="raid-avatar" src="${esc(avatar)}" alt="">` : `<span class="raid-avatar">${icon('users', 16)}</span>`}
+      <div class="raid-text">
+        <b>${esc(t('raid_title', { u: target }))}</b>
+        <span class="raid-sub">${esc(t('raid_viewers', { n: raid.viewer_count ?? 0 }))}${auto ? ` · <span class="raid-count"></span>` : ''}</span>
+      </div>
+      <button class="btn primary sm" type="button" data-raid-follow>${esc(t('raid_follow'))}</button>
+      ${auto ? `<button class="icon-btn xs" type="button" data-raid-cancel aria-label="${esc(t('cancel'))}">${icon('x', 14)}</button>` : ''}`
+    $('[data-raid-follow]', box).onclick = () => onFollow()
+    const cancel = $('[data-raid-cancel]', box)
+    if (cancel) cancel.onclick = () => { onCancel(); this.hideRaid() }
+    // Compte à rebours jusqu'au départ (le streamer peut le lancer avant).
+    clearInterval(this.raidTimer)
+    const ends = Date.now() + (raid.force_raid_now_seconds ?? 90) * 1000
+    const tickRaid = () => {
+      const el = $('.raid-count', box)
+      if (el) el.textContent = t('raid_in', { n: Math.max(0, Math.ceil((ends - Date.now()) / 1000)) })
+    }
+    tickRaid()
+    this.raidTimer = setInterval(tickRaid, 1000)
+  }
+
+  hideRaid() {
+    clearInterval(this.raidTimer)
+    $('.chat-raid', this.el.events)?.remove()
+  }
+
+  // ── Prédiction ─────────────────────────────────────────────────────────
+  /** Carte de prédiction en lecture seule : issues en %, points, compte à
+   *  rebours, puis l'issue gagnante une minute après la résolution. */
+  setPrediction(ev) {
+    clearInterval(this.predTimer)
+    clearTimeout(this.predHide)
+    let box = $('.chat-pred', this.el.events)
+    const status = ev?.status
+    if (!ev || status === 'CANCELED' || status === 'CANCEL_PENDING') { box?.remove(); return }
+    if (!box) {
+      box = document.createElement('div')
+      box.className = 'chat-pred'
+      this.el.events.append(box)
+      box.addEventListener('click', () => box.classList.toggle('open'))
+    }
+    const outcomes = ev.outcomes ?? []
+    const total = Math.max(1, outcomes.reduce((n, o) => n + (o.total_points ?? 0), 0))
+    const winner = ev.winning_outcome_id
+    const colors = { BLUE: '#387aff', PINK: '#f5009b' }
+    box.innerHTML = `
+      <div class="pred-head">
+        ${icon('sparkles', 14)}
+        <b>${esc(ev.title ?? '')}</b>
+        <span class="pred-state">${esc(status === 'RESOLVED' ? t('pred_result') : status === 'LOCKED' ? t('pred_locked') : '')}</span>
+      </div>
+      <div class="pred-body">
+        ${outcomes.map((o) => {
+          const pct = Math.round(((o.total_points ?? 0) / total) * 100)
+          const color = winner && winner !== o.id ? 'var(--muted)' : colors[o.color] ?? 'var(--purple)'
+          return `<div class="pred-row${winner === o.id ? ' win' : ''}">
+            <div class="pred-label"><span>${winner === o.id ? '🏆 ' : ''}${esc(o.title ?? '')}</span><span>${pct}% · ${esc(formatPoints(o.total_points ?? 0))} · ${esc(String(o.total_users ?? 0))} 👤</span></div>
+            <div class="pred-bar"><i style="width:${pct}%;background:${color}"></i></div>
+          </div>`
+        }).join('')}
+      </div>`
+    if (status === 'ACTIVE' && ev.created_at && ev.prediction_window_seconds) {
+      const ends = Date.parse(ev.created_at) + ev.prediction_window_seconds * 1000
+      const el = $('.pred-state', box)
+      const tickPred = () => {
+        const s = Math.max(0, Math.round((ends - Date.now()) / 1000))
+        el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+      }
+      tickPred()
+      this.predTimer = setInterval(tickPred, 1000)
+    }
+    if (status === 'RESOLVED') this.predHide = setTimeout(() => box.remove(), 60_000)
+  }
+
   /** « Épinglé par X · il y a 3 min · 12 min restantes » */
   updatePinMeta() {
     const pin = this.pin
@@ -291,6 +392,10 @@ export class ChatView {
   close() {
     clearInterval(this.pinTimer)
     clearTimeout(this.pinExpiry)
+    clearInterval(this.raidTimer)
+    clearInterval(this.predTimer)
+    clearTimeout(this.predHide)
+    this.el.events.innerHTML = ''
     clearInterval(this.delayTimer)
     this.delayTimer = null
     this.delayed = []

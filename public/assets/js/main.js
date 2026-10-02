@@ -7,6 +7,7 @@ import { store } from './store.js'
 import { LANGS, applyStatic, deviceLang, initLang, setLang, t, lang } from './i18n.js'
 import { Player, loadHls, qualityLabel } from './player.js'
 import { ChatView } from './chat/view.js'
+import { Hermes } from './chat/hermes.js'
 import * as usage from './usage.js'
 import {
   $, $$, debounce, esc, formatClock, formatDuration, formatViewers, icon, isIOS, isMobile,
@@ -34,6 +35,8 @@ let chat = null
 let infoTimer = null
 let uptimeTimer = null
 let channelTimer = null
+/** Événements temps réel de la chaîne regardée (raid, fin du live…). */
+let hermes = null
 let lastSave = 0
 
 // ── Démarrage ──────────────────────────────────────────────────────────────
@@ -764,6 +767,7 @@ async function openLive(rawLogin) {
   player.load({ links: links.links, kind: 'live' })
   chat.openLive({ channel: login, channelId: info?.id ?? null })
   renderLiveInfo(info, links)
+  if (info?.id) startHermes(token, login, info.id)
 
   store.addHistory(login, 'channel', info?.displayName || login, { avatar: info?.profileImageURL || links.avatar || '' })
   pushSync()
@@ -776,7 +780,11 @@ async function openLive(rawLogin) {
   infoTimer = setInterval(async () => {
     if (state.watch !== token) return clearInterval(infoTimer)
     const fresh = await api.getChannelInfo(login).catch(() => null)
-    if (fresh && state.watch === token) { token.info = fresh; renderLiveInfo(fresh, links) }
+    if (!fresh || state.watch !== token) return
+    // Repli si Hermes n'a rien dit : le live a disparu entre deux relectures.
+    if (!fresh.stream && token.info?.stream) return liveEnded(token)
+    token.info = fresh
+    renderLiveInfo(fresh, links)
   }, 30_000)
   clearInterval(uptimeTimer)
   uptimeTimer = setInterval(() => {
@@ -784,6 +792,77 @@ async function openLive(rawLogin) {
     const el = $('#watch-uptime')
     if (el && token.startedAt) el.textContent = uptimeSince(token.startedAt)
   }, 1000)
+}
+
+// ── Temps réel (Hermes) ──────────────────────────────────────────────────
+function startHermes(token, login, channelId) {
+  hermes?.stop()
+  hermes = new Hermes({
+    topics: [`raid.${channelId}`, `video-playback-by-id.${channelId}`, `predictions-channel-v1.${channelId}`, `pinned-chat-updates-v1.${channelId}`],
+    onEvent: (topic, data) => {
+      if (state.watch !== token) return
+      const kind = topic.split('.')[0]
+      if (kind === 'video-playback-by-id') {
+        if (data.type === 'viewcount' && Number.isFinite(data.viewers) && token.info?.stream) {
+          token.info.stream.viewersCount = data.viewers
+          renderLiveInfo(token.info, token.links)
+        } else if (data.type === 'stream-down') {
+          // Laisse au raid éventuel le temps d'arriver avant d'afficher la fin.
+          setTimeout(() => { if (state.watch === token) liveEnded(token) }, 4000)
+        }
+      } else if (kind === 'raid') onRaid(token, data)
+      else if (kind === 'predictions-channel-v1') chat.setPrediction(data.data?.event)
+      else if (kind === 'pinned-chat-updates-v1') chat.refreshPinned()
+    },
+  })
+}
+
+/** Raid sortant : bandeau dans le chat, puis on suit le streamer chez sa
+ *  cible au départ du raid (réglable). */
+function onRaid(token, data) {
+  const raid = data.raid
+  if (!raid?.target_login) return
+  const target = api.cleanLogin(raid.target_login)
+  if (!target) return
+  token.raidTarget = { login: target, name: raid.target_display_name || target }
+  const follow = () => { chat.hideRaid(); openLive(target) }
+  if (data.type === 'raid_update_v2' || data.type === 'raid_update') {
+    chat.showRaid(raid, {
+      auto: store.prefs.autoRaid,
+      onFollow: follow,
+      onCancel: () => { token.raidCancelled = true },
+    })
+  } else if (data.type === 'raid_go_v2' || data.type === 'raid_go') {
+    if (store.prefs.autoRaid && !token.raidCancelled) {
+      toast(t('raid_following', { u: token.raidTarget.name }))
+      follow()
+    } else chat.showRaid(raid, { auto: false, onFollow: follow, onCancel: () => {} })
+  } else if (data.type === 'raid_cancel_v2' || data.type === 'raid_cancel') {
+    token.raidTarget = null
+    chat.hideRaid()
+  }
+}
+
+/** Fin du live : un écran à la place de l'image figée, avec la suite. */
+function liveEnded(token) {
+  if (state.watch !== token || token.ended) return
+  token.ended = true
+  if (token.info) token.info.stream = null
+  clearInterval(uptimeTimer)
+  const box = $('#watch-ended')
+  const raid = token.raidTarget
+  box.innerHTML = `
+    <span class="ended-ic">${icon('radio', 30)}</span>
+    <p class="ended-title">${esc(t('live_ended'))}</p>
+    <div class="ended-actions">
+      ${raid ? `<button class="btn primary" type="button" data-ended-raid>${icon('play', 16)}<span>${esc(t('watch_target', { u: raid.name }))}</span></button>` : ''}
+      <button class="btn" type="button" data-action="see-vods">${icon('film', 16)}<span>${esc(t('see_vods'))}</span></button>
+    </div>`
+  const btn = $('[data-ended-raid]', box)
+  if (btn) btn.onclick = () => openLive(raid.login)
+  $('#watch').classList.add('ended')
+  player.video?.pause()
+  $('#watch-sub').innerHTML = `<span class="pill sm">${esc(t('offline'))}</span>`
 }
 
 function renderLiveInfo(info, links) {
@@ -883,6 +962,9 @@ function onPlaybackTime(cur, duration) {
 }
 
 function stopPlayback() {
+  hermes?.stop()
+  hermes = null
+  $('#watch')?.classList.remove('ended')
   clearInterval(infoTimer)
   clearInterval(uptimeTimer)
   player.destroy()
@@ -1008,6 +1090,7 @@ function openSettings() {
     <div class="sheet-section">
       <h3>${esc(t('chat_settings'))}</h3>
       ${toggle('set-sync', t('chat_sync'), p.chatSync, t('chat_sync_sub'))}
+      ${toggle('set-raid', t('auto_raid'), p.autoRaid, t('auto_raid_sub'))}
       ${toggle('set-ts', t('timestamps'), p.timestamps)}
       ${toggle('set-deleted', t('keep_deleted'), p.keepDeleted)}
       ${toggle('set-history', t('load_history'), p.loadHistory)}
@@ -1056,6 +1139,7 @@ function openSettings() {
     const id = e.target.id
     if (id === 'set-ts') p.timestamps = e.target.checked
     if (id === 'set-sync') p.chatSync = e.target.checked
+    if (id === 'set-raid') p.autoRaid = e.target.checked
     if (id === 'set-deleted') p.keepDeleted = e.target.checked
     if (id === 'set-history') p.loadHistory = e.target.checked
     if (id === 'set-usage') {
