@@ -40,8 +40,6 @@ export const store = {
     else localStorage.removeItem('twitch_token')
   },
 
-  get useProxy() { return localStorage.getItem('twitch_use_proxy') !== 'false' },
-  set useProxy(v) { localStorage.setItem('twitch_use_proxy', String(Boolean(v))) },
 
   // ── Préférences ─────────────────────────────────────────────────────────
   prefs: { ...DEFAULT_PREFS, ...read('tu_prefs', {}) },

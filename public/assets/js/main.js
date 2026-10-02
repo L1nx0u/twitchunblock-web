@@ -47,6 +47,7 @@ async function boot() {
   setupPlayer()
   renderContinue()
   renderRecentChannels()
+  startLiveTicker()
 
   // Jeton déjà là (session précédente, ou retour de connexion sans popup).
   if (store.token) await adoptToken(store.token, { silent: true })
@@ -278,7 +279,7 @@ function streamCard(s) {
         <img src="${esc(thumb(s.thumb, 440, 248))}" alt="" loading="lazy" decoding="async">
         <span class="pill live">${esc(t('live_now'))}</span>
         <span class="pill viewers">${icon('eye', 12)}${esc(formatViewers(s.viewers))}</span>
-        ${s.startedAt ? `<span class="pill uptime">${esc(uptimeSince(s.startedAt))}</span>` : ''}
+        ${s.startedAt ? `<span class="pill uptime" data-started="${esc(s.startedAt)}">${esc(uptimeSince(s.startedAt))}</span>` : ''}
       </div>
       <div class="card-body">
         ${s.avatar ? `<img class="avatar sm" src="${esc(s.avatar)}" alt="" loading="lazy">` : `<span class="avatar sm placeholder">${esc((s.name || '?')[0])}</span>`}
@@ -351,7 +352,7 @@ function renderContinue() {
   }).join('')
 }
 
-async function loadFollowed() {
+async function loadFollowed({ silent = false } = {}) {
   const grid = $('#followed-grid')
   const head = $('#followed-block')
   state.loaded.followed = Date.now()
@@ -367,29 +368,65 @@ async function loadFollowed() {
   }
   head.classList.remove('logged-out')
   if (!session.userId) return
-  grid.innerHTML = skeleton(4)
+  if (!silent) grid.innerHTML = skeleton(4)
   try {
     const streams = await api.getFollowedStreams(session.userId)
     grid.innerHTML = streams.length ? streams.map(streamCard).join('') : emptyState(t('no_live_followed'), 'heart')
   } catch (err) {
     if (err.status === 401) { await adoptToken(session.token); return }
-    grid.innerHTML = emptyState(t('err_loading'), 'refresh')
+    // En rafraîchissement silencieux, une panne passagère garde l'existant.
+    if (!silent) grid.innerHTML = emptyState(t('err_loading'), 'refresh')
   }
 }
 
-async function loadTop(language) {
+async function loadTop(language, { silent = false } = {}) {
   state.topLang = language
   state.loaded.top = Date.now()
   for (const b of $$('#top-seg [data-lang]')) b.classList.toggle('active', b.dataset.lang === language)
   const grid = $('#top-grid')
-  grid.innerHTML = skeleton(8)
+  if (!silent) grid.innerHTML = skeleton(8)
   try {
     const streams = await api.getTopStreams(language === 'all' ? null : language)
     if (state.topLang !== language) return
     grid.innerHTML = streams.length ? streams.map(streamCard).join('') : emptyState(t('no_live'))
   } catch {
-    grid.innerHTML = emptyState(t('err_loading'), 'refresh')
+    if (!silent) grid.innerHTML = emptyState(t('err_loading'), 'refresh')
   }
+}
+
+/**
+ * Accueil vivant : les durées de live avancent chaque seconde, et les
+ * listes (spectateurs, nouveaux lives) sont relues chaque minute sans
+ * squelette, tant que l'onglet est affiché et la page visible.
+ */
+function startLiveTicker() {
+  setInterval(() => {
+    for (const el of document.querySelectorAll('[data-started]')) {
+      el.textContent = uptimeSince(el.dataset.started)
+    }
+    if (state.tab !== 'discover' || document.hidden || !$('#watch').hidden && !$('#watch').classList.contains('minimized')) return
+    const now = Date.now()
+    if (now - state.loaded.top > 60_000) loadTop(state.topLang, { silent: true })
+    if (session.userId && now - state.loaded.followed > 60_000) loadFollowed({ silent: true })
+  }, 1000)
+}
+
+function creditsHtml() {
+  const items = [
+    ['Twitch', 'https://www.twitch.tv'],
+    ['hls.js', 'https://github.com/video-dev/hls.js'],
+    ['BetterTTV', 'https://betterttv.com'],
+    ['FrankerFaceZ', 'https://www.frankerfacez.com'],
+    ['7TV', 'https://7tv.app'],
+    ['recent-messages', 'https://recent-messages.robotty.de'],
+    ['Lucide', 'https://lucide.dev'],
+    ['Inter', 'https://rsms.me/inter/'],
+  ]
+  return `
+    <p class="credits-title">${esc(t('credits'))}</p>
+    <p class="muted small credits">${esc(t('made_by'))} <a href="https://github.com/MXFia19" target="_blank" rel="noopener">MXFia19</a>.
+      ${esc(t('thanks'))} ${items.map(([n, u]) => `<a href="${u}" target="_blank" rel="noopener">${esc(n)}</a>`).join(', ')}.
+      ${esc(t('not_affiliated'))}</p>`
 }
 
 // ── Page streamer ──────────────────────────────────────────────────────────
@@ -847,7 +884,7 @@ function currentStreamUrl() {
   if (!links) return ''
   const link = links[player.quality] ?? Object.values(links)[0] ?? ''
   // Proxy coupé : l'appli externe reçoit l'adresse directe de Twitch.
-  return store.useProxy ? link : api.directUrl(link)
+  return api.EXTERNAL_LINKS_VIA_PROXY ? link : api.directUrl(link)
 }
 
 function openInSheet() {
@@ -905,10 +942,6 @@ function openSettings() {
       <p class="muted small lang-hint">${esc(t('lang_auto_sub', { l: LANGS.find((x) => x.id === deviceLang())?.label ?? 'English' }))}</p>
     </div>
     <div class="sheet-section">
-      <h3>${esc(t('playback'))}</h3>
-      ${toggle('set-proxy', t('proxy'), store.useProxy, t('proxy_sub'))}
-    </div>
-    <div class="sheet-section">
       <h3>${esc(t('chat_settings'))}</h3>
       ${toggle('set-ts', t('timestamps'), p.timestamps)}
       ${toggle('set-deleted', t('keep_deleted'), p.keepDeleted)}
@@ -918,7 +951,15 @@ function openSettings() {
         <span class="size-ctl"><input type="range" id="set-size" min="12" max="20" step="1" value="${p.chatSize}"><output>${p.chatSize}</output></span>
       </label>
     </div>
-    <div class="sheet-section"><h3>${esc(t('about'))}</h3><p class="muted small">${esc(t('about_text'))}</p></div>`)
+    <div class="sheet-section">
+      <h3>${esc(t('about'))}</h3>
+      <p class="muted small">${esc(t('about_text'))}</p>
+      <div class="sheet-group">
+        <a class="sheet-row" href="${api.GITHUB_URL}" target="_blank" rel="noopener">${icon('github', 18)}<span>${esc(t('source_site'))}</span>${icon('external', 16)}</a>
+        <a class="sheet-row" href="${api.APP_GITHUB_URL}" target="_blank" rel="noopener">${icon('github', 18)}<span>${esc(t('source_app'))}</span>${icon('external', 16)}</a>
+      </div>
+      ${creditsHtml()}
+    </div>`)
   renderSettingsAccount()
 
   const sheet = $('#sheet')
@@ -942,7 +983,6 @@ function openSettings() {
   }
   sheet.onchange = (e) => {
     const id = e.target.id
-    if (id === 'set-proxy') store.useProxy = e.target.checked
     if (id === 'set-ts') p.timestamps = e.target.checked
     if (id === 'set-deleted') p.keepDeleted = e.target.checked
     if (id === 'set-history') p.loadHistory = e.target.checked

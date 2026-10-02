@@ -6,6 +6,13 @@
 import { store } from './store.js'
 
 export const API_URL = 'https://test2.kurzmathis4.workers.dev'
+/** Liens donnés aux applis externes (VLC, Outplayer, Infuse) : par le proxy
+ *  (`true`) ou en direct depuis Twitch (`false`, ne charge pas le Worker).
+ *  Décidé ici plutôt que par chaque visiteur. La lecture sur le site, elle,
+ *  passe toujours par le proxy : le CDN des VODs n'accepte que twitch.tv. */
+export const EXTERNAL_LINKS_VIA_PROXY = true
+export const GITHUB_URL = 'https://github.com/MXFia19/TwitchUnblock-Web'
+export const APP_GITHUB_URL = 'https://github.com/MXFia19/TwitchUnblock'
 export const HELIX_CLIENT_ID = 'uyvqdqrz614y5wx5l4kev6c4ln7u9a'
 export const GQL_CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko'
 /** Seule adresse de retour déclarée chez Twitch : elle ne doit pas changer. */

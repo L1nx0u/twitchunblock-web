@@ -48,10 +48,10 @@ const STRINGS = {
     chatters: 'Présents', show_pinned: 'Afficher le message épinglé', pinned: 'Message épinglé', pinned_by: 'Épinglé par {u}',
     // Réglages
     settings: 'Réglages', language: 'Langue', lang_auto: 'Appareil', lang_auto_sub: 'Suit la langue de ton appareil ({l}).', account: 'Compte', playback: 'Lecture',
-    proxy: 'Proxy pour les applis externes', proxy_sub: 'Concerne les liens ouverts dans VLC, Outplayer ou Infuse. Coupé, l’appli reçoit l’adresse directe de Twitch et ne charge pas le serveur. La lecture sur le site passe toujours par le proxy.',
     chat_settings: 'Chat', timestamps: 'Afficher l’heure', keep_deleted: 'Garder les messages supprimés (barrés)',
     load_history: 'Charger les messages précédents', chat_size: 'Taille du texte',
     connected_as: 'Connecté en tant que {u}', not_connected: 'Non connecté',
+    source_site: 'Code source du site', source_app: 'Code source de l’app iOS', credits: 'Crédits', made_by: 'Créé par', thanks: 'Merci à', not_affiliated: 'Projet indépendant, sans lien avec Twitch.',
     about: 'À propos', about_text: 'Aucune donnée n’est revendue. L’historique reste dans ton navigateur et, si tu es connecté, dans une sauvegarde liée à ton compte.',
   },
   en: {
@@ -96,10 +96,10 @@ const STRINGS = {
     deleted: 'message deleted', first_msg: 'First message', reply_to: 'Replying to @{u}',
     chatters: 'Present', show_pinned: 'Show pinned message', pinned: 'Pinned message', pinned_by: 'Pinned by {u}',
     settings: 'Settings', language: 'Language', lang_auto: 'Device', lang_auto_sub: 'Follows your device language ({l}).', account: 'Account', playback: 'Playback',
-    proxy: 'Proxy for external apps', proxy_sub: 'Applies to links opened in VLC, Outplayer or Infuse. Off, the app gets Twitch’s direct address and doesn’t load the server. Playback on the site always goes through the proxy.',
     chat_settings: 'Chat', timestamps: 'Show timestamps', keep_deleted: 'Keep deleted messages (struck through)',
     load_history: 'Load earlier messages', chat_size: 'Text size',
     connected_as: 'Logged in as {u}', not_connected: 'Not logged in',
+    source_site: 'Website source code', source_app: 'iOS app source code', credits: 'Credits', made_by: 'Made by', thanks: 'Thanks to', not_affiliated: 'Independent project, not affiliated with Twitch.',
     about: 'About', about_text: 'No data is sold. Your history stays in your browser and, if you log in, in a backup tied to your account.',
   },
   es: {
@@ -144,10 +144,10 @@ const STRINGS = {
     deleted: 'mensaje eliminado', first_msg: 'Primer mensaje', reply_to: 'Respondiendo a @{u}',
     chatters: 'Presentes', show_pinned: 'Mostrar mensaje fijado', pinned: 'Mensaje fijado', pinned_by: 'Fijado por {u}',
     settings: 'Ajustes', language: 'Idioma', lang_auto: 'Dispositivo', lang_auto_sub: 'Sigue el idioma de tu dispositivo ({l}).', account: 'Cuenta', playback: 'Reproducción',
-    proxy: 'Proxy para apps externas', proxy_sub: 'Afecta a los enlaces abiertos en VLC, Outplayer o Infuse. Desactivado, la app recibe la dirección directa de Twitch y no carga el servidor. La reproducción en el sitio siempre pasa por el proxy.',
     chat_settings: 'Chat', timestamps: 'Mostrar la hora', keep_deleted: 'Mantener mensajes eliminados (tachados)',
     load_history: 'Cargar mensajes anteriores', chat_size: 'Tamaño del texto',
     connected_as: 'Conectado como {u}', not_connected: 'Sin conectar',
+    source_site: 'Código fuente del sitio', source_app: 'Código fuente de la app iOS', credits: 'Créditos', made_by: 'Creado por', thanks: 'Gracias a', not_affiliated: 'Proyecto independiente, sin relación con Twitch.',
     about: 'Acerca de', about_text: 'No se vende ningún dato. Tu historial se queda en tu navegador y, si inicias sesión, en una copia ligada a tu cuenta.',
   },
 }
