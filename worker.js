@@ -15,6 +15,13 @@ const REQUEST_HEADERS = {
     'Origin': 'https://www.twitch.tv'
 };
 
+// Formats Twitch : tout paramètre qui finit dans une requête GQL ou une
+// adresse est vérifié d'abord. Avant, `name` était collé tel quel dans le
+// texte de la requête GQL — un guillemet suffisait à en réécrire le contenu.
+const LOGIN_RE = /^[a-zA-Z0-9_]{1,25}$/;
+const VOD_ID_RE = /^\d{1,20}$/;
+const CURSOR_RE = /^[A-Za-z0-9+/=_-]{1,500}$/;
+
 const QUALITY_ORDER = ['chunked', 'source', '1080p60', '1080p30', '720p60', '720p30', '480p30', '360p30', '160p30', 'audio_only'];
 
 export default {
@@ -38,12 +45,14 @@ export default {
 
                 // Comptage d'utilisation (app iOS et site)
                 case '/api/ping': return await handlePing(request, env);
-                case '/api/stats': return await handleStats(env);
+                case '/api/stats': return await cachedStats(request, env, ctx);
                 
                 default: return new Response("Not Found", { status: 404, headers: RESPONSE_HEADERS });
             }
         } catch (e) {
-            return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json' } });
+            // Pas de message interne renvoyé au client : seulement dans les logs.
+            console.error(e);
+            return new Response(JSON.stringify({ error: "Erreur interne" }), { status: 500, headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json' } });
         }
     }
 };
@@ -101,8 +110,12 @@ async function handleSyncPost(request, env) {
     if (request.method !== 'POST') return jsonError("Method Not Allowed", 405);
     if (!env.TWITCH_DATA) return jsonError("Erreur Serveur: KV 'TWITCH_DATA' non lié au Worker.", 500);
 
+    // Taille bornée : une sauvegarde normale pèse quelques kilo-octets.
+    const raw = await request.text();
+    if (raw.length > SYNC_MAX_BYTES) return jsonError("Sauvegarde trop volumineuse", 413);
     let body;
-    try { body = await request.json(); } catch (e) { return jsonError("JSON invalide", 400); }
+    try { body = JSON.parse(raw); } catch (e) { return jsonError("JSON invalide", 400); }
+    if (!body || typeof body !== 'object') return jsonError("JSON invalide", 400);
     const userId = String(body.userId || '');
     const denied = await authorizeSync(request, userId);
     if (denied) return denied;
@@ -121,8 +134,16 @@ async function handleSyncPost(request, env) {
         const v = Number(t);
         if (/^\d+$/.test(id) && Number.isFinite(v) && v > (Number(progress[id]) || 0)) progress[id] = Math.round(v);
     }
+    // Progression bornée aux VODs les plus récentes (les identifiants Twitch
+    // croissent avec le temps) : la fusion « garder le plus avancé » ne
+    // retirait jamais rien, l'objet grossissait sans fin.
+    const ids = Object.keys(progress);
+    if (ids.length > SYNC_MAX_PROGRESS) {
+        ids.sort((a, b) => (BigInt(b) > BigInt(a) ? 1 : -1));
+        for (const id of ids.slice(SYNC_MAX_PROGRESS)) delete progress[id];
+    }
     const next = {
-        history: Array.isArray(incoming.history) ? incoming.history.slice(0, 50) : (current.history || []),
+        history: Array.isArray(incoming.history) ? incoming.history.slice(0, 50).map(cleanHistoryItem).filter(Boolean) : (current.history || []),
         progress
     };
 
@@ -136,16 +157,34 @@ async function handleSyncPost(request, env) {
     return jsonResponse({ success: true });
 }
 
+const SYNC_MAX_BYTES = 256 * 1024;
+const SYNC_MAX_PROGRESS = 500;
+// Seuls les champs connus, en texte de longueur raisonnable : la sauvegarde
+// ne doit pas servir à stocker n'importe quoi.
+function cleanHistoryItem(it) {
+    if (!it || typeof it !== 'object') return null;
+    const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : undefined);
+    const term = str(it.term, 100);
+    if (!term || (it.type !== 'vod' && it.type !== 'channel')) return null;
+    const out = { term, type: it.type, display: str(it.display, 300) || term };
+    const thumb = str(it.thumb, 500); if (thumb && /^https:\/\//.test(thumb)) out.thumb = thumb;
+    const avatar = str(it.avatar, 500); if (avatar && /^https:\/\//.test(avatar)) out.avatar = avatar;
+    const streamer = str(it.streamer, 50); if (streamer) out.streamer = streamer;
+    const addedAt = Number(it.addedAt); if (Number.isFinite(addedAt) && addedAt > 0) out.addedAt = addedAt;
+    return out;
+}
+
 // --- HANDLERS CLASSIQUES ---
 async function handleGetVideos(url) {
-    const name = url.searchParams.get('name');
-    const cursor = url.searchParams.get('cursor');
-    if (!name) return jsonError("Nom manquant");
+    const name = (url.searchParams.get('name') || '').trim();
+    const cursor = url.searchParams.get('cursor') || null;
+    if (!LOGIN_RE.test(name)) return jsonError("Nom invalide", 400);
+    if (cursor && !CURSOR_RE.test(cursor)) return jsonError("Curseur invalide", 400);
 
-    const query = `query { user(login: "${name}") { profileImageURL(width: 70) videos(first: 100, type: ARCHIVE, sort: TIME${cursor ? `, after: "${cursor}"` : ""}) { edges { node { id, title, publishedAt, lengthSeconds, viewCount, previewThumbnailURL(height: 180, width: 320) } } pageInfo { hasNextPage, endCursor } } } }`;
+    const query = `query($login: String!, $after: Cursor) { user(login: $login) { profileImageURL(width: 70) videos(first: 100, type: ARCHIVE, sort: TIME, after: $after) { edges { node { id, title, publishedAt, lengthSeconds, viewCount, previewThumbnailURL(height: 180, width: 320) } } pageInfo { hasNextPage, endCursor } } } }`;
     
     try {
-        const data = await twitchGQL(query);
+        const data = await twitchGQL(query, { login: name.toLowerCase(), after: cursor });
         const user = data.data.user;
         if (!user || !user.videos) return jsonError("Aucune vidéo", 404);
         
@@ -154,11 +193,12 @@ async function handleGetVideos(url) {
             pagination: user.videos.pageInfo,
             avatar: user.profileImageURL
         });
-    } catch (e) { return jsonError(e.message, 500); }
+    } catch (e) { console.error(e); return jsonError("Twitch injoignable", 502); }
 }
 
 async function handleGetLive(url, workerOrigin) {
-    const name = url.searchParams.get('name'); if (!name) return jsonError("Nom manquant"); const login = name.trim().toLowerCase();
+    const login = (url.searchParams.get('name') || '').trim().toLowerCase();
+    if (!LOGIN_RE.test(login)) return jsonError("Nom invalide", 400);
     const useProxy = true; // On force toujours le proxy pour les Lives (CORS)
     
     let m3u8Content = "";
@@ -177,7 +217,7 @@ async function handleGetLive(url, workerOrigin) {
         // --- TENTATIVE 2 : Plan de Secours Officiel Twitch ---
         try {
             const token = await getAccessToken(login, true); if (!token) return jsonError("Offline", 404);
-            const resUsher = await fetch(`https://usher.ttvnw.net/api/channel/hls/${login}.m3u8?allow_source=true&allow_audio_only=true&allow_spectre=true&player=twitchweb&playlist_include_framerate=true&segment_preference=4&sig=${token.signature}&token=${encodeURIComponent(token.value)}`, { headers: REQUEST_HEADERS });
+            const resUsher = await fetch(`https://usher.ttvnw.net/api/channel/hls/${login}.m3u8?allow_source=true&allow_audio_only=true&allow_spectre=true&player=twitchweb&playlist_include_framerate=true&segment_preference=4&sig=${encodeURIComponent(token.signature)}&token=${encodeURIComponent(token.value)}`, { headers: REQUEST_HEADERS });
             if (!resUsher.ok) throw new Error("Stream introuvable");
             m3u8Content = await resUsher.text();
             masterUrl = resUsher.url;
@@ -191,7 +231,7 @@ async function handleGetLive(url, workerOrigin) {
     
     // Récupération des infos du stream (Titre, Jeu, Avatar) pour un bel affichage
     try {
-        const meta = await twitchGQL(`query { user(login: "${login}") { profileImageURL(width: 70) broadcastSettings { title game { displayName } } } }`);
+        const meta = await twitchGQL(`query($login: String!) { user(login: $login) { profileImageURL(width: 70) broadcastSettings { title game { displayName } } } }`, { login });
         const info = meta.data?.user?.broadcastSettings, avatar = meta.data?.user?.profileImageURL;
         return jsonResponse({ links, best: links["Source"] || links["Auto"], title: info?.title || "Live", game: info?.game?.displayName || "", thumbnail: `https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-640x360.jpg`, avatar: avatar || "" });
     } catch(e) {
@@ -201,14 +241,14 @@ async function handleGetLive(url, workerOrigin) {
 }
 
 async function handleGetM3U8(url, workerOrigin) {
-    const vodId = url.searchParams.get('id'); if (!vodId) return jsonError("ID manquant");
+    const vodId = url.searchParams.get('id') || ''; if (!VOD_ID_RE.test(vodId)) return jsonError("ID invalide", 400);
     const useProxy = url.searchParams.get('proxy') !== 'false';
     
     // --- 1. Tentative Normale ---
     try {
         const token = await getAccessToken(vodId, false);
         if (token) {
-            const res = await fetch(`https://usher.ttvnw.net/vod/${vodId}.m3u8?nauth=${token.value}&nauthsig=${token.signature}&allow_source=true&player_backend=mediaplayer`, { headers: REQUEST_HEADERS });
+            const res = await fetch(`https://usher.ttvnw.net/vod/${vodId}.m3u8?nauth=${encodeURIComponent(token.value)}&nauthsig=${encodeURIComponent(token.signature)}&allow_source=true&player_backend=mediaplayer`, { headers: REQUEST_HEADERS });
             if (res.ok) { 
                 const links = parseAndProxyM3U8(await res.text(), res.url, workerOrigin, true, useProxy); 
                 return jsonResponse({ links, best: links["Source"] || links["Auto"] }); 
@@ -218,7 +258,7 @@ async function handleGetM3U8(url, workerOrigin) {
     
     // --- 2. Plan de Secours ---
     try {
-        const data = await twitchGQL(`query { video(id: "${vodId}") { seekPreviewsURL } }`); const seekUrl = data.data?.video?.seekPreviewsURL;
+        const data = await twitchGQL(`query($id: ID!) { video(id: $id) { seekPreviewsURL } }`, { id: vodId }); const seekUrl = data.data?.video?.seekPreviewsURL;
         if (seekUrl) {
             const rawLinks = await storyboardHack(seekUrl);
             if (Object.keys(rawLinks).length > 0) {
@@ -248,7 +288,12 @@ const PROXY_HOSTS = ['ttvnw.net', 'jtvnw.net', 'twitch.tv', 'cloudfront.net', 'l
 function proxyAllowed(target) {
     try {
         const u = new URL(target);
-        return u.protocol === 'https:' && PROXY_HOSTS.some((h) => u.hostname === h || u.hostname.endsWith('.' + h));
+        if (u.protocol !== 'https:') return false;
+        if (!PROXY_HOSTS.some((h) => u.hostname === h || u.hostname.endsWith('.' + h))) return false;
+        // N'importe qui peut héberger des fichiers sur cloudfront.net : on n'y
+        // accepte que les dossiers de VOD Twitch (« <empreinte>_<chaîne>_… »).
+        if (u.hostname.endsWith('.cloudfront.net')) return /^\/[0-9a-f]{20}_/.test(u.pathname);
+        return true;
     } catch (e) { return false; }
 }
 
@@ -264,6 +309,7 @@ async function handleProxy(url, request) {
     const newHeaders = new Headers(res.headers);
     newHeaders.set("Access-Control-Allow-Origin", "*");
     newHeaders.set("Access-Control-Expose-Headers", "*");
+    newHeaders.delete("Set-Cookie");
 
     // Playlist reconnue à son type, pas seulement à son extension : celles
     // de Luminous (« /live/<chaîne>?allow_source=true ») et les variantes
@@ -326,9 +372,9 @@ async function twitchGQL(query, variables = {}) {
 
 async function getAccessToken(id, isLive) {
     const query = isLive 
-        ? `query { streamPlaybackAccessToken(channelName: "${id}", params: {platform: "web", playerBackend: "mediaplayer", playerType: "site"}) { value signature } }`
-        : `query { videoPlaybackAccessToken(id: "${id}", params: {platform: "web", playerBackend: "mediaplayer", playerType: "site"}) { value signature } }`;
-    const data = await twitchGQL(query);
+        ? `query($id: String!) { streamPlaybackAccessToken(channelName: $id, params: {platform: "web", playerBackend: "mediaplayer", playerType: "site"}) { value signature } }`
+        : `query($id: ID!) { videoPlaybackAccessToken(id: $id, params: {platform: "web", playerBackend: "mediaplayer", playerType: "site"}) { value signature } }`;
+    const data = await twitchGQL(query, { id });
     return isLive ? data.data?.streamPlaybackAccessToken : data.data?.videoPlaybackAccessToken;
 }
 
@@ -379,6 +425,11 @@ async function handlePing(request, env) {
     let body;
     try { body = await request.json(); } catch (e) { return jsonError('JSON invalide', 400); }
 
+    // Chaque ping est une écriture KV (1 000 par jour en gratuit) : une même
+    // adresse ne peut pas en enchaîner des centaines. Compté en mémoire
+    // seulement, jamais stocké.
+    if (pingFlood(request.headers.get('CF-Connecting-IP') || '')) return jsonError('Trop de requêtes', 429);
+
     // Uniquement des UUID : pas question de laisser écrire des clés libres.
     const id = String(body.id || '');
     if (!/^[0-9a-fA-F-]{36}$/.test(id)) return jsonError('ID invalide', 400);
@@ -400,6 +451,32 @@ async function handlePing(request, env) {
         metadata: { first: prev.first || day, last: day, days, v: String(body.version || '?').slice(0, 16), p: platform }
     });
     return jsonResponse({ ok: true, days });
+}
+
+const pingHits = new Map();   // adresse → { n, until } (mémoire de l'instance)
+function pingFlood(ip) {
+    const now = Date.now();
+    const hit = pingHits.get(ip);
+    if (!hit || hit.until < now) {
+        if (pingHits.size > 5000) pingHits.clear();
+        pingHits.set(ip, { n: 1, until: now + 60 * 60 * 1000 });
+        return false;
+    }
+    return ++hit.n > 10;
+}
+
+// Les statistiques parcourent toutes les clés (list() : 1 000 par jour en
+// gratuit). Mises en cache une minute, pour qu'une page rechargée en boucle
+// ne vide pas le quota.
+// (Cache API inopérant sur workers.dev : cache en mémoire de l'instance.)
+let statsCache = null;   // { body, until }
+async function cachedStats(request, env, ctx) {
+    if (statsCache && statsCache.until > Date.now()) {
+        return new Response(statsCache.body, { headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+    }
+    const res = await handleStats(env);
+    if (res.ok) statsCache = { body: await res.clone().text(), until: Date.now() + 60 * 1000 };
+    return res;
 }
 
 // GET /api/stats — compteurs agrégés, au total et par plateforme.
