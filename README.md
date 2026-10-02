@@ -20,6 +20,7 @@ Watch Twitch lives and VODs in your browser, no subscription needed, with the re
 - Search with suggestions as you type
 - Live status (title, game, viewers, uptime), or how long the channel has been offline
 - Every past broadcast, filterable by keyword or date
+- **Clips**: the most viewed over 24 h, 7 days, 30 days or all time — played in the site, with the original chat replayed
 - Recent streamers
 
 ### Player
@@ -27,6 +28,9 @@ Watch Twitch lives and VODs in your browser, no subscription needed, with the re
 - Quality picker, including “Auto”, which shows the bitrate actually in use
 - Playback speed, ±10 s, double-tap on mobile, keyboard shortcuts
 - Picture in picture, “back to live” button, live latency
+- **Theatre mode** (T), keyboard shortcuts anywhere on the page (? lists them)
+- **VOD chapters**: game changes marked on the progress bar
+- **Live ended** screen, and **raids followed** automatically to the target channel (can be turned off)
 - VODs resume where you left off
 - Mini player: playback keeps going while you browse
 - “Open in…” VLC, Outplayer, Infuse, or copy the stream link
@@ -35,7 +39,9 @@ Watch Twitch lives and VODs in your browser, no subscription needed, with the re
 - Connected straight to Twitch IRC — no iframe
 - Twitch, **BTTV**, **FFZ** and **7TV** emotes, badges, username colours readable on a dark background
 - Recent messages loaded on arrival: you never land in an empty chat
-- **Pinned message** at the top of the chat — hide it, bring it back
+- **Pinned message**: compact banner with badges, emotes, who pinned it and a countdown — collapse it to a chip
+- **Predictions** live (read-only), incoming **raids** and **announcements** highlighted
+- Your name and **chosen words highlighted**; **filters**: hide bots, `!commands`, muted words, hide someone
 - Chat once logged in: emote and username autocomplete, emote picker, replies
 - Click someone to see their latest messages, mention them or reply
 - Moderation honoured: deleted messages struck through or removed
@@ -47,6 +53,7 @@ Watch Twitch lives and VODs in your browser, no subscription needed, with the re
 - History and progress synced across devices when logged in
 - Anonymous usage count, shown in the settings (see below)
 - Mobile-first layout: bottom tab bar, settings sheet, landscape view
+- **Installable** as an app (PWA)
 
 ---
 
@@ -83,6 +90,7 @@ Browser ──► Cloudflare Worker ──► Twitch (playlists, video segments)
     ├──► Twitch GQL     public data: streams, channels, VODs, VOD chat
     ├──► Twitch Helix   logged-in account: followed channels
     ├──► Twitch IRC     live chat (WebSocket)
+    ├──► Twitch Hermes  real time: raids, predictions, viewers, stream end
     └──► BTTV / FFZ / 7TV / recent-messages   emotes and chat history
 ```
 
