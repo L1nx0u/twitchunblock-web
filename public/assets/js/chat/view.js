@@ -53,10 +53,10 @@ export class ChatView {
       <header class="chat-head">
         <span class="chat-title">${icon('chat', 16)}<span class="chat-title-text"></span></span>
         <span class="chat-status"></span>
-        <button class="icon-btn sm chat-pin-btn" type="button" hidden data-i18n-title="show_pinned">${icon('pin', 17)}</button>
         <button class="icon-btn sm chat-hide" type="button" data-i18n-title="close">${icon('x', 18)}</button>
       </header>
-      <div class="chat-pinned" hidden></div>
+      <div class="chat-pinned" hidden role="region"></div>
+      <button class="pin-chip" type="button" hidden>${icon('pin', 13)}<span data-i18n="pinned_short">${esc(t('pinned_short'))}</span></button>
       <div class="chat-list" role="log" aria-live="off" tabindex="0"></div>
       <button class="chat-resume" type="button" hidden>${icon('arrowDown', 14)}<span></span></button>
       <div class="chat-empty" hidden></div>
@@ -97,7 +97,7 @@ export class ChatView {
       card: $('.user-card', this.root),
       inputRow: $('.chat-input-row', this.root),
       pinned: $('.chat-pinned', this.root),
-      pinBtn: $('.chat-pin-btn', this.root),
+      pinBtn: $('.pin-chip', this.root),
     }
 
     this.el.list.addEventListener('scroll', () => this.onScroll(), { passive: true })
@@ -112,13 +112,20 @@ export class ChatView {
     })
     this.el.pinned.addEventListener('click', (e) => {
       if (e.target.closest('a')) return
+      // Pseudo mentionné dans le message épinglé : même fiche que dans la liste.
+      const mention = e.target.closest('[data-user]')
+      if (mention) { this.onListClick(e); return }
       if (e.target.closest('[data-pin-close]')) {
+        // Réduit en pastille plutôt que de disparaître : un toucher le rouvre.
         this.dismissedPin = this.pin?.id ?? null
         this.el.pinned.hidden = true
         this.el.pinBtn.hidden = false
         return
       }
-      this.el.pinned.classList.toggle('open')
+      // Déplier n'a de sens que si le texte dépasse.
+      if (!this.el.pinned.classList.contains('can-open')) return
+      const open = this.el.pinned.classList.toggle('open')
+      $('[data-pin-toggle]', this.el.pinned)?.setAttribute('aria-expanded', String(open))
     })
 
     this.el.input.addEventListener('keydown', (e) => this.onKey(e))
@@ -179,32 +186,87 @@ export class ChatView {
   startPinned(channel) {
     clearInterval(this.pinTimer)
     const load = async () => {
+      // Onglet en arrière-plan : inutile d'interroger Twitch.
+      if (document.hidden && this.pin !== undefined) return
       let pin = null
       try { pin = await fetchPinned(channel) } catch { return }
       if (this.mode !== 'live' || this.channel !== channel) return
-      this.renderPinned(pin)
+      // Un nouvel épinglage attend le retard du chat synchronisé : il ne doit
+      // pas apparaître avant l'image qui le montre.
+      const delay = pin && pin.id !== this.pin?.id && this.pin !== undefined ? this.o.getDelay?.() ?? 0 : 0
+      if (delay >= 0.5) setTimeout(() => { if (this.channel === channel && this.mode === 'live') this.renderPinned(pin) }, delay * 1000)
+      else this.renderPinned(pin)
     }
+    this.pin = undefined
     load()
-    this.pinTimer = setInterval(load, 30_000)
+    this.pinTimer = setInterval(load, 20_000)
   }
 
   renderPinned(pin, force = false) {
     const box = this.el.pinned
     const changed = force || pin?.id !== this.pin?.id
     this.pin = pin
-    // La punaise n'a de sens que s'il y a un message épinglé masqué.
+    clearTimeout(this.pinExpiry)
+    // La pastille n'a de sens que s'il y a un message épinglé réduit.
     this.el.pinBtn.hidden = !pin || pin.id !== this.dismissedPin
     if (!pin || pin.id === this.dismissedPin) { box.hidden = true; return }
-    if (!changed && !box.hidden) return
-    box.classList.remove('open')
+    // Fin programmée : masqué à l'échéance, sans attendre la prochaine requête.
+    if (pin.endsAt) {
+      const left = pin.endsAt - Date.now()
+      if (left <= 0) { this.renderPinned(null); return }
+      this.pinExpiry = setTimeout(() => { if (this.pin?.id === pin.id) this.renderPinned(null) }, left)
+    }
+    if (!changed && !box.hidden) { this.updatePinMeta(); return }
+
+    box.classList.remove('open', 'can-open')
+    const badges = pin.badges.map((b) => `<img class="badge" src="${esc(b.url)}" alt="" title="${esc(b.set)}">`).join('')
     box.innerHTML = `
-      <div class="pin-head">
-        ${icon('pin', 14)}
-        <span>${esc(pin.pinnedBy ? t('pinned_by', { u: pin.pinnedBy }) : t('pinned'))}</span>
+      <div class="pin-row">
+        <span class="pin-ic">${icon('pin', 14)}</span>
+        <div class="pin-body">${badges}<span class="pin-sender" style="color:${esc(pin.color)}">${esc(pin.sender)}</span><span class="pin-colon">:</span> ${this.renderTokens(pin.tokens, this.o.session().login)}</div>
+        <button class="icon-btn xs pin-toggle" type="button" data-pin-toggle aria-expanded="false" aria-label="${esc(t('pinned'))}" hidden>${icon('chevronDown', 16)}</button>
         <button class="icon-btn xs" type="button" data-pin-close aria-label="${esc(t('close'))}">${icon('x', 14)}</button>
       </div>
-      <div class="pin-body"><span class="pin-sender" style="color:${esc(pin.color)}">${esc(pin.sender)}</span> ${this.renderTokens(pin.tokens, this.o.session().login)}</div>`
+      <div class="pin-meta"></div>
+      ${pin.endsAt && pin.startsAt ? '<div class="pin-progress"><i></i></div>' : ''}`
+    for (const img of box.querySelectorAll('img.badge')) img.addEventListener('error', () => img.remove(), { once: true })
     box.hidden = false
+    this.updatePinMeta()
+
+    // Chevron seulement si le texte est coupé.
+    requestAnimationFrame(() => {
+      const body = $('.pin-body', box)
+      if (body && body.scrollWidth > body.clientWidth + 1) {
+        box.classList.add('can-open')
+        $('[data-pin-toggle]', box).hidden = false
+      }
+    })
+    // Barre de durée : part de la fraction restante et file jusqu'à zéro.
+    const bar = $('.pin-progress i', box)
+    if (bar) {
+      const total = pin.endsAt - pin.startsAt
+      const left = pin.endsAt - Date.now()
+      bar.style.transform = `scaleX(${Math.max(0, Math.min(1, left / total))})`
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        bar.style.transition = `transform ${left}ms linear`
+        bar.style.transform = 'scaleX(0)'
+      }))
+    }
+  }
+
+  /** « Épinglé par X · il y a 3 min · 12 min restantes » */
+  updatePinMeta() {
+    const pin = this.pin
+    const meta = pin && $('.pin-meta', this.el.pinned)
+    if (!meta) return
+    const parts = [pin.pinnedBy ? t('pinned_by', { u: pin.pinnedBy }) : t('pinned')]
+    const ago = (ms) => {
+      const m = Math.floor(ms / 60000)
+      return m < 1 ? t('just_now') : m < 60 ? t('minutes_ago', { n: m }) : t('hours_ago', { n: Math.floor(m / 60) })
+    }
+    if (pin.startsAt) parts.push(ago(Date.now() - pin.startsAt))
+    if (pin.endsAt) parts.push(t('pin_left', { n: Math.max(1, Math.ceil((pin.endsAt - Date.now()) / 60000)) }))
+    meta.textContent = parts.join(' · ')
   }
 
   openVod({ videoId, channelId, channelLogin, startAt }) {
@@ -228,6 +290,7 @@ export class ChatView {
 
   close() {
     clearInterval(this.pinTimer)
+    clearTimeout(this.pinExpiry)
     clearInterval(this.delayTimer)
     this.delayTimer = null
     this.delayed = []

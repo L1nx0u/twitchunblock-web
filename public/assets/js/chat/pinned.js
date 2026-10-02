@@ -14,11 +14,14 @@ const QUERY = `query($l: String!) {
     pinnedChatMessages(first: 1) {
       edges { node {
         id startsAt endsAt
-        pinnedBy { displayName }
+        pinnedBy { login displayName }
         pinnedMessage {
           id
           content { text fragments { text content { __typename ... on Emote { id } } } }
-          sender { login displayName chatColor }
+          sender {
+            login displayName chatColor
+            displayBadges(channelLogin: $l) { setID version imageURL(size: DOUBLE) }
+          }
         }
       } }
     }
@@ -45,12 +48,20 @@ export async function fetchPinned(login) {
   if (!tokens.length && msg.content?.text) tokens.push(...tokenizeSegment(msg.content.text))
 
   const login_ = msg.sender?.login ?? ''
+  const time = (iso) => { const t = Date.parse(iso ?? ''); return Number.isFinite(t) ? t : null }
   return {
     id: node.id,
     tokens,
     sender: msg.sender?.displayName || login_,
     login: login_,
     color: readableColor(msg.sender?.chatColor) ?? '#bf94ff',
-    pinnedBy: node.pinnedBy?.displayName ?? '',
+    badges: (msg.sender?.displayBadges ?? [])
+      .filter((b) => b?.imageURL && /^https:\/\//.test(b.imageURL))
+      .map((b) => ({ set: String(b.setID ?? ''), url: b.imageURL })),
+    // Épinglé par l'auteur lui-même (le cas le plus courant) : inutile de
+    // répéter son nom.
+    pinnedBy: node.pinnedBy?.login && node.pinnedBy.login !== login_ ? node.pinnedBy.displayName ?? '' : '',
+    startsAt: time(node.startsAt),
+    endsAt: time(node.endsAt),
   }
 }
