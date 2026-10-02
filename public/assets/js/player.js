@@ -123,6 +123,7 @@ export class Player {
             <button class="p-btn p-quality" type="button" data-i18n-title="quality">${icon('settings', 20)}<span class="p-q-label"></span></button>
             <button class="p-btn p-chat" type="button" data-i18n-title="chat">${icon('chat', 20)}</button>
             <button class="p-btn p-pip" type="button" data-i18n-title="pip">${icon('pip', 20)}</button>
+            <button class="p-btn p-theatre" type="button" data-i18n-title="theatre">${icon('theatre', 20)}</button>
             <button class="p-btn p-fs" type="button" data-i18n-title="fullscreen">${icon('maximize', 20)}</button>
           </div>
         </div>
@@ -137,7 +138,7 @@ export class Player {
       played: q('.p-played'), knob: q('.p-knob'), tip: q('.p-tip'),
       play: q('.p-play'), back: q('.p-back'), fwd: q('.p-fwd'), mute: q('.p-mute'), vol: q('.p-vol'),
       time: q('.p-time'), live: q('.p-live'), liveText: q('.p-live-text'), latency: q('.p-latency'),
-      quality: q('.p-quality'), qLabel: q('.p-q-label'), chat: q('.p-chat'), pip: q('.p-pip'), fs: q('.p-fs'),
+      quality: q('.p-quality'), qLabel: q('.p-q-label'), chat: q('.p-chat'), pip: q('.p-pip'), fs: q('.p-fs'), theatre: q('.p-theatre'),
       menu: q('.p-menu'),
     }
 
@@ -175,6 +176,7 @@ export class Player {
     on(this.el.chat, () => this.o.onToggleChat())
     on(this.el.pip, () => this.togglePiP())
     on(this.el.fs, () => this.toggleFullscreen())
+    on(this.el.theatre, () => this.o.onTheatre?.())
     on(this.el.unmute, () => { this.video.muted = false; this.el.unmute.hidden = true })
     this.el.vol.addEventListener('input', (e) => {
       e.stopPropagation()
@@ -218,7 +220,12 @@ export class Player {
       if (e.target.closest('.p-bottom, .p-menu, .p-big')) return
       if (matchMedia('(pointer: fine)').matches) this.toggleFullscreen()
     })
-    this.root.addEventListener('keydown', (e) => this.onKey(e))
+    // Raccourcis sur toute la page (plus seulement lecteur sélectionné), tant
+    // que le lecteur est affiché en grand et qu'on n'écrit pas.
+    document.addEventListener('keydown', (e) => {
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return
+      if (this.o.keysActive ? this.o.keysActive() : this.root.contains(document.activeElement)) this.onKey(e)
+    })
 
     document.addEventListener('fullscreenchange', () => this.syncFullscreen())
     document.addEventListener('webkitfullscreenchange', () => this.syncFullscreen())
@@ -574,6 +581,9 @@ export class Player {
       f: () => this.toggleFullscreen(),
       m: () => this.toggleMute(),
       c: () => this.o.onToggleChat(),
+      t: () => this.o.onTheatre?.(),
+      '?': () => this.o.onHelp?.(),
+      '0': () => { if (this.kind === 'vod') this.video.currentTime = 0 },
       arrowleft: () => this.seekBy(-10),
       arrowright: () => this.seekBy(10),
       j: () => this.seekBy(-10),

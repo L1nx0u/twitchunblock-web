@@ -54,6 +54,10 @@ async function boot() {
   startLiveTicker()
   usage.ping(store.prefs.shareUsage)
   setInterval(() => usage.ping(store.prefs.shareUsage), 15 * 60 * 1000)
+  // Installable comme une app (et la coque s'ouvre hors ligne).
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  }
 
   // Jeton déjà là (session précédente, ou retour de connexion sans popup).
   if (store.token) await adoptToken(store.token, { silent: true })
@@ -470,6 +474,7 @@ async function loadTop(language, { silent = false } = {}) {
  */
 function startLiveTicker() {
   setInterval(() => {
+    if (document.hidden) return
     for (const el of document.querySelectorAll('[data-started]')) {
       el.textContent = uptimeSince(el.dataset.started)
     }
@@ -680,6 +685,7 @@ function watchChannelLive() {
   let ticks = 0
   channelTimer = setInterval(async () => {
     if (state.channel !== ch) return clearInterval(channelTimer)
+    if (document.hidden) return
     const s = ch.info?.stream
     const el = $('#channel-uptime')
     if (el && s?.createdAt) el.textContent = uptimeSince(s.createdAt)
@@ -712,6 +718,10 @@ function setupPlayer() {
     prefs: store.prefs,
     savePrefs: () => store.savePrefs(),
     onToggleChat: () => toggleChat(),
+    onTheatre: () => toggleTheatre(),
+    onHelp: () => toast(t('shortcuts_help'), 'info'),
+    // Raccourcis actifs : lecteur affiché en grand, aucune feuille ouverte.
+    keysActive: () => !$('#watch').hidden && !$('#watch').classList.contains('minimized') && !$('#sheet')?.classList.contains('open'),
     isChatOpen: () => store.prefs.chatOpen,
     onTime: (cur, duration) => onPlaybackTime(cur, duration),
     // Une pause est un bon moment pour sauvegarder — sans dépasser un envoi
@@ -738,6 +748,13 @@ function setupPlayer() {
   }, true)
 }
 
+/** Mode théâtre : la vidéo prend toute la hauteur, sans le bandeau d'infos. */
+function toggleTheatre(force) {
+  store.prefs.theatre = typeof force === 'boolean' ? force : !store.prefs.theatre
+  store.savePrefs()
+  $('#watch').classList.toggle('theatre', store.prefs.theatre)
+}
+
 function toggleChat(force) {
   store.prefs.chatOpen = typeof force === 'boolean' ? force : !store.prefs.chatOpen
   store.savePrefs()
@@ -745,6 +762,7 @@ function toggleChat(force) {
 }
 
 function applyChatOpen() {
+  $('#watch').classList.toggle('theatre', Boolean(store.prefs.theatre))
   $('#watch').classList.toggle('chat-hidden', !store.prefs.chatOpen)
   player.setChatOpen(store.prefs.chatOpen)
 }
@@ -804,6 +822,7 @@ async function openLive(rawLogin) {
   // restait figé sur sa valeur d'ouverture.
   clearInterval(infoTimer)
   infoTimer = setInterval(async () => {
+    if (document.hidden) return   // en arrière-plan, Hermes suffit
     if (state.watch !== token) return clearInterval(infoTimer)
     const fresh = await api.getChannelInfo(login).catch(() => null)
     if (!fresh || state.watch !== token) return

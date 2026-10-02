@@ -816,3 +816,12 @@ input[type='search']::-webkit-search-cancel-button { filter: invert(1) opacity(0
 /* Clips */
 .segmented.sm button { padding: 4px 10px; font-size: 12px; }
 .thumb > .pill.views { position: absolute; top: 8px; left: 8px; display: inline-flex; align-items: center; gap: 4px; }
+
+/* Mode théâtre (écrans larges) : la vidéo occupe toute la hauteur. */
+@media (min-width: 900px) {
+  .watch.theatre .watch-body { grid-template-rows: minmax(0, 1fr) 0; }
+  .watch.theatre .watch-info { display: none; }
+  .watch.theatre .watch-video { aspect-ratio: auto; max-height: none; height: 100%; }
+}
+@media (max-width: 899px) { .p-theatre { display: none; } }
+.watch.theatre .player .p-btn.p-theatre { color: var(--purple); }
