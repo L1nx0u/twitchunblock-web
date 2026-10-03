@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0e0e10">
   <meta name="robots" content="noindex">
-  <title>Utilisation · TwitchUnblock</title>
+  <title>TwitchUnblock</title>
   <link rel="icon" href="/assets/icons/icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -128,12 +128,12 @@
 <body>
 <main>
   <header>
-    <h1>Twitch<b>Unblock</b> · utilisation</h1>
+    <h1>Twitch<b>Unblock</b> · <span data-t="h1"></span></h1>
     <span class="updated" id="updated"></span>
     <span class="who" id="who"></span>
     <span class="spacer"></span>
-    <button class="btn" id="refresh" type="button">↻ Actualiser</button>
-    <a class="btn" href="/">Retour au site</a>
+    <button class="btn" id="refresh" type="button" data-t="refresh"></button>
+    <a class="btn" href="/" data-t="back"></a>
   </header>
 
   <section class="tiles" id="tiles" aria-live="polite"></section>
@@ -142,18 +142,18 @@
 
   <section class="grid2">
     <div class="card">
-      <h2>Nouveaux utilisateurs par jour</h2>
-      <p class="sub">Premier jour où chaque identifiant a été vu, 30 derniers jours.</p>
-      <div class="legend"><span><i class="dot ios"></i>App iOS</span><span><i class="dot web"></i>Site web</span></div>
+      <h2 data-t="newTitle"></h2>
+      <p class="sub" data-t="newSub"></p>
+      <div class="legend"><span><i class="dot ios"></i><span data-t="ios"></span></span><span><i class="dot web"></i><span data-t="web"></span></span></div>
       <div class="chart" id="chart-new"></div>
       <details>
-        <summary>Voir le tableau</summary>
+        <summary data-t="showTable"></summary>
         <table id="table-new"></table>
       </details>
     </div>
     <div class="card">
-      <h2>Fidélité</h2>
-      <p class="sub">Nombre de jours différents où chaque identifiant est revenu.</p>
+      <h2 data-t="loyTitle"></h2>
+      <p class="sub" data-t="loySub"></p>
       <div class="rows" id="loyalty"></div>
       <p class="note" id="returning"></p>
     </div>
@@ -161,52 +161,143 @@
 
   <section class="grid2">
     <div class="card">
-      <h2>Revenus au moins un 2ᵉ jour</h2>
-      <p class="sub">Le meilleur indicateur de vrais utilisateurs : un essai unique ne compte pas.</p>
+      <h2 data-t="retTitle"></h2>
+      <p class="sub" data-t="retSub"></p>
       <div class="rows" id="platform-returning"></div>
     </div>
     <div class="card">
-      <h2>Versions</h2>
-      <p class="sub">Identifiants actifs sur 30 jours, par version.</p>
+      <h2 data-t="verTitle"></h2>
+      <p class="sub" data-t="verSub"></p>
       <table id="versions"></table>
     </div>
   </section>
 
   <section class="card dev" id="dev" hidden>
-    <h2>Outils développeur</h2>
-    <p class="sub">Visible seulement par le compte administrateur. Chaque suppression compte comme une écriture KV (1 000 par jour en gratuit), plafonnée à 500 par action.</p>
+    <h2 data-t="devTitle"></h2>
+    <p class="sub" data-t="devSub"></p>
     <div class="dev-actions">
-      <button class="btn danger" type="button" data-del="anon-web">Supprimer les anonymes web</button>
-      <button class="btn danger" type="button" data-del="anon">Supprimer tous les anonymes</button>
-      <button class="btn danger" type="button" data-del="once">Supprimer les « vus un seul jour »</button>
-      <button class="btn danger" type="button" data-del="all">Tout réinitialiser</button>
+      <button class="btn danger" type="button" data-del="anon-web" data-t="delAnonWeb"></button>
+      <button class="btn danger" type="button" data-del="anon" data-t="delAnon"></button>
+      <button class="btn danger" type="button" data-del="once" data-t="delOnce"></button>
+      <button class="btn danger" type="button" data-del="all" data-t="delAll"></button>
     </div>
     <form class="dev-form" id="sync-form">
-      <input id="sync-login" type="text" placeholder="Pseudo Twitch" autocomplete="off" spellcheck="false" maxlength="25">
-      <button class="btn danger" type="submit">Effacer sa sauvegarde (historique, progression)</button>
+      <input id="sync-login" type="text" data-tp="loginPh" autocomplete="off" spellcheck="false" maxlength="25">
+      <button class="btn danger" type="submit" data-t="syncBtn"></button>
     </form>
     <p class="dev-msg" id="dev-msg" role="status"></p>
     <div class="dev-filter">
-      <input id="dev-search" type="search" placeholder="Filtrer (pseudo, version…)" style="height:32px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:13px;min-width:200px">
+      <input id="dev-search" type="search" data-tp="filterPh" style="height:32px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:13px;min-width:200px">
       <span class="sub" id="dev-count" style="margin:0"></span>
     </div>
     <div class="dev-table"><table id="dev-entries"></table></div>
   </section>
 
-  <footer>
-    Comptage : connecté, le compte Twitch (compté une fois sur tous ses appareils) ; sinon un identifiant tiré au hasard
-    par navigateur ou par installation. Au plus un signal par heure, ni adresse IP ni chaîne regardée. Les entrées expirent après 35 jours.
-    Depuis le 3 octobre 2026, les robots, navigateurs automatisés, copies locales du site et navigations
-    privées sans stockage ne sont plus comptés ; les anciens identifiants parasites disparaîtront d'eux-mêmes.
-  </footer>
+  <footer data-t="footer"></footer>
 </main>
 
 <script type="module">
   const API = 'https://test2.kurzmathis4.workers.dev/api/stats'
   const $ = (s) => document.querySelector(s)
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
-  const fmt = (n) => Number(n || 0).toLocaleString('fr-FR')
-  const dayLabel = (iso, opts = { day: 'numeric', month: 'short' }) => new Date(iso + 'T00:00:00Z').toLocaleDateString('fr-FR', { timeZone: 'UTC', ...opts })
+
+  // ── Langue : celle choisie sur le site (tu_prefs.lang), sinon l'appareil ──
+  const T = {
+    fr: {
+      title: 'Utilisation · TwitchUnblock', h1: 'utilisation', refresh: '↻ Actualiser', back: 'Retour au site',
+      newTitle: 'Nouveaux utilisateurs par jour', newSub: 'Premier jour où chaque identifiant a été vu, 30 derniers jours.',
+      ios: 'App iOS', web: 'Site web', showTable: 'Voir le tableau',
+      loyTitle: 'Fidélité', loySub: 'Nombre de jours différents où chaque identifiant est revenu.',
+      retTitle: 'Revenus au moins un 2ᵉ jour', retSub: 'Le meilleur indicateur de vrais utilisateurs : un essai unique ne compte pas.',
+      verTitle: 'Versions', verSub: 'Identifiants actifs sur 30 jours, par version.',
+      devTitle: 'Outils développeur', devSub: 'Visible seulement par le compte administrateur. Chaque suppression compte comme une écriture KV (1 000 par jour en gratuit), plafonnée à 500 par action.',
+      delAnonWeb: 'Supprimer les anonymes web', delAnon: 'Supprimer tous les anonymes', delOnce: 'Supprimer les « vus un seul jour »', delAll: 'Tout réinitialiser',
+      loginPh: 'Pseudo Twitch', syncBtn: 'Effacer sa sauvegarde (historique, progression)', filterPh: 'Filtrer (pseudo, version…)',
+      footer: 'Comptage : connecté, le compte Twitch (compté une fois sur tous ses appareils) ; sinon un identifiant tiré au hasard par navigateur ou par installation. Au plus un signal par heure, ni adresse IP ni chaîne regardée. Les entrées expirent après 35 jours. Depuis le 3 octobre 2026, les robots, navigateurs automatisés, copies locales du site et navigations privées sans stockage ne sont plus comptés ; les anciens identifiants parasites disparaîtront d’eux-mêmes.',
+      today: "Aujourd'hui", week: '7 derniers jours', month: '30 derniers jours',
+      redeploy: 'Worker à redéployer', noDaily: 'Pas encore de données jour par jour (Worker à redéployer).',
+      once: '1 seul jour', few: '2 à 6 jours', regular: '7 à 29 jours', daily: '30 jours et +',
+      returning: '{a} revenus sur {b} · moyenne {d} jour(s)', since: ' · depuis le {date}',
+      pctOf: '{p} % des {n} identifiants',
+      accounts: 'Comptes Twitch connectés', anonymous: 'Sans compte',
+      kToday: "aujourd'hui", kWeek: '7 jours', kMonth: '30 jours', kBack: 'revenus',
+      thDay: 'Jour', thVersion: 'Version', thActive: 'Actifs', thWho: 'Qui', thPlat: 'Plateformes', thFirst: 'Premier', thLast: 'Dernier', thDays: 'Jours',
+      signedIn: 'Connecté :', listErr: 'Liste indisponible ({e})', entries: '{a} / {b} entrées',
+      tagAcct: 'compte', tagAnon: 'anonyme', del: 'Supprimer',
+      confirm: '{l} ?\nCette action est définitive.', deleting: 'Suppression…',
+      deleted: '{n} entrée(s) supprimée(s)', remaining: ' · {n} restante(s), relance l’action', fail: 'Échec : {e}',
+      lAnonWeb: 'Supprimer tous les anonymes web', lAnon: 'Supprimer tous les anonymes', lOnce: 'Supprimer les entrées vues un seul jour', lAll: 'Supprimer TOUTES les données d’utilisation', lKey: 'Supprimer {k}',
+      syncConfirm: 'Effacer la sauvegarde (historique et progression) de {u} ?', syncDone: 'Sauvegarde de {u} effacée.', syncNone: '{u} n’avait pas de sauvegarde.',
+      updated: 'Mis à jour à {t}', unavailable: 'Statistiques indisponibles ({e})',
+    },
+    en: {
+      title: 'Usage · TwitchUnblock', h1: 'usage', refresh: '↻ Refresh', back: 'Back to site',
+      newTitle: 'New users per day', newSub: 'First day each identifier was seen, last 30 days.',
+      ios: 'iOS app', web: 'Website', showTable: 'Show table',
+      loyTitle: 'Loyalty', loySub: 'Number of different days each identifier came back.',
+      retTitle: 'Came back on a 2nd day', retSub: 'The best signal of real users: a one-off try doesn’t count.',
+      verTitle: 'Versions', verSub: 'Identifiers active over 30 days, by version.',
+      devTitle: 'Developer tools', devSub: 'Only visible to the admin account. Each deletion counts as one KV write (1,000 per day on the free plan), capped at 500 per action.',
+      delAnonWeb: 'Delete anonymous web', delAnon: 'Delete all anonymous', delOnce: 'Delete “seen on one day only”', delAll: 'Reset everything',
+      loginPh: 'Twitch username', syncBtn: 'Erase their backup (history, progress)', filterPh: 'Filter (username, version…)',
+      footer: 'Counting: when signed in, the Twitch account (counted once across all devices); otherwise a random identifier per browser or install. At most one signal per hour, no IP address and no watched channel. Entries expire after 35 days. Since October 3, 2026, bots, automated browsers, local copies of the site and private browsing without storage are no longer counted; old noisy identifiers will disappear on their own.',
+      today: 'Today', week: 'Last 7 days', month: 'Last 30 days',
+      redeploy: 'Worker needs redeploying', noDaily: 'No day-by-day data yet (Worker needs redeploying).',
+      once: '1 day only', few: '2 to 6 days', regular: '7 to 29 days', daily: '30 days +',
+      returning: '{a} came back out of {b} · average {d} day(s)', since: ' · since {date}',
+      pctOf: '{p}% of {n} identifiers',
+      accounts: 'Signed-in Twitch accounts', anonymous: 'No account',
+      kToday: 'today', kWeek: '7 days', kMonth: '30 days', kBack: 'came back',
+      thDay: 'Day', thVersion: 'Version', thActive: 'Active', thWho: 'Who', thPlat: 'Platforms', thFirst: 'First', thLast: 'Last', thDays: 'Days',
+      signedIn: 'Signed in:', listErr: 'List unavailable ({e})', entries: '{a} / {b} entries',
+      tagAcct: 'account', tagAnon: 'anonymous', del: 'Delete',
+      confirm: '{l}?\nThis cannot be undone.', deleting: 'Deleting…',
+      deleted: '{n} entry(ies) deleted', remaining: ' · {n} left, run the action again', fail: 'Failed: {e}',
+      lAnonWeb: 'Delete all anonymous web entries', lAnon: 'Delete all anonymous entries', lOnce: 'Delete entries seen on one day only', lAll: 'Delete ALL usage data', lKey: 'Delete {k}',
+      syncConfirm: 'Erase the backup (history and progress) of {u}?', syncDone: 'Backup of {u} erased.', syncNone: '{u} had no backup.',
+      updated: 'Updated at {t}', unavailable: 'Stats unavailable ({e})',
+    },
+    es: {
+      title: 'Uso · TwitchUnblock', h1: 'uso', refresh: '↻ Actualizar', back: 'Volver al sitio',
+      newTitle: 'Nuevos usuarios por día', newSub: 'Primer día en que se vio cada identificador, últimos 30 días.',
+      ios: 'App iOS', web: 'Sitio web', showTable: 'Ver la tabla',
+      loyTitle: 'Fidelidad', loySub: 'Número de días distintos en que volvió cada identificador.',
+      retTitle: 'Volvieron al menos un 2.º día', retSub: 'El mejor indicador de usuarios reales: una prueba única no cuenta.',
+      verTitle: 'Versiones', verSub: 'Identificadores activos en 30 días, por versión.',
+      devTitle: 'Herramientas de desarrollo', devSub: 'Solo visible para la cuenta de administrador. Cada eliminación cuenta como una escritura KV (1000 al día en el plan gratuito), con un máximo de 500 por acción.',
+      delAnonWeb: 'Eliminar anónimos web', delAnon: 'Eliminar todos los anónimos', delOnce: 'Eliminar «vistos un solo día»', delAll: 'Restablecer todo',
+      loginPh: 'Usuario de Twitch', syncBtn: 'Borrar su copia (historial, progreso)', filterPh: 'Filtrar (usuario, versión…)',
+      footer: 'Recuento: con sesión iniciada, la cuenta de Twitch (contada una vez en todos sus dispositivos); si no, un identificador aleatorio por navegador o instalación. Como mucho una señal por hora, sin dirección IP ni canal visto. Las entradas caducan a los 35 días. Desde el 3 de octubre de 2026, los bots, navegadores automatizados, copias locales del sitio y la navegación privada sin almacenamiento ya no se cuentan; los antiguos identificadores parásitos desaparecerán solos.',
+      today: 'Hoy', week: 'Últimos 7 días', month: 'Últimos 30 días',
+      redeploy: 'Hay que redesplegar el Worker', noDaily: 'Aún no hay datos por día (hay que redesplegar el Worker).',
+      once: 'Un solo día', few: '2 a 6 días', regular: '7 a 29 días', daily: '30 días o más',
+      returning: '{a} volvieron de {b} · media {d} día(s)', since: ' · desde el {date}',
+      pctOf: '{p} % de {n} identificadores',
+      accounts: 'Cuentas de Twitch conectadas', anonymous: 'Sin cuenta',
+      kToday: 'hoy', kWeek: '7 días', kMonth: '30 días', kBack: 'volvieron',
+      thDay: 'Día', thVersion: 'Versión', thActive: 'Activos', thWho: 'Quién', thPlat: 'Plataformas', thFirst: 'Primero', thLast: 'Último', thDays: 'Días',
+      signedIn: 'Conectado:', listErr: 'Lista no disponible ({e})', entries: '{a} / {b} entradas',
+      tagAcct: 'cuenta', tagAnon: 'anónimo', del: 'Eliminar',
+      confirm: '¿{l}?\nEsta acción es definitiva.', deleting: 'Eliminando…',
+      deleted: '{n} entrada(s) eliminada(s)', remaining: ' · quedan {n}, repite la acción', fail: 'Error: {e}',
+      lAnonWeb: 'Eliminar todos los anónimos web', lAnon: 'Eliminar todos los anónimos', lOnce: 'Eliminar las entradas vistas un solo día', lAll: 'Eliminar TODOS los datos de uso', lKey: 'Eliminar {k}',
+      syncConfirm: '¿Borrar la copia (historial y progreso) de {u}?', syncDone: 'Copia de {u} borrada.', syncNone: '{u} no tenía copia.',
+      updated: 'Actualizado a las {t}', unavailable: 'Estadísticas no disponibles ({e})',
+    },
+  }
+  const LANG = (() => {
+    try { const l = JSON.parse(localStorage.getItem('tu_prefs') || '{}').lang; if (T[l]) return l } catch {}
+    for (const l of navigator.languages ?? [navigator.language]) { const c = String(l || '').slice(0, 2).toLowerCase(); if (T[c]) return c }
+    return 'en'
+  })()
+  const LOCALE = { fr: 'fr-FR', en: 'en-US', es: 'es-ES' }[LANG]
+  const t = (k, v = {}) => (T[LANG][k] ?? T.en[k] ?? k).replace(/\{(\w+)\}/g, (_, n) => v[n] ?? '')
+  document.documentElement.lang = LANG
+  document.title = t('title')
+  document.querySelectorAll('[data-t]').forEach((el) => { el.textContent = t(el.dataset.t) })
+  document.querySelectorAll('[data-tp]').forEach((el) => { el.placeholder = t(el.dataset.tp) })
+  const fmt = (n) => Number(n || 0).toLocaleString(LOCALE)
+  const dayLabel = (iso, opts = { day: 'numeric', month: 'short' }) => new Date(iso + 'T00:00:00Z').toLocaleDateString(LOCALE, { timeZone: 'UTC', ...opts })
 
   function tiles(s) {
     const p = s.platforms ?? {}
@@ -219,13 +310,13 @@
           <span><i class="dot web"></i>Web ${fmt(p.web?.[key])}</span>
         </div>
       </div>`
-    $('#tiles').innerHTML = tile("Aujourd'hui", 'today') + tile('7 derniers jours', 'week') + tile('30 derniers jours', 'month')
+    $('#tiles').innerHTML = tile(t('today'), 'today') + tile(t('week'), 'week') + tile(t('month'), 'month')
   }
 
   /** Barres empilées iOS (bas) + web (haut), 2 px d'écart, haut arrondi. */
   function chartNew(days) {
     const box = $('#chart-new')
-    if (!days?.length) { box.innerHTML = '<p class="sub">Pas encore de données jour par jour (Worker à redéployer).</p>'; return }
+    if (!days?.length) { box.innerHTML = `<p class="sub">${esc(t('noDaily'))}</p>`; return }
     // Dessiné à la largeur réelle : rien n'est étiré (textes nets sur mobile).
     const W = Math.max(280, Math.round(box.clientWidth || 640)), H = 220, L = 30, R = 6, T = 8, B = 24
     const labelEvery = W < 480 ? 7 : 5
@@ -263,7 +354,7 @@
         svg += `<text class="axis" x="${last ? x + barW : x + barW / 2}" y="${H - 6}" text-anchor="${last ? 'end' : 'middle'}">${esc(dayLabel(d.date))}</text>`
       }
     })
-    box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Nouveaux utilisateurs par jour">${svg}</svg><div class="tip" hidden></div>`
+    box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('newTitle'))}">${svg}</svg><div class="tip" hidden></div>`
 
     // Survol : info-bulle par colonne, les autres colonnes s'estompent.
     const svgEl = box.querySelector('svg')
@@ -288,39 +379,39 @@
     }
     svgEl.addEventListener('pointerleave', hide)
 
-    $('#table-new').innerHTML = `<thead><tr><th>Jour</th><th class="n">iOS</th><th class="n">Web</th></tr></thead><tbody>${
+    $('#table-new').innerHTML = `<thead><tr><th>${t('thDay')}</th><th class="n">iOS</th><th class="n">Web</th></tr></thead><tbody>${
       days.slice().reverse().map((d) => `<tr><td>${esc(dayLabel(d.date, { weekday: 'short', day: 'numeric', month: 'short' }))}</td><td class="n">${fmt(d.newIos)}</td><td class="n">${fmt(d.newWeb)}</td></tr>`).join('')}</tbody>`
   }
 
   function loyalty(s) {
     const l = s.loyalty ?? {}
-    const rows = [['1 seul jour', l.once], ['2 à 6 jours', l.few], ['7 à 29 jours', l.regular], ['30 jours et +', l.daily]]
+    const rows = [[t('once'), l.once], [t('few'), l.few], [t('regular'), l.regular], [t('daily'), l.daily]]
     const total = Math.max(1, rows.reduce((n, r) => n + (r[1] || 0), 0))
     $('#loyalty').innerHTML = rows.map(([name, n], i) => `
       <div class="row"><span class="name">${name}</span>
         <span class="track"><i style="width:${((n || 0) / total) * 100}%;background:${i === 0 ? 'var(--faint)' : 'var(--purple)'}"></i></span>
         <span class="num">${fmt(n)}</span></div>`).join('')
-    $('#returning').textContent = `${fmt(s.returning)} revenus sur ${fmt(s.known)} · moyenne ${s.avgDays ?? 0} jour(s)${s.oldestFirst ? ` · depuis le ${dayLabel(s.oldestFirst, { day: 'numeric', month: 'long', year: 'numeric' })}` : ''}`
+    $('#returning').textContent = t('returning', { a: fmt(s.returning), b: fmt(s.known), d: (s.avgDays ?? 0).toLocaleString(LOCALE) }) + (s.oldestFirst ? t('since', { date: dayLabel(s.oldestFirst, { day: 'numeric', month: 'long', year: 'numeric' }) }) : '')
   }
 
   function platformReturning(s) {
-    const rows = [['App iOS', 'ios'], ['Site web', 'web']].map(([name, k]) => {
+    const rows = [[t('ios'), 'ios'], [t('web'), 'web']].map(([name, k]) => {
       const p = s.platforms?.[k] ?? {}
       return { name, k, known: p.known || 0, back: p.returning }
     })
     $('#platform-returning').innerHTML = rows.map((r) => {
-      if (r.back === undefined) return `<div class="row"><span class="name">${r.name}</span><span class="sub">Worker à redéployer</span><span></span></div>`
+      if (r.back === undefined) return `<div class="row"><span class="name">${r.name}</span><span class="sub">${t('redeploy')}</span><span></span></div>`
       const pct = r.known ? Math.round((r.back / r.known) * 100) : 0
       return `<div class="row"><span class="name"><i class="dot ${r.k}" style="display:inline-block;margin-right:6px"></i>${r.name}</span>
         <span class="track"><i style="width:${pct}%;background:var(--${r.k})"></i></span>
         <span class="num">${fmt(r.back)}</span></div>
-        <div class="row" style="margin-top:-6px"><span></span><span class="sub" style="margin:0">${pct} % des ${fmt(r.known)} identifiants</span><span></span></div>`
+        <div class="row" style="margin-top:-6px"><span></span><span class="sub" style="margin:0">${t('pctOf', { p: pct, n: fmt(r.known) })}</span><span></span></div>`
     }).join('')
   }
 
   function versions(s) {
     const list = (s.versions ?? []).slice(0, 12)
-    $('#versions').innerHTML = `<thead><tr><th>Version</th><th class="n">Actifs</th></tr></thead><tbody>${
+    $('#versions').innerHTML = `<thead><tr><th>${t('thVersion')}</th><th class="n">${t('thActive')}</th></tr></thead><tbody>${
       list.map((v) => {
         const [plat, ...rest] = String(v.version).split(' ')
         return `<tr><td><i class="dot ${plat === 'web' ? 'web' : 'ios'}" style="display:inline-block;margin-right:8px"></i>${esc(plat === 'web' ? 'Web' : 'iOS')} ${esc(rest.join(' '))}</td><td class="n">${fmt(v.count)}</td></tr>`
@@ -330,12 +421,12 @@
   function kinds(s) {
     const card = (title, tag, k) => {
       const v = s[k]
-      if (!v) return `<div class="card kind"><h2>${title}</h2><p class="sub">Worker à redéployer.</p></div>`
+      if (!v) return `<div class="card kind"><h2>${title}</h2><p class="sub">${t('redeploy')}</p></div>`
       return `<div class="card kind"><h2>${title} <span class="tag ${tag}">${fmt(v.known)}</span></h2>
-        <div class="nums"><div><b>${fmt(v.today)}</b><span>aujourd'hui</span></div><div><b>${fmt(v.week)}</b><span>7 jours</span></div>
-        <div><b>${fmt(v.month)}</b><span>30 jours</span></div><div><b>${fmt(v.returning)}</b><span>revenus</span></div></div></div>`
+        <div class="nums"><div><b>${fmt(v.today)}</b><span>${t('kToday')}</span></div><div><b>${fmt(v.week)}</b><span>${t('kWeek')}</span></div>
+        <div><b>${fmt(v.month)}</b><span>${t('kMonth')}</span></div><div><b>${fmt(v.returning)}</b><span>${t('kBack')}</span></div></div></div>`
     }
-    $('#kinds').innerHTML = card('Comptes Twitch connectés', 'acct', 'accounts') + card('Sans compte', '', 'anonymous')
+    $('#kinds').innerHTML = card(t('accounts'), 'acct', 'accounts') + card(t('anonymous'), '', 'anonymous')
   }
 
   // ── Compte connecté et outils développeur ────────────────────────────
@@ -349,7 +440,7 @@
     if (!token) { $('#who').textContent = ''; return }
     try {
       const me = await (await authed('/me')).json()
-      if (me.login) $('#who').innerHTML = `Connecté : <b>${esc(me.login)}</b>${me.admin ? ' · admin' : ''}`
+      if (me.login) $('#who').innerHTML = `${t('signedIn')} <b>${esc(me.login)}</b>${me.admin ? ' · admin' : ''}`
       if (me.admin) { $('#dev').hidden = false; loadEntries() }
     } catch {}
   }
@@ -360,52 +451,52 @@
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       entries = (await res.json()).entries ?? []
       renderEntries()
-    } catch (e) { devMsg(`Liste indisponible (${e.message})`, 'err') }
+    } catch (e) { devMsg(t('listErr', { e: e.message }), 'err') }
   }
 
   function renderEntries() {
     const q = $('#dev-search').value.trim().toLowerCase()
     const list = q ? entries.filter((e) => [e.login, e.version, e.platforms, e.key].join(' ').toLowerCase().includes(q)) : entries
-    $('#dev-count').textContent = `${fmt(list.length)} / ${fmt(entries.length)} entrées`
-    $('#dev-entries').innerHTML = `<thead><tr><th>Qui</th><th>Plateformes</th><th>Version</th><th>Premier</th><th>Dernier</th><th class="n">Jours</th><th></th></tr></thead><tbody>${
+    $('#dev-count').textContent = t('entries', { a: fmt(list.length), b: fmt(entries.length) })
+    $('#dev-entries').innerHTML = `<thead><tr><th>${t('thWho')}</th><th>${t('thPlat')}</th><th>${t('thVersion')}</th><th>${t('thFirst')}</th><th>${t('thLast')}</th><th class="n">${t('thDays')}</th><th></th></tr></thead><tbody>${
       list.slice(0, 400).map((e) => `<tr>
-        <td>${e.kind === 'account' ? `<span class="tag acct">compte</span> ${esc(e.login)}` : `<span class="tag">anonyme</span> ${esc(e.key.replace('usage_', '').slice(0, 8))}…`}</td>
+        <td>${e.kind === 'account' ? `<span class="tag acct">${t('tagAcct')}</span> ${esc(e.login)}` : `<span class="tag">${t('tagAnon')}</span> ${esc(e.key.replace('usage_', '').slice(0, 8))}…`}</td>
         <td>${esc(String(e.platforms).replace('ios', 'iOS').replace('web', 'Web'))}</td><td>${esc(e.version)}</td>
         <td>${esc(e.first ?? '')}</td><td>${esc(e.last ?? '')}</td><td class="n">${fmt(e.days)}</td>
-        <td><button class="btn sm danger" type="button" data-key="${esc(e.key)}">Supprimer</button></td></tr>`).join('')}</tbody>`
+        <td><button class="btn sm danger" type="button" data-key="${esc(e.key)}">${t('del')}</button></td></tr>`).join('')}</tbody>`
   }
 
   function devMsg(text, kind = '') { const m = $('#dev-msg'); m.textContent = text; m.className = `dev-msg ${kind}` }
 
   async function deleteUsage(body, label) {
-    if (!confirm(`${label} ?\nCette action est définitive.`)) return
-    devMsg('Suppression…')
+    if (!confirm(t('confirm', { l: label }))) return
+    devMsg(t('deleting'))
     try {
       const res = await authed('/usage/delete', { method: 'POST', body: JSON.stringify(body) })
       const r = await res.json()
       if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`)
-      devMsg(`${fmt(r.deleted)} entrée(s) supprimée(s)${r.remaining ? ` · ${fmt(r.remaining)} restante(s), relance l'action` : ''}.`, 'ok')
+      devMsg(t('deleted', { n: fmt(r.deleted) }) + (r.remaining ? t('remaining', { n: fmt(r.remaining) }) : '') + '.', 'ok')
       await Promise.all([loadEntries(), load()])
-    } catch (e) { devMsg(`Échec : ${e.message}`, 'err') }
+    } catch (e) { devMsg(t('fail', { e: e.message }), 'err') }
   }
 
-  const LABELS = { 'anon-web': 'Supprimer tous les anonymes web', anon: 'Supprimer tous les anonymes', once: 'Supprimer les entrées vues un seul jour', all: 'Supprimer TOUTES les données d\'utilisation' }
+  const LABELS = { 'anon-web': t('lAnonWeb'), anon: t('lAnon'), once: t('lOnce'), all: t('lAll') }
   document.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => deleteUsage({ target: b.dataset.del }, LABELS[b.dataset.del])))
   $('#dev-entries').addEventListener('click', (e) => {
     const b = e.target.closest('[data-key]')
-    if (b) deleteUsage({ target: 'key', key: b.dataset.key }, `Supprimer ${b.dataset.key}`)
+    if (b) deleteUsage({ target: 'key', key: b.dataset.key }, t('lKey', { k: b.dataset.key }))
   })
   $('#dev-search').addEventListener('input', renderEntries)
   $('#sync-form').addEventListener('submit', async (e) => {
     e.preventDefault()
     const login = $('#sync-login').value.trim().toLowerCase()
-    if (!login || !confirm(`Effacer la sauvegarde (historique et progression) de ${login} ?`)) return
+    if (!login || !confirm(t('syncConfirm', { u: login }))) return
     try {
       const res = await authed('/sync/delete', { method: 'POST', body: JSON.stringify({ login }) })
       const r = await res.json()
       if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`)
-      devMsg(r.existed ? `Sauvegarde de ${login} effacée.` : `${login} n'avait pas de sauvegarde.`, 'ok')
-    } catch (err) { devMsg(`Échec : ${err.message}`, 'err') }
+      devMsg(r.existed ? t('syncDone', { u: login }) : t('syncNone', { u: login }), 'ok')
+    } catch (err) { devMsg(t('fail', { e: err.message }), 'err') }
   })
 
   async function load() {
@@ -418,9 +509,9 @@
       lastDaily = s.daily
       tiles(s); kinds(s); chartNew(s.daily); loyalty(s); platformReturning(s); versions(s)
       const at = s.generatedAt ? new Date(s.generatedAt) : new Date()
-      $('#updated').textContent = `Mis à jour à ${at.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+      $('#updated').textContent = t('updated', { t: at.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' }) })
     } catch (e) {
-      $('#updated').innerHTML = `<span class="err">Statistiques indisponibles (${esc(e.message)})</span>`
+      $('#updated').innerHTML = `<span class="err">${esc(t('unavailable', { e: e.message }))}</span>`
     } finally {
       btn.disabled = false
     }
