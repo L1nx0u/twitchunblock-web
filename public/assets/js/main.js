@@ -1239,6 +1239,7 @@ function openSettings() {
     <div class="sheet-section">
       <h3>${esc(t('usage'))}</h3>
       <div class="usage-stats" id="usage-stats"><p class="muted small">${esc(t('loading'))}</p></div>
+      <a class="sheet-row" href="/stats" target="_blank" rel="noopener">${icon('trending', 18)}<span>${esc(t('usage_details'))}</span>${icon('external', 16)}</a>
       ${toggle('set-usage', t('share_usage'), p.shareUsage, t('share_usage_sub'))}
     </div>
     <div class="sheet-section">

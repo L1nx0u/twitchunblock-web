@@ -417,6 +417,11 @@ function getRequestHeaders(login) {
 const USAGE_PREFIX = 'usage_';
 const USAGE_RETENTION_DAYS = 35;
 const PLATFORMS = ['ios', 'web'];
+// Le site officiel : un ping « web » venu d'ailleurs (copie locale, tests,
+// préversions) n'est pas compté. L'app iOS n'envoie pas d'en-tête Origin.
+const USAGE_ORIGINS = ['https://test2-fawn-eta.vercel.app'];
+// Navigateurs automatisés et robots qui exécutent le JavaScript.
+const BOT_UA = /headless|bot\b|crawler|spider|slurp|playwright|puppeteer|selenium|phantomjs|lighthouse|preview/i;
 
 // POST /api/ping — { id, version, platform } enregistre ; { id, forget: true } efface.
 async function handlePing(request, env) {
@@ -429,6 +434,14 @@ async function handlePing(request, env) {
     // adresse ne peut pas en enchaîner des centaines. Compté en mémoire
     // seulement, jamais stocké.
     if (pingFlood(request.headers.get('CF-Connecting-IP') || '')) return jsonError('Trop de requêtes', 429);
+
+    // Bruit écarté sans erreur (le client n'a rien à corriger) : robots et
+    // navigateurs automatisés, et pings « web » hors du site officiel.
+    const origin = request.headers.get('Origin');
+    const ua = request.headers.get('User-Agent') || '';
+    if (BOT_UA.test(ua) || (origin && !USAGE_ORIGINS.includes(origin))) {
+        return jsonResponse({ ok: true, ignored: true });
+    }
 
     // Uniquement des UUID : pas question de laisser écrire des clés libres.
     const id = String(body.id || '');
@@ -483,12 +496,17 @@ async function cachedStats(request, env, ctx) {
 async function handleStats(env) {
     if (!env.TWITCH_DATA) return jsonError("KV 'TWITCH_DATA' non lié au Worker.", 500);
     const todayMs = Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
-    const blank = () => ({ today: 0, week: 0, month: 0, known: 0 });
+    const blank = () => ({ today: 0, week: 0, month: 0, known: 0, returning: 0 });
     const total = blank();
     const platforms = Object.fromEntries(PLATFORMS.map((p) => [p, blank()]));
     const versions = {};
     const loyalty = { once: 0, few: 0, regular: 0, daily: 0 };
     let returning = 0, totalDays = 0, oldestFirst = null, cursor;
+    // Série des 30 derniers jours : nouveaux (premier jour vu) et vus pour la
+    // dernière fois ce jour-là, par plateforme.
+    const dayKey = (offset) => new Date(todayMs - offset * 86400000).toISOString().slice(0, 10);
+    const daily = {};
+    for (let i = 29; i >= 0; i--) daily[dayKey(i)] = { date: dayKey(i), newIos: 0, newWeb: 0, lastIos: 0, lastWeb: 0 };
 
     // list() renvoie les métadonnées sans lecture par clé ; 1000 clés par page.
     do {
@@ -507,9 +525,12 @@ async function handleStats(env) {
             if (age <= 30) { const v = `${meta.p || 'ios'} ${meta.v || '?'}`; versions[v] = (versions[v] || 0) + 1; }
             const d = meta.days || 1;
             totalDays += d;
-            if (d >= 2) returning++;
+            if (d >= 2) { returning++; bucket.returning++; }
             if (d === 1) loyalty.once++; else if (d < 7) loyalty.few++; else if (d < 30) loyalty.regular++; else loyalty.daily++;
             if (meta.first && (!oldestFirst || meta.first < oldestFirst)) oldestFirst = meta.first;
+            const p = meta.p === 'web' ? 'Web' : 'Ios';
+            if (daily[meta.first]) daily[meta.first]['new' + p]++;
+            if (daily[meta.last]) daily[meta.last]['last' + p]++;
         }
         cursor = page.list_complete ? undefined : page.cursor;
     } while (cursor);
@@ -519,6 +540,7 @@ async function handleStats(env) {
         avgDays: total.known ? Math.round((totalDays / total.known) * 10) / 10 : 0,
         oldestFirst,
         versions: Object.entries(versions).map(([version, count]) => ({ version, count })).sort((a, b) => b.count - a.count),
+        daily: Object.values(daily),
         generatedAt: new Date().toISOString()
     };
     // no-store : sinon « Actualiser » pourrait resservir les mêmes chiffres.

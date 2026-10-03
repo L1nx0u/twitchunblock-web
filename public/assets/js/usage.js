@@ -14,7 +14,7 @@
 import { API_URL } from './api.js'
 import { uid } from './util.js'
 
-export const SITE_VERSION = '2026.10.02b'
+export const SITE_VERSION = '2026.10.03'
 const ID_KEY = 'tu_install_id'
 const LAST_KEY = 'tu_last_ping'
 /** Un signal par heure au plus : le Worker ne compte qu'une fois par jour,
@@ -47,9 +47,41 @@ function post(body) {
   })
 }
 
+/** Le stockage garde-t-il vraiment l'identifiant ? En navigation privée
+ *  stricte ou stockage bloqué, chaque visite tirerait un nouvel identifiant
+ *  et compterait une « nouvelle personne » : on ne compte pas. */
+function storageWorks() {
+  try {
+    localStorage.setItem('tu_probe', '1')
+    const ok = localStorage.getItem('tu_probe') === '1'
+    localStorage.removeItem('tu_probe')
+    return ok
+  } catch { return false }
+}
+
+/** Une vraie visite : page affichée au moins 15 s (un robot ou un aperçu de
+ *  lien repart avant). Résolu une fois par chargement de page. */
+let warm = null
+function visibleFor(ms) {
+  warm ??= new Promise((resolve) => {
+    let timer = null
+    const check = () => {
+      clearTimeout(timer)
+      if (!document.hidden) timer = setTimeout(() => { document.removeEventListener('visibilitychange', check); resolve() }, ms)
+    }
+    document.addEventListener('visibilitychange', check)
+    check()
+  })
+  return warm
+}
+
 /** Appelé au démarrage et à intervalles réguliers. */
 export async function ping(enabled) {
   if (!enabled) return
+  // Navigateur piloté par un programme (tests automatisés, robots).
+  if (navigator.webdriver) return
+  if (!storageWorks()) return
+  await visibleFor(15_000)
   let last = 0
   try { last = Number(localStorage.getItem(LAST_KEY)) || 0 } catch {}
   if (Date.now() - last < PING_EVERY) return
