@@ -113,7 +113,11 @@
     .dev-table td, .dev-table th { padding: 7px 10px; white-space: nowrap; }
     .tag { display: inline-block; padding: 1px 6px; border-radius: 5px; font-size: 11px; font-weight: 700; background: var(--card-hi); color: var(--muted); }
     .tag.acct { background: rgba(191, 148, 255, 0.16); color: var(--purple); }
-    .dev-filter { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .dev-filter { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover, th.sortable.on { color: var(--text); }
+    th.sortable .arrow { margin-left: 4px; font-size: 10px; opacity: 0.5; }
+    th.sortable.on .arrow { opacity: 1; color: var(--purple); }
 
     footer { margin-top: 28px; color: var(--faint); font-size: 12px; line-height: 1.6; }
 
@@ -189,6 +193,9 @@
     <p class="dev-msg" id="dev-msg" role="status"></p>
     <div class="dev-filter">
       <input id="dev-search" type="search" data-tp="filterPh" style="height:32px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:13px;min-width:200px">
+      <select id="dev-kind" style="height:32px;padding:0 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:13px"><option value="" data-t="fAllKinds"></option><option value="account" data-t="fAccounts"></option><option value="anonymous" data-t="fAnon"></option></select>
+      <select id="dev-plat" style="height:32px;padding:0 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:13px"><option value="" data-t="fAllPlats"></option><option value="ios" data-t="fIosOnly"></option><option value="web" data-t="fWebOnly"></option><option value="both" data-t="fBoth"></option></select>
+      <select id="dev-version" style="height:32px;padding:0 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:13px"></select>
       <span class="sub" id="dev-count" style="margin:0"></span>
     </div>
     <div class="dev-table"><table id="dev-entries"></table></div>
@@ -229,6 +236,7 @@
       deleted: '{n} entrée(s) supprimée(s)', remaining: ' · {n} restante(s), relance l’action', fail: 'Échec : {e}',
       lAnonWeb: 'Supprimer tous les anonymes web', lAnon: 'Supprimer tous les anonymes', lOnce: 'Supprimer les entrées vues un seul jour', lAll: 'Supprimer TOUTES les données d’utilisation', lKey: 'Supprimer {k}',
       syncConfirm: 'Effacer la sauvegarde (historique et progression) de {u} ?', syncDone: 'Sauvegarde de {u} effacée.', syncNone: '{u} n’avait pas de sauvegarde.',
+      fAllKinds: 'Tous les types', fAccounts: 'Comptes', fAnon: 'Anonymes', fAllPlats: 'Toutes plateformes', fIosOnly: 'iOS seulement', fWebOnly: 'Web seulement', fBoth: 'iOS + Web', fAllVersions: 'Toutes versions',
       updated: 'Mis à jour à {t}', unavailable: 'Statistiques indisponibles ({e})',
     },
     en: {
@@ -256,6 +264,7 @@
       deleted: '{n} entry(ies) deleted', remaining: ' · {n} left, run the action again', fail: 'Failed: {e}',
       lAnonWeb: 'Delete all anonymous web entries', lAnon: 'Delete all anonymous entries', lOnce: 'Delete entries seen on one day only', lAll: 'Delete ALL usage data', lKey: 'Delete {k}',
       syncConfirm: 'Erase the backup (history and progress) of {u}?', syncDone: 'Backup of {u} erased.', syncNone: '{u} had no backup.',
+      fAllKinds: 'All types', fAccounts: 'Accounts', fAnon: 'Anonymous', fAllPlats: 'All platforms', fIosOnly: 'iOS only', fWebOnly: 'Web only', fBoth: 'iOS + Web', fAllVersions: 'All versions',
       updated: 'Updated at {t}', unavailable: 'Stats unavailable ({e})',
     },
     es: {
@@ -283,6 +292,7 @@
       deleted: '{n} entrada(s) eliminada(s)', remaining: ' · quedan {n}, repite la acción', fail: 'Error: {e}',
       lAnonWeb: 'Eliminar todos los anónimos web', lAnon: 'Eliminar todos los anónimos', lOnce: 'Eliminar las entradas vistas un solo día', lAll: 'Eliminar TODOS los datos de uso', lKey: 'Eliminar {k}',
       syncConfirm: '¿Borrar la copia (historial y progreso) de {u}?', syncDone: 'Copia de {u} borrada.', syncNone: '{u} no tenía copia.',
+      fAllKinds: 'Todos los tipos', fAccounts: 'Cuentas', fAnon: 'Anónimos', fAllPlats: 'Todas las plataformas', fIosOnly: 'Solo iOS', fWebOnly: 'Solo web', fBoth: 'iOS + Web', fAllVersions: 'Todas las versiones',
       updated: 'Actualizado a las {t}', unavailable: 'Estadísticas no disponibles ({e})',
     },
   }
@@ -454,15 +464,48 @@
       const res = await authed('/usage')
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       entries = (await res.json()).entries ?? []
+      fillFilters()
       renderEntries()
     } catch (e) { devMsg(t('listErr', { e: e.message }), 'err') }
   }
 
+  // Tri et filtres du tableau : clic sur un en-tête pour trier (re-clic =
+  // sens inverse), listes pour ne garder qu'un type, une plateforme, une version.
+  let sort = { key: 'last', dir: -1 }
+  const SORTERS = {
+    who: (e) => (e.kind === 'account' ? '0' : '1') + (e.login || e.key).toLowerCase(),
+    platforms: (e) => String(e.platforms),
+    version: (e) => String(e.version || ''),
+    first: (e) => e.first || '',
+    last: (e) => e.last || '',
+    days: (e) => e.days || 0,
+  }
+  const cmp = (a, b) => (typeof a === 'number' ? a - b : String(a).localeCompare(String(b), LOCALE, { numeric: true }))
+
+  function fillFilters() {
+    const sel = $('#dev-version'), cur = sel.value
+    const versions = [...new Set(entries.map((e) => String(e.version || '?')))].sort((a, b) => cmp(b, a))
+    sel.innerHTML = `<option value="">${esc(t('fAllVersions'))}</option>` + versions.map((v) => `<option value="${esc(v)}">${esc(v)} (${fmt(entries.filter((e) => String(e.version || '?') === v).length)})</option>`).join('')
+    sel.value = versions.includes(cur) ? cur : ''
+  }
+
   function renderEntries() {
     const q = $('#dev-search').value.trim().toLowerCase()
-    const list = q ? entries.filter((e) => [e.login, e.version, e.platforms, e.key].join(' ').toLowerCase().includes(q)) : entries
+    const kind = $('#dev-kind').value, plat = $('#dev-plat').value, ver = $('#dev-version').value
+    const list = entries.filter((e) => {
+      const ps = String(e.platforms).split(',')
+      if (q && ![e.login, e.version, e.platforms, e.key].join(' ').toLowerCase().includes(q)) return false
+      if (kind && e.kind !== kind) return false
+      if (plat === 'both' && ps.length < 2) return false
+      if ((plat === 'ios' || plat === 'web') && !(ps.length === 1 && ps[0] === plat)) return false
+      if (ver && String(e.version || '?') !== ver) return false
+      return true
+    })
+    const get = SORTERS[sort.key]
+    list.sort((a, b) => cmp(get(a), get(b)) * sort.dir || cmp(b.last || '', a.last || ''))
     $('#dev-count').textContent = t('entries', { a: fmt(list.length), b: fmt(entries.length) })
-    $('#dev-entries').innerHTML = `<thead><tr><th>${t('thWho')}</th><th>${t('thPlat')}</th><th>${t('thVersion')}</th><th>${t('thFirst')}</th><th>${t('thLast')}</th><th class="n">${t('thDays')}</th><th></th></tr></thead><tbody>${
+    const th = (key, label, cls = '') => `<th class="sortable ${cls}${sort.key === key ? ' on' : ''}" data-sort="${key}" aria-sort="${sort.key === key ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'}">${label}<span class="arrow">${sort.key === key ? (sort.dir > 0 ? '▲' : '▼') : '↕'}</span></th>`
+    $('#dev-entries').innerHTML = `<thead><tr>${th('who', t('thWho'))}${th('platforms', t('thPlat'))}${th('version', t('thVersion'))}${th('first', t('thFirst'))}${th('last', t('thLast'))}${th('days', t('thDays'), 'n')}<th></th></tr></thead><tbody>${
       list.slice(0, 400).map((e) => `<tr>
         <td>${e.kind === 'account' ? `<span class="tag acct">${t('tagAcct')}</span> ${esc(e.login)}` : `<span class="tag">${t('tagAnon')}</span> ${esc(e.key.replace('usage_', '').slice(0, 8))}…`}</td>
         <td>${esc(String(e.platforms).replace('ios', 'iOS').replace('web', 'Web'))}</td><td>${esc(e.version)}</td>
@@ -487,10 +530,18 @@
   const LABELS = { 'anon-web': t('lAnonWeb'), anon: t('lAnon'), once: t('lOnce'), all: t('lAll') }
   document.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => deleteUsage({ target: b.dataset.del }, LABELS[b.dataset.del])))
   $('#dev-entries').addEventListener('click', (e) => {
+    const h = e.target.closest('[data-sort]')
+    if (h) {
+      const k = h.dataset.sort
+      // Nouvelle colonne : texte de A à Z, dates et jours du plus récent/grand.
+      sort = sort.key === k ? { key: k, dir: -sort.dir } : { key: k, dir: ['who', 'platforms'].includes(k) ? 1 : -1 }
+      return renderEntries()
+    }
     const b = e.target.closest('[data-key]')
     if (b) deleteUsage({ target: 'key', key: b.dataset.key }, t('lKey', { k: b.dataset.key }))
   })
   $('#dev-search').addEventListener('input', renderEntries)
+  for (const id of ['#dev-kind', '#dev-plat', '#dev-version']) $(id).addEventListener('change', renderEntries)
   $('#sync-form').addEventListener('submit', async (e) => {
     e.preventDefault()
     const login = $('#sync-login').value.trim().toLowerCase()
