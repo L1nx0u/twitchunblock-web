@@ -52,6 +52,10 @@ export default {
                 case '/api/admin/usage': return await handleAdminUsage(request, env);
                 case '/api/admin/usage/delete': return await handleAdminUsageDelete(request, env);
                 case '/api/admin/sync/delete': return await handleAdminSyncDelete(request, env);
+
+                // Annonces affichées dans l'app (lecture publique, écriture admin)
+                case '/api/announcement': return await handleAnnouncementGet(env);
+                case '/api/admin/announcement': return await handleAdminAnnouncement(request, env);
                 
                 default: return new Response("Not Found", { status: 404, headers: RESPONSE_HEADERS });
             }
@@ -685,4 +689,56 @@ async function handleAdminSyncDelete(request, env) {
     const existed = Boolean(await env.TWITCH_DATA.get(`user_${id}`));
     if (existed) await env.TWITCH_DATA.delete(`user_${id}`);
     return jsonResponse({ ok: true, existed });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Annonces : un message du développeur affiché dans l'app pendant une durée
+//  choisie. Une seule annonce à la fois, clé KV `announcement`, qui expire
+//  d'elle-même (expirationTtl) : rien à nettoyer.
+// ═══════════════════════════════════════════════════════════════════════════
+const ANNOUNCEMENT_KEY = 'announcement';
+let announcementCache = null;   // { value, until } — l'app la relit à chaque ouverture
+
+async function readAnnouncement(env) {
+    if (announcementCache && announcementCache.until > Date.now()) return announcementCache.value;
+    let value = null;
+    try { value = await env.TWITCH_DATA.get(ANNOUNCEMENT_KEY, 'json'); } catch (e) {}
+    if (value && !(value.until > Date.now())) value = null;
+    announcementCache = { value, until: Date.now() + 60 * 1000 };
+    return value;
+}
+
+// GET /api/announcement — { announcement: null | { id, title, message, link, until } }
+async function handleAnnouncementGet(env) {
+    if (!env.TWITCH_DATA) return jsonResponse({ announcement: null });
+    return new Response(JSON.stringify({ announcement: await readAnnouncement(env) }), {
+        headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    });
+}
+
+// GET : annonce en cours. POST { title, message, link?, hours } : publier.
+// POST { clear: true } : retirer.
+async function handleAdminAnnouncement(request, env) {
+    const { denied } = await requireAdmin(request);
+    if (denied) return denied;
+    if (request.method === 'GET') return jsonResponse({ announcement: await readAnnouncement(env) });
+    if (request.method !== 'POST') return jsonError('Method Not Allowed', 405);
+    let body;
+    try { body = await request.json(); } catch (e) { return jsonError('JSON invalide', 400); }
+    announcementCache = null;
+    if (body.clear === true) {
+        await env.TWITCH_DATA.delete(ANNOUNCEMENT_KEY);
+        return jsonResponse({ ok: true, announcement: null });
+    }
+    const title = String(body.title || '').trim().slice(0, 80);
+    const message = String(body.message || '').trim().slice(0, 500);
+    if (!title && !message) return jsonError('Titre ou message requis', 400);
+    let link = String(body.link || '').trim().slice(0, 300);
+    if (link && !/^https:\/\/[^\s]+$/i.test(link)) return jsonError('Lien : https:// uniquement', 400);
+    const hours = Math.min(24 * 30, Math.max(0.25, Number(body.hours) || 24));
+    const ttl = Math.round(hours * 3600);
+    const announcement = { id: Date.now().toString(36), title, message, link: link || null, until: Date.now() + ttl * 1000, createdAt: Date.now() };
+    // expirationTtl : 60 s minimum chez Cloudflare.
+    await env.TWITCH_DATA.put(ANNOUNCEMENT_KEY, JSON.stringify(announcement), { expirationTtl: Math.max(60, ttl) });
+    return jsonResponse({ ok: true, announcement });
 }
