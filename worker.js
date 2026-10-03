@@ -490,6 +490,9 @@ async function handlePing(request, env) {
             if (!prev.first || (anon.first && anon.first < prev.first)) prev.first = anon.first;
             prev.days = Math.max(prev.days || 0, anon.days || 0);
             if (anon.last && (!prev.last || anon.last > prev.last)) prev.last = anon.last;
+            // Les plateformes vues anonymement restent acquises au compte.
+            const seen = new Set([...(prev.ps ? String(prev.ps).split(',') : (prev.p ? [prev.p] : [])), ...(anon.ps ? String(anon.ps).split(',') : (anon.p ? [anon.p] : []))]);
+            prev.ps = [...seen].filter((x) => PLATFORMS.includes(x)).sort().join(',');
             await env.TWITCH_DATA.delete(anonKey);
         }
     }
@@ -557,10 +560,11 @@ async function handleStats(env) {
             const meta = key.metadata || {};
             const then = Date.parse((meta.last || '') + 'T00:00:00Z');
             const age = Number.isNaN(then) ? Infinity : Math.floor((todayMs - then) / 86400000);
-            // Un compte utilisé sur l'app ET le site compte dans les deux plateformes
-            // (une fois seulement dans le total).
-            const plats = (meta.ps ? String(meta.ps).split(',') : [meta.p || 'ios']).filter((x) => platforms[x])
-            const buckets = (plats.length ? plats : ['ios']).map((x) => platforms[x]);
+            // Une seule plateforme par identifiant : utilisé sur l'app ET le
+            // site, il compte comme iOS (l'app est le vrai signe d'adoption).
+            const plats = meta.ps ? String(meta.ps).split(',') : [meta.p || 'ios'];
+            const plat = plats.includes('ios') || !plats.includes('web') ? 'ios' : 'web';
+            const buckets = [platforms[plat]];
             const kind = meta.k === 'a' ? kinds.accounts : kinds.anonymous;
             for (const c of [total, kind, ...buckets]) {
                 c.known++;
@@ -574,7 +578,7 @@ async function handleStats(env) {
             if (d >= 2) { returning++; kind.returning++; for (const b of buckets) b.returning++; }
             if (d === 1) loyalty.once++; else if (d < 7) loyalty.few++; else if (d < 30) loyalty.regular++; else loyalty.daily++;
             if (meta.first && (!oldestFirst || meta.first < oldestFirst)) oldestFirst = meta.first;
-            const p = meta.p === 'web' ? 'Web' : 'Ios';
+            const p = plat === 'web' ? 'Web' : 'Ios';
             if (daily[meta.first]) daily[meta.first]['new' + p]++;
             if (daily[meta.last]) daily[meta.last]['last' + p]++;
         }
