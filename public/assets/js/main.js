@@ -47,6 +47,7 @@ async function boot() {
   loadHls()   // prêt avant le premier clic
   applyStatic()
   renderTopLocal()
+  loadAnnouncement(true)
   renderIcons()
   bindGlobal()
   setupPlayer()
@@ -218,7 +219,7 @@ function flushSync({ force = false } = {}) {
 
 setInterval(() => flushSync(), 60_000)
 // Fermeture d'onglet, changement d'appli sur mobile : dernier envoi.
-document.addEventListener('visibilitychange', () => { if (document.hidden) flushSync({ force: true }) })
+document.addEventListener('visibilitychange', () => { if (document.hidden) flushSync({ force: true }); else loadAnnouncement() })
 window.addEventListener('pagehide', () => flushSync({ force: true }))
 
 // ── Navigation ─────────────────────────────────────────────────────────────
@@ -1350,6 +1351,47 @@ function renderTopLocal() {
   if (b) b.textContent = topLangName(topLangCode())
 }
 
+// ── Annonce du développeur ─────────────────────────────────────────────
+// Même annonce que dans l'app (publiée depuis /stats), en haut de l'accueil.
+// Relue à l'ouverture et au retour sur l'onglet (au plus toutes les 5 min) ;
+// une annonce fermée ne revient pas (une nouvelle, si).
+const ANN_DISMISSED = 'tu_ann_dismissed'
+let annFetchedAt = 0
+let annCurrent = null
+async function loadAnnouncement(force = false) {
+  if (!force && Date.now() - annFetchedAt < 5 * 60_000) return renderAnnouncement()
+  try {
+    const res = await fetch(`${api.API_URL}/api/announcement`, { cache: 'no-store' })
+    if (!res.ok) return
+    annCurrent = (await res.json()).announcement ?? null
+    annFetchedAt = Date.now()
+  } catch { return }
+  renderAnnouncement()
+}
+function renderAnnouncement() {
+  const box = $('#announcement')
+  if (!box) return
+  let dismissed = []
+  try { dismissed = JSON.parse(localStorage.getItem(ANN_DISMISSED) || '[]') } catch {}
+  const a = annCurrent
+  if (!a || !(a.until > Date.now()) || dismissed.includes(a.id)) { box.hidden = true; box.innerHTML = ''; return }
+  const link = /^https:\/\//i.test(a.link || '') ? a.link : null
+  box.innerHTML = `<div class="announce" role="status">
+    <span class="announce-ic">${icon('megaphone', 18)}</span>
+    <div class="announce-body">
+      ${a.title ? `<h3>${esc(a.title)}</h3>` : ''}
+      ${a.message ? `<p>${esc(a.message)}</p>` : ''}
+      ${link ? `<a class="btn primary sm" href="${esc(link)}" target="_blank" rel="noopener">${esc(t('announcement_open'))} ${icon('external', 14)}</a>` : ''}
+    </div>
+    <button class="icon-btn" type="button" data-ann-close title="${esc(t('close'))}">${icon('x', 18)}</button>
+  </div>`
+  box.hidden = false
+  box.querySelector('[data-ann-close]').onclick = () => {
+    try { localStorage.setItem(ANN_DISMISSED, JSON.stringify([...dismissed, a.id].slice(-20))) } catch {}
+    box.hidden = true
+  }
+}
+
 /** Combien de gens utilisent le site et l'app : aujourd'hui, 7 et 30 jours. */
 async function renderUsageStats() {
   const box = $('#usage-stats')
@@ -1395,6 +1437,7 @@ actions['login-again'] = () => login()
 /** Après un changement de langue : ce qui a été rendu en JS est refait. */
 function refreshTexts() {
   renderTopLocal()
+  renderAnnouncement()
   renderContinue()
   renderRecentChannels()
   state.loaded.followed = 0

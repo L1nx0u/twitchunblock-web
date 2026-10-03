@@ -149,6 +149,16 @@ input[type='search']::-webkit-search-cancel-button { filter: invert(1) opacity(0
 .content { max-width: 1480px; margin: 0 auto; padding: 28px 24px 64px; }
 .view { animation: fade 0.25s ease; }
 .block { margin-bottom: 40px; }
+
+/* Annonce du développeur (publiée depuis /stats) */
+#announcement { margin-bottom: 28px; }
+.announce { display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px; border-radius: 16px; border: 1px solid rgba(191, 148, 255, 0.45); background: linear-gradient(rgba(145, 70, 255, 0.10), rgba(145, 70, 255, 0.10)), var(--card); }
+.announce-ic { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: #fff; background: linear-gradient(135deg, var(--primary), var(--purple)); }
+.announce-body { flex: 1; min-width: 0; }
+.announce-body h3 { margin: 0 0 4px; font-size: 15px; font-weight: 700; }
+.announce-body p { margin: 0; color: var(--muted); font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.announce-body .btn { margin-top: 10px; }
+.announce .icon-btn { flex: none; margin: -6px -8px 0 0; }
 .block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .block-head h2 { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 800; letter-spacing: -0.01em; }
 .block-head h2 .ic { color: var(--purple); }

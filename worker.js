@@ -717,6 +717,8 @@ async function handleAnnouncementGet(env) {
 }
 
 // GET : annonce en cours. POST { title, message, link?, hours } : publier.
+// POST { edit: true, …, keepUntil?, renotify? } : modifier l'annonce en cours
+// (même identifiant : qui l'a fermée ne la revoit pas, sauf `renotify`).
 // POST { clear: true } : retirer.
 async function handleAdminAnnouncement(request, env) {
     const { denied } = await requireAdmin(request);
@@ -735,9 +737,25 @@ async function handleAdminAnnouncement(request, env) {
     if (!title && !message) return jsonError('Titre ou message requis', 400);
     let link = String(body.link || '').trim().slice(0, 300);
     if (link && !/^https:\/\/[^\s]+$/i.test(link)) return jsonError('Lien : https:// uniquement', 400);
-    const hours = Math.min(24 * 30, Math.max(1 / 60, Number(body.hours) || 24));
-    const ttl = Math.round(hours * 3600);
-    const announcement = { id: Date.now().toString(36), title, message, link: link || null, until: Date.now() + ttl * 1000, createdAt: Date.now() };
+    let prev = null;
+    if (body.edit === true) {
+        try { prev = await env.TWITCH_DATA.get(ANNOUNCEMENT_KEY, 'json'); } catch (e) {}
+        if (!prev || !(prev.until > Date.now())) return jsonError('Aucune annonce en cours à modifier', 404);
+    }
+    let ttl;
+    if (prev && body.keepUntil === true) {
+        ttl = Math.max(60, Math.round((prev.until - Date.now()) / 1000));
+    } else {
+        const hours = Math.min(24 * 30, Math.max(1 / 60, Number(body.hours) || 24));
+        ttl = Math.round(hours * 3600);
+    }
+    const announcement = {
+        id: prev && body.renotify !== true ? prev.id : Date.now().toString(36),
+        title, message, link: link || null,
+        until: prev && body.keepUntil === true ? prev.until : Date.now() + ttl * 1000,
+        createdAt: prev ? prev.createdAt : Date.now(),
+        ...(prev ? { editedAt: Date.now() } : {}),
+    };
     // expirationTtl : 60 s minimum chez Cloudflare.
     await env.TWITCH_DATA.put(ANNOUNCEMENT_KEY, JSON.stringify(announcement), { expirationTtl: Math.max(60, ttl) });
     return jsonResponse({ ok: true, announcement });
