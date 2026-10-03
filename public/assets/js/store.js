@@ -23,6 +23,7 @@ function write(key, value) {
 
 const DEFAULT_PREFS = {
   lang: null,
+  topLang: null,     // langue du top des lives ; null = celle de l'appareil
   timestamps: false,
   keepDeleted: true,
   loadHistory: true,

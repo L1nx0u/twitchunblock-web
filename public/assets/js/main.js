@@ -23,7 +23,7 @@ const session = {
 
 const state = {
   tab: 'discover',
-  topLang: 'fr',
+  topLang: 'local',       // 'local' (langue choisie) ou 'all'
   loaded: { followed: 0, top: 0 },
   channel: null,          // { login, info, videos }
   watch: null,            // { kind, login?, id?, info, links }
@@ -46,6 +46,7 @@ async function boot() {
   initLang(store.prefs.lang)
   loadHls()   // prêt avant le premier clic
   applyStatic()
+  renderTopLocal()
   renderIcons()
   bindGlobal()
   setupPlayer()
@@ -460,7 +461,7 @@ async function loadTop(language, { silent = false } = {}) {
   const grid = $('#top-grid')
   if (!silent) grid.innerHTML = skeleton(8)
   try {
-    const streams = await api.getTopStreams(language === 'all' ? null : language)
+    const streams = await api.getTopStreams(language === 'all' ? null : topLangCode())
     if (state.topLang !== language) return
     grid.innerHTML = streams.length ? streams.map(streamCard).join('') : emptyState(t('no_live'))
   } catch {
@@ -1210,6 +1211,13 @@ function openSettings() {
         ${LANGS.map((l) => `<button type="button" data-l="${l.id}" class="${p.lang === l.id ? 'active' : ''}">${esc(l.label)}</button>`).join('')}
       </div>
       <p class="muted small lang-hint">${esc(t('lang_auto_sub', { l: LANGS.find((x) => x.id === deviceLang())?.label ?? 'English' }))}</p>
+      <label class="setting setting-col">
+        <span class="setting-text"><span>${esc(t('top_lang'))}</span><small>${esc(t('top_lang_sub', { l: topLangName(deviceTopLang()) }))}</small></span>
+        <select class="text-input" id="set-toplang">
+          <option value="auto" ${p.topLang ? '' : 'selected'}>${esc(t('lang_auto'))} · ${esc(topLangName(deviceTopLang()))}</option>
+          ${TOP_LANGS.map((c) => [c, topLangName(c)]).sort((a, b) => a[1].localeCompare(b[1], lang())).map(([c, n]) => `<option value="${c}" ${p.topLang === c ? 'selected' : ''}>${esc(n)}</option>`).join('')}
+        </select>
+      </label>
     </div>
     <div class="sheet-section">
       <h3>${esc(t('chat_settings'))}</h3>
@@ -1290,6 +1298,13 @@ function openSettings() {
     if (id === 'set-words') {
       p.highlightWords = e.target.value.split(',').map((w) => w.trim().toLowerCase()).filter(Boolean).slice(0, 30)
     }
+    if (id === 'set-toplang') {
+      p.topLang = e.target.value === 'auto' ? null : e.target.value
+      store.savePrefs()
+      renderTopLocal()
+      loadTop('local')
+      return
+    }
     if (id === 'set-usage') {
       p.shareUsage = e.target.checked
       if (p.shareUsage) usage.ping(true)
@@ -1305,6 +1320,34 @@ function openSettings() {
     store.savePrefs()
     chat.applyPrefs()
   }
+}
+
+// ── Langue du top des lives ────────────────────────────────────────────
+// Twitch ne filtre pas par pays mais par langue du streamer : on prend la
+// langue choisie dans les réglages, sinon la première langue de l'appareil
+// que Twitch connaît (« pt-BR » → portugais), sinon l'anglais.
+const TOP_LANGS = ['ar', 'bg', 'ca', 'cs', 'da', 'de', 'el', 'en', 'es', 'fi', 'fr', 'hi', 'hu', 'id', 'it', 'ja', 'ko', 'ms', 'nl', 'no', 'pl', 'pt', 'ro', 'ru', 'sk', 'sv', 'th', 'tl', 'tr', 'uk', 'vi', 'zh', 'zh_hk']
+const TOP_ALIAS = { nb: 'no', nn: 'no', fil: 'tl' }
+function deviceTopLang() {
+  for (const raw of navigator.languages?.length ? navigator.languages : [navigator.language]) {
+    const tag = String(raw || '').toLowerCase()
+    if (/^zh-(hk|mo|hant)/.test(tag)) return 'zh_hk'
+    const base = tag.split('-')[0]
+    const code = TOP_ALIAS[base] ?? base
+    if (TOP_LANGS.includes(code)) return code
+  }
+  return 'en'
+}
+const topLangCode = () => (TOP_LANGS.includes(store.prefs.topLang) ? store.prefs.topLang : deviceTopLang())
+function topLangName(code) {
+  try {
+    const n = new Intl.DisplayNames([lang()], { type: 'language' }).of(code === 'zh_hk' ? 'zh-HK' : code)
+    return n ? n.charAt(0).toLocaleUpperCase(lang()) + n.slice(1) : code.toUpperCase()
+  } catch { return code.toUpperCase() }
+}
+function renderTopLocal() {
+  const b = $('#top-local')
+  if (b) b.textContent = topLangName(topLangCode())
 }
 
 /** Combien de gens utilisent le site et l'app : aujourd'hui, 7 et 30 jours. */
@@ -1351,6 +1394,7 @@ actions['login-again'] = () => login()
 
 /** Après un changement de langue : ce qui a été rendu en JS est refait. */
 function refreshTexts() {
+  renderTopLocal()
   renderContinue()
   renderRecentChannels()
   state.loaded.followed = 0

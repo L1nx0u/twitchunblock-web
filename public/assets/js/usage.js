@@ -16,7 +16,7 @@
 import { API_URL } from './api.js'
 import { uid } from './util.js'
 
-export const SITE_VERSION = '2026.10.03'
+export const SITE_VERSION = '2026.10.03b'
 const ID_KEY = 'tu_install_id'
 const LAST_KEY = 'tu_last_ping'
 /** Un signal par heure au plus : le Worker ne compte qu'une fois par jour,
@@ -65,15 +65,19 @@ function storageWorks() {
   } catch { return false }
 }
 
-/** Une vraie visite : page affichée au moins 15 s (un robot ou un aperçu de
- *  lien repart avant). Résolu une fois par chargement de page. */
+/** Une vraie visite : page affichée au moins 5 min au total, onglet visible
+ *  (un robot, un aperçu de lien ou un simple coup d’œil repartent avant).
+ *  Le temps se cumule si l'onglet est masqué puis réaffiché. Résolu une fois
+ *  par chargement de page. */
 let warm = null
 function visibleFor(ms) {
   warm ??= new Promise((resolve) => {
-    let timer = null
+    let left = ms, since = 0, timer = null
     const check = () => {
       clearTimeout(timer)
-      if (!document.hidden) timer = setTimeout(() => { document.removeEventListener('visibilitychange', check); resolve() }, ms)
+      if (since) { left -= Date.now() - since; since = 0 }
+      if (left <= 0) { document.removeEventListener('visibilitychange', check); return resolve() }
+      if (!document.hidden) { since = Date.now(); timer = setTimeout(check, left) }
     }
     document.addEventListener('visibilitychange', check)
     check()
@@ -87,7 +91,7 @@ export async function ping(enabled) {
   // Navigateur piloté par un programme (tests automatisés, robots).
   if (navigator.webdriver) return
   if (!storageWorks()) return
-  await visibleFor(15_000)
+  await visibleFor(5 * 60_000)
   let last = 0
   try { last = Number(localStorage.getItem(LAST_KEY)) || 0 } catch {}
   if (Date.now() - last < PING_EVERY) return

@@ -46,6 +46,7 @@
     .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
     .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
     .tile .label { color: var(--muted); font-size: 13px; font-weight: 600; }
+    .tile .partial { color: var(--faint); font-weight: 500; }
     .tile .value { font-size: 40px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
     .split { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
     .split span { display: inline-flex; align-items: center; gap: 6px; }
@@ -214,7 +215,7 @@
       delAnonWeb: 'Supprimer les anonymes web', delAnon: 'Supprimer tous les anonymes', delOnce: 'Supprimer les « vus un seul jour »', delAll: 'Tout réinitialiser',
       loginPh: 'Pseudo Twitch', syncBtn: 'Effacer sa sauvegarde (historique, progression)', filterPh: 'Filtrer (pseudo, version…)',
       footer: 'Comptage : connecté, le compte Twitch (compté une fois sur tous ses appareils) ; sinon un identifiant tiré au hasard par navigateur ou par installation. Au plus un signal par heure, ni adresse IP ni chaîne regardée. Les entrées expirent après 35 jours. Depuis le 3 octobre 2026, les robots, navigateurs automatisés, copies locales du site et navigations privées sans stockage ne sont plus comptés ; les anciens identifiants parasites disparaîtront d’eux-mêmes.',
-      today: "Aujourd'hui", week: '7 derniers jours', month: '30 derniers jours',
+      today: "Aujourd'hui", week: '7 derniers jours', month: '30 derniers jours', partial: 'données depuis le {d} seulement',
       redeploy: 'Worker à redéployer', noDaily: 'Pas encore de données jour par jour (Worker à redéployer).',
       once: '1 seul jour', few: '2 à 6 jours', regular: '7 à 29 jours', daily: '30 jours et +',
       returning: '{a} revenus sur {b} · moyenne {d} jour(s)', since: ' · depuis le {date}',
@@ -241,7 +242,7 @@
       delAnonWeb: 'Delete anonymous web', delAnon: 'Delete all anonymous', delOnce: 'Delete “seen on one day only”', delAll: 'Reset everything',
       loginPh: 'Twitch username', syncBtn: 'Erase their backup (history, progress)', filterPh: 'Filter (username, version…)',
       footer: 'Counting: when signed in, the Twitch account (counted once across all devices); otherwise a random identifier per browser or install. At most one signal per hour, no IP address and no watched channel. Entries expire after 35 days. Since October 3, 2026, bots, automated browsers, local copies of the site and private browsing without storage are no longer counted; old noisy identifiers will disappear on their own.',
-      today: 'Today', week: 'Last 7 days', month: 'Last 30 days',
+      today: 'Today', week: 'Last 7 days', month: 'Last 30 days', partial: 'data only since {d}',
       redeploy: 'Worker needs redeploying', noDaily: 'No day-by-day data yet (Worker needs redeploying).',
       once: '1 day only', few: '2 to 6 days', regular: '7 to 29 days', daily: '30 days +',
       returning: '{a} came back out of {b} · average {d} day(s)', since: ' · since {date}',
@@ -268,7 +269,7 @@
       delAnonWeb: 'Eliminar anónimos web', delAnon: 'Eliminar todos los anónimos', delOnce: 'Eliminar «vistos un solo día»', delAll: 'Restablecer todo',
       loginPh: 'Usuario de Twitch', syncBtn: 'Borrar su copia (historial, progreso)', filterPh: 'Filtrar (usuario, versión…)',
       footer: 'Recuento: con sesión iniciada, la cuenta de Twitch (contada una vez en todos sus dispositivos); si no, un identificador aleatorio por navegador o instalación. Como mucho una señal por hora, sin dirección IP ni canal visto. Las entradas caducan a los 35 días. Desde el 3 de octubre de 2026, los bots, navegadores automatizados, copias locales del sitio y la navegación privada sin almacenamiento ya no se cuentan; los antiguos identificadores parásitos desaparecerán solos.',
-      today: 'Hoy', week: 'Últimos 7 días', month: 'Últimos 30 días',
+      today: 'Hoy', week: 'Últimos 7 días', month: 'Últimos 30 días', partial: 'datos solo desde el {d}',
       redeploy: 'Hay que redesplegar el Worker', noDaily: 'Aún no hay datos por día (hay que redesplegar el Worker).',
       once: 'Un solo día', few: '2 a 6 días', regular: '7 a 29 días', daily: '30 días o más',
       returning: '{a} volvieron de {b} · media {d} día(s)', since: ' · desde el {date}',
@@ -301,16 +302,19 @@
 
   function tiles(s) {
     const p = s.platforms ?? {}
-    const tile = (label, key) => `
+    // Collecte plus récente que la période : on le dit, sinon « 7 jours » égal
+    // à « aujourd'hui » a l'air d'un bug.
+    const ageDays = s.oldestFirst ? Math.round((Date.parse(new Date().toISOString().slice(0, 10)) - Date.parse(s.oldestFirst)) / 86400000) : Infinity
+    const tile = (label, key, span = 0) => `
       <div class="card tile">
-        <div class="label">${label}</div>
+        <div class="label">${label}${ageDays < span ? ` <span class="partial">· ${esc(t('partial', { d: dayLabel(s.oldestFirst) }))}</span>` : ''}</div>
         <div class="value">${fmt(s[key])}</div>
         <div class="split">
           <span><i class="dot ios"></i>iOS ${fmt(p.ios?.[key])}</span>
           <span><i class="dot web"></i>Web ${fmt(p.web?.[key])}</span>
         </div>
       </div>`
-    $('#tiles').innerHTML = tile(t('today'), 'today') + tile(t('week'), 'week') + tile(t('month'), 'month')
+    $('#tiles').innerHTML = tile(t('today'), 'today') + tile(t('week'), 'week', 6) + tile(t('month'), 'month', 29)
   }
 
   /** Barres empilées iOS (bas) + web (haut), 2 px d'écart, haut arrondi. */
