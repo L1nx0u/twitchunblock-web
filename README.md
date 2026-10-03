@@ -57,6 +57,12 @@ Watch Twitch lives and VODs in your browser, no subscription needed, with the re
 
 ---
 
+## Community
+
+Questions, bugs, ideas: **[join the Discord](https://discord.gg/cEsMRdxsVq)**.
+
+---
+
 ## Repository layout
 
 ```

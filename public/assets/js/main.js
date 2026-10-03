@@ -1247,6 +1247,7 @@ function openSettings() {
       <div class="sheet-group">
         <a class="sheet-row" href="${api.GITHUB_URL}" target="_blank" rel="noopener">${icon('github', 18)}<span>${esc(t('source_site'))}</span>${icon('external', 16)}</a>
         <a class="sheet-row" href="${api.APP_GITHUB_URL}" target="_blank" rel="noopener">${icon('github', 18)}<span>${esc(t('source_app'))}</span>${icon('external', 16)}</a>
+        <a class="sheet-row" href="${api.DISCORD_URL}" target="_blank" rel="noopener">${icon('discord', 18)}<span>${esc(t('discord_join'))}</span>${icon('external', 16)}</a>
       </div>
       ${creditsHtml()}
     </div>`)
