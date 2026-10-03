@@ -52,7 +52,7 @@ const STRINGS = {
     load_history: 'Charger les messages précédents', chat_size: 'Taille du texte',
     connected_as: 'Connecté en tant que {u}', not_connected: 'Non connecté',
     source_site: 'Code source du site', source_app: 'Code source de l’app iOS', credits: 'Crédits', made_by: 'Créé par', thanks: 'Merci à', not_affiliated: 'Projet indépendant, sans lien avec Twitch.',
-    usage: 'Utilisation', usage_today: 'Aujourd’hui', usage_week: '7 jours', usage_month: '30 jours', usage_note: 'Personnes distinctes sur le site (globe) et l’app iOS. Anonyme : un identifiant aléatoire par navigateur, rien d’autre.', usage_unavailable: 'Le serveur n’a pas encore les routes de comptage.', share_usage: 'Partager mon utilisation', share_usage_sub: 'Anonyme. Coupé, ton identifiant est effacé du serveur.',
+    usage: 'Utilisation', usage_today: 'Aujourd’hui', usage_week: '7 jours', usage_month: '30 jours', usage_note: 'Personnes distinctes sur le site (globe) et l’app iOS : un compte Twitch connecté compte une fois, sinon un identifiant aléatoire par navigateur.', usage_unavailable: 'Le serveur n’a pas encore les routes de comptage.', share_usage: 'Partager mon utilisation', share_usage_sub: 'Sans compte : un identifiant aléatoire. Connecté : ton compte Twitch (pour te compter une seule fois sur tous tes appareils). Coupé, tout est effacé du serveur.',
     about: 'À propos', about_text: 'Aucune donnée n’est revendue. L’historique reste dans ton navigateur et, si tu es connecté, dans une sauvegarde liée à ton compte.',
   },
   en: {
@@ -101,7 +101,7 @@ const STRINGS = {
     load_history: 'Load earlier messages', chat_size: 'Text size',
     connected_as: 'Logged in as {u}', not_connected: 'Not logged in',
     source_site: 'Website source code', source_app: 'iOS app source code', credits: 'Credits', made_by: 'Made by', thanks: 'Thanks to', not_affiliated: 'Independent project, not affiliated with Twitch.',
-    usage: 'Usage', usage_today: 'Today', usage_week: '7 days', usage_month: '30 days', usage_note: 'Distinct people on the website (globe) and the iOS app. Anonymous: a random ID per browser, nothing else.', usage_unavailable: 'The server doesn’t have the usage routes yet.', share_usage: 'Share my usage', share_usage_sub: 'Anonymous. Off, your ID is deleted from the server.',
+    usage: 'Usage', usage_today: 'Today', usage_week: '7 days', usage_month: '30 days', usage_note: 'Distinct people on the website (globe) and the iOS app: a logged-in Twitch account counts once, otherwise a random ID per browser.', usage_unavailable: 'The server doesn’t have the usage routes yet.', share_usage: 'Share my usage', share_usage_sub: 'Logged out: a random ID. Logged in: your Twitch account (so you count once across all your devices). Off, it is all deleted from the server.',
     about: 'About', about_text: 'No data is sold. Your history stays in your browser and, if you log in, in a backup tied to your account.',
   },
   es: {
@@ -150,7 +150,7 @@ const STRINGS = {
     load_history: 'Cargar mensajes anteriores', chat_size: 'Tamaño del texto',
     connected_as: 'Conectado como {u}', not_connected: 'Sin conectar',
     source_site: 'Código fuente del sitio', source_app: 'Código fuente de la app iOS', credits: 'Créditos', made_by: 'Creado por', thanks: 'Gracias a', not_affiliated: 'Proyecto independiente, sin relación con Twitch.',
-    usage: 'Uso', usage_today: 'Hoy', usage_week: '7 días', usage_month: '30 días', usage_note: 'Personas distintas en el sitio (globo) y la app iOS. Anónimo: un ID aleatorio por navegador, nada más.', usage_unavailable: 'El servidor aún no tiene las rutas de conteo.', share_usage: 'Compartir mi uso', share_usage_sub: 'Anónimo. Desactivado, tu ID se borra del servidor.',
+    usage: 'Uso', usage_today: 'Hoy', usage_week: '7 días', usage_month: '30 días', usage_note: 'Personas distintas en el sitio (globo) y la app iOS: una cuenta de Twitch conectada cuenta una vez; si no, un ID aleatorio por navegador.', usage_unavailable: 'El servidor aún no tiene las rutas de conteo.', share_usage: 'Compartir mi uso', share_usage_sub: 'Sin sesión: un ID aleatorio. Con sesión: tu cuenta de Twitch (para contarte una sola vez en todos tus dispositivos). Desactivado, todo se borra del servidor.',
     about: 'Acerca de', about_text: 'No se vende ningún dato. Tu historial se queda en tu navegador y, si inicias sesión, en una copia ligada a tu cuenta.',
   },
 }

@@ -113,15 +113,17 @@ The iOS app uses the same Worker.
 
 ## Usage count
 
-To know whether people actually use the website and the app, each browser (and each app install) sends a small signal to the Worker at most once an hour. The settings show distinct people today, over 7 days and over 30 days, split between website and iOS app.
+To know whether people actually use the website and the app, each browser (and each app install) sends a small signal to the Worker at most once an hour. Numbers are public at **[/stats](https://test2-fawn-eta.vercel.app/stats)**: distinct people today, over 7 and 30 days, website vs iOS app, logged-in accounts vs anonymous, new people per day and how many came back.
 
 | Sent | Never sent |
 |---|---|
-| A random ID generated in the browser | Twitch account, username |
-| The website version | IP address (not stored by the Worker) |
-| `web` or `ios` | Channels watched, history |
+| Logged out: a random ID generated in the browser | Channels watched, history |
+| Logged in: your Twitch token, so the Worker counts your **account** once across all your devices (its Twitch ID and username are kept, visible to the site owner only) | IP address (not stored by the Worker) |
+| The website version, `web` or `ios` | |
 
-Keys expire on their own after 35 days. Anyone can turn it off in the settings, which also deletes their ID from the server.
+Not counted: automated browsers and bots, copies of the site outside the official domain, private windows that can't keep the ID, visits shorter than 15 s. Keys expire on their own after 35 days. Anyone can turn it off in the settings, which also deletes their entry from the server.
+
+The site owner's Twitch account gets developer tools on `/stats` (delete entries, reset, erase someone's backup); the Worker checks the token on every admin request.
 
 Raw numbers: `GET https://test2.kurzmathis4.workers.dev/api/stats`
 

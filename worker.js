@@ -46,6 +46,12 @@ export default {
                 // Comptage d'utilisation (app iOS et site)
                 case '/api/ping': return await handlePing(request, env);
                 case '/api/stats': return await cachedStats(request, env, ctx);
+
+                // Outils d'administration (compte du propriétaire uniquement)
+                case '/api/admin/me': return await handleAdminMe(request);
+                case '/api/admin/usage': return await handleAdminUsage(request, env);
+                case '/api/admin/usage/delete': return await handleAdminUsageDelete(request, env);
+                case '/api/admin/sync/delete': return await handleAdminSyncDelete(request, env);
                 
                 default: return new Response("Not Found", { status: 404, headers: RESPONSE_HEADERS });
             }
@@ -69,23 +75,29 @@ export default {
 // heures. Le résultat est gardé en mémoire 30 minutes (au mieux : chaque
 // instance du Worker a la sienne), pour ne pas appeler Twitch à chaque
 // requête.
-const tokenCache = new Map();   // empreinte du jeton → { userId, until }
+const tokenCache = new Map();   // empreinte du jeton → { userId, login, until }
 async function tokenUserId(request) {
+    return (await tokenIdentity(request))?.userId ?? null;
+}
+
+/** Compte Twitch du jeton présenté (`Authorization: Bearer …`), ou null. */
+async function tokenIdentity(request) {
     const auth = request.headers.get('Authorization') || '';
     const token = auth.replace(/^(Bearer|OAuth)\s+/i, '').trim();
     if (!token || token.length > 200) return null;
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
     const key = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
     const hit = tokenCache.get(key);
-    if (hit && hit.until > Date.now()) return hit.userId;
+    if (hit && hit.until > Date.now()) return hit;
     const res = await fetch('https://id.twitch.tv/oauth2/validate', { headers: { Authorization: `OAuth ${token}` } });
     if (!res.ok) { tokenCache.delete(key); return null; }
     const v = await res.json();
     const userId = v && v.user_id ? String(v.user_id) : null;
     if (!userId) return null;
     if (tokenCache.size > 500) tokenCache.clear();
-    tokenCache.set(key, { userId, until: Date.now() + 30 * 60 * 1000 });
-    return userId;
+    const entry = { userId, login: String(v.login || '').toLowerCase(), until: Date.now() + 30 * 60 * 1000 };
+    tokenCache.set(key, entry);
+    return entry;
 }
 
 async function authorizeSync(request, userId) {
@@ -415,6 +427,9 @@ function getRequestHeaders(login) {
 //  sauvegarde (`user_`).
 // ═══════════════════════════════════════════════════════════════════════════
 const USAGE_PREFIX = 'usage_';
+const USAGE_ACCOUNT_PREFIX = 'usage_a_';
+/** Comptes Twitch administrateurs (ID numérique : le pseudo peut changer). mxfia19 */
+const ADMIN_IDS = ['839837720'];
 const USAGE_RETENTION_DAYS = 35;
 const PLATFORMS = ['ios', 'web'];
 // Le site officiel : un ping « web » venu d'ailleurs (copie locale, tests,
@@ -447,23 +462,49 @@ async function handlePing(request, env) {
     const id = String(body.id || '');
     if (!/^[0-9a-fA-F-]{36}$/.test(id)) return jsonError('ID invalide', 400);
 
+    // Connecté à Twitch : on compte le COMPTE (un seul, quel que soit le
+    // nombre d'appareils ou de navigateurs), clé `usage_a_<id Twitch>`.
+    // Sinon l'identifiant aléatoire de l'appareil, clé `usage_<uuid>`.
+    const who = request.headers.get('Authorization') ? await tokenIdentity(request) : null;
+    const anonKey = USAGE_PREFIX + id;
+    const key = who ? USAGE_ACCOUNT_PREFIX + who.userId : anonKey;
+
     if (body.forget === true) {
-        await env.TWITCH_DATA.delete(USAGE_PREFIX + id);
+        await env.TWITCH_DATA.delete(anonKey);
+        if (who) await env.TWITCH_DATA.delete(key);
         return jsonResponse({ ok: true, forgotten: true });
     }
 
     const day = new Date().toISOString().slice(0, 10);
-    let prev = {};
-    try { prev = (await env.TWITCH_DATA.getWithMetadata(USAGE_PREFIX + id)).metadata || {}; } catch (e) {}
-    // Un même jour ne compte qu'une fois, quel que soit le nombre d'ouvertures.
-    const days = prev.last === day ? (prev.days || 1) : (prev.days || 0) + 1;
     const platform = PLATFORMS.includes(body.platform) ? body.platform : 'ios';
+    const version = String(body.version || '?').slice(0, 16);
+    let prev = {};
+    try { prev = (await env.TWITCH_DATA.getWithMetadata(key)).metadata || {}; } catch (e) {}
 
-    await env.TWITCH_DATA.put(USAGE_PREFIX + id, '', {
-        expirationTtl: 60 * 60 * 24 * USAGE_RETENTION_DAYS,
-        metadata: { first: prev.first || day, last: day, days, v: String(body.version || '?').slice(0, 16), p: platform }
-    });
-    return jsonResponse({ ok: true, days });
+    // Première connexion sur cet appareil : l'historique anonyme est repris
+    // par le compte, puis effacé (sinon la même personne compterait deux fois).
+    if (who) {
+        let anon = null;
+        try { anon = (await env.TWITCH_DATA.getWithMetadata(anonKey)).metadata; } catch (e) {}
+        if (anon) {
+            if (!prev.first || (anon.first && anon.first < prev.first)) prev.first = anon.first;
+            prev.days = Math.max(prev.days || 0, anon.days || 0);
+            if (anon.last && (!prev.last || anon.last > prev.last)) prev.last = anon.last;
+            await env.TWITCH_DATA.delete(anonKey);
+        }
+    }
+
+    const platforms = [...new Set([...(prev.ps ? String(prev.ps).split(',') : (prev.p ? [prev.p] : [])), platform])].filter((x) => PLATFORMS.includes(x)).sort().join(',');
+    const days = prev.last === day ? (prev.days || 1) : (prev.days || 0) + 1;
+    const meta = { first: prev.first || day, last: day, days, v: version, p: platform, ps: platforms };
+    if (who) { meta.k = 'a'; meta.l = who.login.slice(0, 25); }
+
+    // Rien de neuf aujourd'hui : pas d'écriture (1 000 par jour en gratuit).
+    if (prev.last === day && prev.v === version && prev.ps === platforms && (!who || prev.l === meta.l)) {
+        return jsonResponse({ ok: true, days, unchanged: true });
+    }
+    await env.TWITCH_DATA.put(key, '', { expirationTtl: 60 * 60 * 24 * USAGE_RETENTION_DAYS, metadata: meta });
+    return jsonResponse({ ok: true, days, account: Boolean(who) });
 }
 
 const pingHits = new Map();   // adresse → { n, until } (mémoire de l'instance)
@@ -498,6 +539,7 @@ async function handleStats(env) {
     const todayMs = Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
     const blank = () => ({ today: 0, week: 0, month: 0, known: 0, returning: 0 });
     const total = blank();
+    const kinds = { accounts: blank(), anonymous: blank() };
     const platforms = Object.fromEntries(PLATFORMS.map((p) => [p, blank()]));
     const versions = {};
     const loyalty = { once: 0, few: 0, regular: 0, daily: 0 };
@@ -515,8 +557,12 @@ async function handleStats(env) {
             const meta = key.metadata || {};
             const then = Date.parse((meta.last || '') + 'T00:00:00Z');
             const age = Number.isNaN(then) ? Infinity : Math.floor((todayMs - then) / 86400000);
-            const bucket = platforms[meta.p] || platforms.ios;
-            for (const c of [total, bucket]) {
+            // Un compte utilisé sur l'app ET le site compte dans les deux plateformes
+            // (une fois seulement dans le total).
+            const plats = (meta.ps ? String(meta.ps).split(',') : [meta.p || 'ios']).filter((x) => platforms[x])
+            const buckets = (plats.length ? plats : ['ios']).map((x) => platforms[x]);
+            const kind = meta.k === 'a' ? kinds.accounts : kinds.anonymous;
+            for (const c of [total, kind, ...buckets]) {
                 c.known++;
                 if (age === 0) c.today++;
                 if (age <= 7) c.week++;
@@ -525,7 +571,7 @@ async function handleStats(env) {
             if (age <= 30) { const v = `${meta.p || 'ios'} ${meta.v || '?'}`; versions[v] = (versions[v] || 0) + 1; }
             const d = meta.days || 1;
             totalDays += d;
-            if (d >= 2) { returning++; bucket.returning++; }
+            if (d >= 2) { returning++; kind.returning++; for (const b of buckets) b.returning++; }
             if (d === 1) loyalty.once++; else if (d < 7) loyalty.few++; else if (d < 30) loyalty.regular++; else loyalty.daily++;
             if (meta.first && (!oldestFirst || meta.first < oldestFirst)) oldestFirst = meta.first;
             const p = meta.p === 'web' ? 'Web' : 'Ios';
@@ -536,7 +582,7 @@ async function handleStats(env) {
     } while (cursor);
 
     const payload = {
-        ...total, platforms, returning, loyalty,
+        ...total, platforms, accounts: kinds.accounts, anonymous: kinds.anonymous, returning, loyalty,
         avgDays: total.known ? Math.round((totalDays / total.known) * 10) / 10 : 0,
         oldestFirst,
         versions: Object.entries(versions).map(([version, count]) => ({ version, count })).sort((a, b) => b.count - a.count),
@@ -549,3 +595,90 @@ async function handleStats(env) {
 
 function jsonResponse(obj) { return new Response(JSON.stringify(obj), { headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json' } }); }
 function jsonError(msg, status) { return new Response(JSON.stringify({ error: msg }), { status, headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json' } }); }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Administration : réservé aux comptes de ADMIN_IDS (jeton Twitch vérifié).
+// ═══════════════════════════════════════════════════════════════════════════
+async function requireAdmin(request) {
+    const who = await tokenIdentity(request);
+    if (!who) return { denied: jsonError('Jeton Twitch manquant ou expiré', 401) };
+    if (!ADMIN_IDS.includes(who.userId)) return { denied: jsonError('Réservé au propriétaire', 403) };
+    return { who };
+}
+
+// GET /api/admin/me — suis-je administrateur ?
+async function handleAdminMe(request) {
+    const who = await tokenIdentity(request);
+    return jsonResponse({ login: who?.login ?? null, admin: Boolean(who && ADMIN_IDS.includes(who.userId)) });
+}
+
+async function listUsage(env) {
+    const out = [];
+    let cursor;
+    do {
+        const page = await env.TWITCH_DATA.list({ prefix: USAGE_PREFIX, limit: 1000, cursor });
+        out.push(...page.keys);
+        cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+    return out;
+}
+
+// GET /api/admin/usage — le détail : comptes (avec pseudo) et anonymes.
+async function handleAdminUsage(request, env) {
+    const { denied } = await requireAdmin(request);
+    if (denied) return denied;
+    const keys = await listUsage(env);
+    const entries = keys.map(({ name, metadata: m = {} }) => ({
+        key: name,
+        kind: m.k === 'a' ? 'account' : 'anonymous',
+        login: m.l || null,
+        platforms: m.ps || m.p || 'ios',
+        version: m.v || '?',
+        first: m.first || null,
+        last: m.last || null,
+        days: m.days || 1,
+    })).sort((a, b) => String(b.last).localeCompare(String(a.last)));
+    return new Response(JSON.stringify({ entries }), { headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+}
+
+// POST /api/admin/usage/delete — { target: 'key'|'anon'|'anon-web'|'once'|'all', key? }
+async function handleAdminUsageDelete(request, env) {
+    if (request.method !== 'POST') return jsonError('Method Not Allowed', 405);
+    const { denied } = await requireAdmin(request);
+    if (denied) return denied;
+    let body;
+    try { body = await request.json(); } catch (e) { return jsonError('JSON invalide', 400); }
+    const target = String(body.target || '');
+    const keys = await listUsage(env);
+    const match = {
+        key: (k) => k.name === body.key,
+        anon: (k) => k.metadata?.k !== 'a',
+        'anon-web': (k) => k.metadata?.k !== 'a' && (k.metadata?.ps || k.metadata?.p) === 'web',
+        once: (k) => (k.metadata?.days || 1) <= 1,
+        all: () => true,
+    }[target];
+    if (!match) return jsonError('Cible inconnue', 400);
+    if (target === 'key' && !String(body.key || '').startsWith(USAGE_PREFIX)) return jsonError('Clé invalide', 400);
+    // Chaque suppression compte comme une écriture KV : plafonnée par appel.
+    const doomed = keys.filter(match).slice(0, 500);
+    for (const k of doomed) await env.TWITCH_DATA.delete(k.name);
+    statsCache = null;
+    return jsonResponse({ ok: true, deleted: doomed.length, remaining: keys.filter(match).length - doomed.length });
+}
+
+// POST /api/admin/sync/delete — { login } : efface la sauvegarde d'un compte.
+async function handleAdminSyncDelete(request, env) {
+    if (request.method !== 'POST') return jsonError('Method Not Allowed', 405);
+    const { denied } = await requireAdmin(request);
+    if (denied) return denied;
+    let body;
+    try { body = await request.json(); } catch (e) { return jsonError('JSON invalide', 400); }
+    const login = String(body.login || '').trim().toLowerCase();
+    if (!LOGIN_RE.test(login)) return jsonError('Nom invalide', 400);
+    const d = await twitchGQL('query($l: String!) { user(login: $l) { id } }', { l: login });
+    const id = d?.data?.user?.id;
+    if (!id) return jsonError('Compte introuvable', 404);
+    const existed = Boolean(await env.TWITCH_DATA.get(`user_${id}`));
+    if (existed) await env.TWITCH_DATA.delete(`user_${id}`);
+    return jsonResponse({ ok: true, existed });
+}

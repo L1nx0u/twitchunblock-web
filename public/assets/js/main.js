@@ -101,6 +101,7 @@ async function adoptToken(token, { silent = false } = {}) {
     api.getAvatars([session.login]).then((a) => { session.avatar = a[session.login] ?? null; renderAccount() })
   }
   if (session.userId) await pullSync()
+  if (!silent) usage.pingNow(store.prefs.shareUsage)
   state.loaded.followed = 0
   if (state.tab === 'discover') loadFollowed()
   chat?.sessionChanged()

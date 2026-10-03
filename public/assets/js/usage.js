@@ -4,8 +4,10 @@
 //  Même mécanisme que l'app iOS (UsageService.swift) : le navigateur signale
 //  « je suis là » au Worker, qui compte les identifiants distincts par jour.
 //  Ce qui part : un identifiant tiré au hasard et gardé dans ce navigateur,
-//  la version du site, « web ». Pas de compte Twitch, pas de chaîne regardée,
-//  pas d'historique ; le Worker ne garde pas les adresses IP.
+//  la version du site, « web » ; si l'on est connecté, le jeton Twitch, pour
+//  compter le compte une seule fois sur tous les appareils (le Worker garde
+//  l'identifiant et le pseudo Twitch, visibles du seul administrateur). Pas
+//  de chaîne regardée, pas d'historique ; pas d'adresse IP.
 //
 //  Désactivable dans les réglages : l'identifiant est alors effacé côté
 //  serveur.
@@ -39,9 +41,13 @@ function installId() {
 }
 
 function post(body) {
+  // Connecté : le jeton Twitch permet au Worker de compter le compte (une
+  // seule fois sur tous les appareils) au lieu de cet identifiant aléatoire.
+  let token = null
+  try { token = localStorage.getItem('twitch_token') } catch {}
   return fetch(`${API_URL}/api/ping`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify(body),
     keepalive: true,
   })
@@ -89,6 +95,13 @@ export async function ping(enabled) {
     const res = await post({ id: installId(), version: SITE_VERSION, platform: 'web' })
     if (res.ok) try { localStorage.setItem(LAST_KEY, String(Date.now())) } catch {}
   } catch { /* le comptage ne doit jamais gêner le site */ }
+}
+
+/** Juste après une connexion : compté tout de suite comme compte, sans
+ *  attendre l'heure suivante (l'historique anonyme est repris côté serveur). */
+export function pingNow(enabled) {
+  try { localStorage.removeItem(LAST_KEY) } catch {}
+  return ping(enabled)
 }
 
 /** Refus du comptage : on efface l'identifiant côté serveur. */

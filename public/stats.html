@@ -86,12 +86,41 @@
     details { margin-top: 12px; }
     summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     .err { color: #f87171; }
+    .kinds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+    .kind h2 { display: flex; align-items: center; gap: 8px; }
+    .kind .nums { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 8px; font-variant-numeric: tabular-nums; }
+    .kind .nums div { display: flex; flex-direction: column; }
+    .kind .nums b { font-size: 26px; font-weight: 800; }
+    .kind .nums span { color: var(--muted); font-size: 12px; }
+    .who { color: var(--muted); font-size: 13px; }
+    .who b { color: var(--text); }
+
+    /* Outils développeur */
+    .dev { border-color: rgba(191, 148, 255, 0.35); margin-top: 12px; }
+    .dev h2 { color: var(--purple); }
+    .dev-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 16px; }
+    .btn.danger { border-color: rgba(248, 113, 113, 0.45); color: #fca5a5; }
+    .btn.danger:hover { background: rgba(248, 113, 113, 0.12); }
+    .btn.sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+    .dev-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+    .dev-form input { height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; font-size: 14px; min-width: 200px; }
+    .dev-msg { min-height: 20px; margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+    .dev-msg.ok { color: #4ade80; }
+    .dev-msg.err { color: #f87171; }
+    .dev-table { max-height: 460px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+    .dev-table table th { position: sticky; top: 0; background: var(--card); }
+    .dev-table td, .dev-table th { padding: 7px 10px; white-space: nowrap; }
+    .tag { display: inline-block; padding: 1px 6px; border-radius: 5px; font-size: 11px; font-weight: 700; background: var(--card-hi); color: var(--muted); }
+    .tag.acct { background: rgba(191, 148, 255, 0.16); color: var(--purple); }
+    .dev-filter { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+
     footer { margin-top: 28px; color: var(--faint); font-size: 12px; line-height: 1.6; }
 
     @media (max-width: 820px) {
       main { padding: 20px 16px 48px; }
       .tiles { grid-template-columns: 1fr; }
       .grid2 { grid-template-columns: 1fr; }
+      .kinds { grid-template-columns: 1fr; }
       .tile .value { font-size: 34px; }
     }
   </style>
@@ -101,12 +130,15 @@
   <header>
     <h1>Twitch<b>Unblock</b> · utilisation</h1>
     <span class="updated" id="updated"></span>
+    <span class="who" id="who"></span>
     <span class="spacer"></span>
     <button class="btn" id="refresh" type="button">↻ Actualiser</button>
     <a class="btn" href="/">Retour au site</a>
   </header>
 
   <section class="tiles" id="tiles" aria-live="polite"></section>
+
+  <section class="kinds" id="kinds"></section>
 
   <section class="grid2">
     <div class="card">
@@ -140,9 +172,30 @@
     </div>
   </section>
 
+  <section class="card dev" id="dev" hidden>
+    <h2>Outils développeur</h2>
+    <p class="sub">Visible seulement par le compte administrateur. Chaque suppression compte comme une écriture KV (1 000 par jour en gratuit), plafonnée à 500 par action.</p>
+    <div class="dev-actions">
+      <button class="btn danger" type="button" data-del="anon-web">Supprimer les anonymes web</button>
+      <button class="btn danger" type="button" data-del="anon">Supprimer tous les anonymes</button>
+      <button class="btn danger" type="button" data-del="once">Supprimer les « vus un seul jour »</button>
+      <button class="btn danger" type="button" data-del="all">Tout réinitialiser</button>
+    </div>
+    <form class="dev-form" id="sync-form">
+      <input id="sync-login" type="text" placeholder="Pseudo Twitch" autocomplete="off" spellcheck="false" maxlength="25">
+      <button class="btn danger" type="submit">Effacer sa sauvegarde (historique, progression)</button>
+    </form>
+    <p class="dev-msg" id="dev-msg" role="status"></p>
+    <div class="dev-filter">
+      <input id="dev-search" type="search" placeholder="Filtrer (pseudo, version…)" style="height:32px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:13px;min-width:200px">
+      <span class="sub" id="dev-count" style="margin:0"></span>
+    </div>
+    <div class="dev-table"><table id="dev-entries"></table></div>
+  </section>
+
   <footer>
-    Comptage anonyme : un identifiant tiré au hasard par navigateur ou par installation, au plus un signal par heure.
-    Ni compte Twitch, ni adresse IP, ni chaîne regardée. Les identifiants expirent après 35 jours.
+    Comptage : connecté, le compte Twitch (compté une fois sur tous ses appareils) ; sinon un identifiant tiré au hasard
+    par navigateur ou par installation. Au plus un signal par heure, ni adresse IP ni chaîne regardée. Les entrées expirent après 35 jours.
     Depuis le 3 octobre 2026, les robots, navigateurs automatisés, copies locales du site et navigations
     privées sans stockage ne sont plus comptés ; les anciens identifiants parasites disparaîtront d'eux-mêmes.
   </footer>
@@ -274,6 +327,87 @@
       }).join('') || '<tr><td colspan="2" class="sub">—</td></tr>'}</tbody>`
   }
 
+  function kinds(s) {
+    const card = (title, tag, k) => {
+      const v = s[k]
+      if (!v) return `<div class="card kind"><h2>${title}</h2><p class="sub">Worker à redéployer.</p></div>`
+      return `<div class="card kind"><h2>${title} <span class="tag ${tag}">${fmt(v.known)}</span></h2>
+        <div class="nums"><div><b>${fmt(v.today)}</b><span>aujourd'hui</span></div><div><b>${fmt(v.week)}</b><span>7 jours</span></div>
+        <div><b>${fmt(v.month)}</b><span>30 jours</span></div><div><b>${fmt(v.returning)}</b><span>revenus</span></div></div></div>`
+    }
+    $('#kinds').innerHTML = card('Comptes Twitch connectés', 'acct', 'accounts') + card('Sans compte', '', 'anonymous')
+  }
+
+  // ── Compte connecté et outils développeur ────────────────────────────
+  const ADMIN = 'https://test2.kurzmathis4.workers.dev/api/admin'
+  let token = null
+  try { token = localStorage.getItem('twitch_token') } catch {}
+  const authed = (path, init = {}) => fetch(ADMIN + path, { ...init, cache: 'no-store', headers: { ...(init.headers || {}), Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } })
+  let entries = []
+
+  async function checkAdmin() {
+    if (!token) { $('#who').textContent = ''; return }
+    try {
+      const me = await (await authed('/me')).json()
+      if (me.login) $('#who').innerHTML = `Connecté : <b>${esc(me.login)}</b>${me.admin ? ' · admin' : ''}`
+      if (me.admin) { $('#dev').hidden = false; loadEntries() }
+    } catch {}
+  }
+
+  async function loadEntries() {
+    try {
+      const res = await authed('/usage')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      entries = (await res.json()).entries ?? []
+      renderEntries()
+    } catch (e) { devMsg(`Liste indisponible (${e.message})`, 'err') }
+  }
+
+  function renderEntries() {
+    const q = $('#dev-search').value.trim().toLowerCase()
+    const list = q ? entries.filter((e) => [e.login, e.version, e.platforms, e.key].join(' ').toLowerCase().includes(q)) : entries
+    $('#dev-count').textContent = `${fmt(list.length)} / ${fmt(entries.length)} entrées`
+    $('#dev-entries').innerHTML = `<thead><tr><th>Qui</th><th>Plateformes</th><th>Version</th><th>Premier</th><th>Dernier</th><th class="n">Jours</th><th></th></tr></thead><tbody>${
+      list.slice(0, 400).map((e) => `<tr>
+        <td>${e.kind === 'account' ? `<span class="tag acct">compte</span> ${esc(e.login)}` : `<span class="tag">anonyme</span> ${esc(e.key.replace('usage_', '').slice(0, 8))}…`}</td>
+        <td>${esc(String(e.platforms).replace('ios', 'iOS').replace('web', 'Web'))}</td><td>${esc(e.version)}</td>
+        <td>${esc(e.first ?? '')}</td><td>${esc(e.last ?? '')}</td><td class="n">${fmt(e.days)}</td>
+        <td><button class="btn sm danger" type="button" data-key="${esc(e.key)}">Supprimer</button></td></tr>`).join('')}</tbody>`
+  }
+
+  function devMsg(text, kind = '') { const m = $('#dev-msg'); m.textContent = text; m.className = `dev-msg ${kind}` }
+
+  async function deleteUsage(body, label) {
+    if (!confirm(`${label} ?\nCette action est définitive.`)) return
+    devMsg('Suppression…')
+    try {
+      const res = await authed('/usage/delete', { method: 'POST', body: JSON.stringify(body) })
+      const r = await res.json()
+      if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`)
+      devMsg(`${fmt(r.deleted)} entrée(s) supprimée(s)${r.remaining ? ` · ${fmt(r.remaining)} restante(s), relance l'action` : ''}.`, 'ok')
+      await Promise.all([loadEntries(), load()])
+    } catch (e) { devMsg(`Échec : ${e.message}`, 'err') }
+  }
+
+  const LABELS = { 'anon-web': 'Supprimer tous les anonymes web', anon: 'Supprimer tous les anonymes', once: 'Supprimer les entrées vues un seul jour', all: 'Supprimer TOUTES les données d\'utilisation' }
+  document.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => deleteUsage({ target: b.dataset.del }, LABELS[b.dataset.del])))
+  $('#dev-entries').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-key]')
+    if (b) deleteUsage({ target: 'key', key: b.dataset.key }, `Supprimer ${b.dataset.key}`)
+  })
+  $('#dev-search').addEventListener('input', renderEntries)
+  $('#sync-form').addEventListener('submit', async (e) => {
+    e.preventDefault()
+    const login = $('#sync-login').value.trim().toLowerCase()
+    if (!login || !confirm(`Effacer la sauvegarde (historique et progression) de ${login} ?`)) return
+    try {
+      const res = await authed('/sync/delete', { method: 'POST', body: JSON.stringify({ login }) })
+      const r = await res.json()
+      if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`)
+      devMsg(r.existed ? `Sauvegarde de ${login} effacée.` : `${login} n'avait pas de sauvegarde.`, 'ok')
+    } catch (err) { devMsg(`Échec : ${err.message}`, 'err') }
+  })
+
   async function load() {
     const btn = $('#refresh')
     btn.disabled = true
@@ -282,7 +416,7 @@
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const s = await res.json()
       lastDaily = s.daily
-      tiles(s); chartNew(s.daily); loyalty(s); platformReturning(s); versions(s)
+      tiles(s); kinds(s); chartNew(s.daily); loyalty(s); platformReturning(s); versions(s)
       const at = s.generatedAt ? new Date(s.generatedAt) : new Date()
       $('#updated').textContent = `Mis à jour à ${at.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
     } catch (e) {
@@ -294,8 +428,9 @@
   let lastDaily = null
   let resizeTimer = null
   addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => lastDaily && chartNew(lastDaily), 150) })
-  $('#refresh').addEventListener('click', load)
+  $('#refresh').addEventListener('click', () => { load(); if (!$('#dev').hidden) loadEntries() })
   load()
+  checkAdmin()
   // Rafraîchi toutes les 2 minutes tant que la page est affichée.
   setInterval(() => { if (!document.hidden) load() }, 120_000)
 </script>
