@@ -735,7 +735,7 @@ async function handleAdminAnnouncement(request, env) {
     if (!title && !message) return jsonError('Titre ou message requis', 400);
     let link = String(body.link || '').trim().slice(0, 300);
     if (link && !/^https:\/\/[^\s]+$/i.test(link)) return jsonError('Lien : https:// uniquement', 400);
-    const hours = Math.min(24 * 30, Math.max(0.25, Number(body.hours) || 24));
+    const hours = Math.min(24 * 30, Math.max(1 / 60, Number(body.hours) || 24));
     const ttl = Math.round(hours * 3600);
     const announcement = { id: Date.now().toString(36), title, message, link: link || null, until: Date.now() + ttl * 1000, createdAt: Date.now() };
     // expirationTtl : 60 s minimum chez Cloudflare.

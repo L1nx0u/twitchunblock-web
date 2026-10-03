@@ -126,6 +126,9 @@
     .ann-form textarea { resize: vertical; min-height: 64px; }
     .ann-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .ann-row label { display: inline-flex; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; }
+    .ann-custom { display: inline-flex; gap: 6px; align-items: center; }
+    .ann-custom[hidden] { display: none; }
+    .ann-custom input { width: 80px; }
     .ann-current { margin-bottom: 10px; font-size: 13px; color: var(--muted); }
     .ann-current b { color: var(--text); }
     .ann-current .card-ish { border-left: 3px solid var(--purple); padding: 6px 10px; background: var(--card); border-radius: 6px; margin-top: 4px; white-space: pre-wrap; }
@@ -209,8 +212,17 @@
             <select id="ann-hours">
               <option value="1">1 h</option><option value="6">6 h</option><option value="24" selected>24 h</option>
               <option value="72">3 j</option><option value="168">7 j</option><option value="720">30 j</option>
+              <option value="custom" data-t="annCustom"></option>
             </select>
           </label>
+          <span class="ann-custom" id="ann-custom" hidden>
+            <input id="ann-amount" type="number" min="1" step="1" value="2" inputmode="numeric">
+            <select id="ann-unit">
+              <option value="0.016666666666666666" data-t="unitMin"></option>
+              <option value="1" data-t="unitHour" selected></option>
+              <option value="24" data-t="unitDay"></option>
+            </select>
+          </span>
           <button class="btn" type="submit" data-t="annPublish"></button>
           <button class="btn danger" type="button" id="ann-clear" data-t="annClear"></button>
         </div>
@@ -266,7 +278,7 @@
       deleted: '{n} entrée(s) supprimée(s)', remaining: ' · {n} restante(s), relance l’action', fail: 'Échec : {e}',
       lAnonWeb: 'Supprimer tous les anonymes web', lAnon: 'Supprimer tous les anonymes', lOnce: 'Supprimer les entrées vues un seul jour', lAll: 'Supprimer TOUTES les données d’utilisation', lKey: 'Supprimer {k}',
       syncConfirm: 'Effacer la sauvegarde (historique et progression) de {u} ?', syncDone: 'Sauvegarde de {u} effacée.', syncNone: '{u} n’avait pas de sauvegarde.',
-      annTitle: 'Annonce dans l’app', annSub: 'Affichée en haut de l’accueil de l’app iOS jusqu’à expiration. Une seule à la fois ; en publier une remplace la précédente.', annTitlePh: 'Titre', annMsgPh: 'Message', annLinkPh: 'Lien (facultatif, https://…)', annFor: 'Durée', annPublish: 'Publier', annClear: 'Retirer', annNone: 'Aucune annonce en cours.', annLive: 'En cours jusqu’au {d} :', annPublished: 'Annonce publiée.', annCleared: 'Annonce retirée.', annConfirmClear: 'Retirer l’annonce en cours ?',
+      annTitle: 'Annonce dans l’app', annSub: 'Affichée en haut de l’accueil de l’app iOS jusqu’à expiration. Une seule à la fois ; en publier une remplace la précédente.', annTitlePh: 'Titre', annMsgPh: 'Message', annLinkPh: 'Lien (facultatif, https://…)', annFor: 'Durée', annPublish: 'Publier', annCustom: 'Personnalisée…', unitMin: 'minutes', unitHour: 'heures', unitDay: 'jours', annBadDuration: 'Durée : entre 1 minute et 30 jours.', annClear: 'Retirer', annNone: 'Aucune annonce en cours.', annLive: 'En cours jusqu’au {d} :', annPublished: 'Annonce publiée.', annCleared: 'Annonce retirée.', annConfirmClear: 'Retirer l’annonce en cours ?',
       fAllKinds: 'Tous les types', fAccounts: 'Comptes', fAnon: 'Anonymes', fAllPlats: 'Toutes plateformes', fIosOnly: 'iOS seulement', fWebOnly: 'Web seulement', fBoth: 'iOS + Web', fAllVersions: 'Toutes versions',
       updated: 'Mis à jour à {t}', unavailable: 'Statistiques indisponibles ({e})',
     },
@@ -295,7 +307,7 @@
       deleted: '{n} entry(ies) deleted', remaining: ' · {n} left, run the action again', fail: 'Failed: {e}',
       lAnonWeb: 'Delete all anonymous web entries', lAnon: 'Delete all anonymous entries', lOnce: 'Delete entries seen on one day only', lAll: 'Delete ALL usage data', lKey: 'Delete {k}',
       syncConfirm: 'Erase the backup (history and progress) of {u}?', syncDone: 'Backup of {u} erased.', syncNone: '{u} had no backup.',
-      annTitle: 'In-app announcement', annSub: 'Shown at the top of the iOS app home until it expires. One at a time; publishing replaces the previous one.', annTitlePh: 'Title', annMsgPh: 'Message', annLinkPh: 'Link (optional, https://…)', annFor: 'Duration', annPublish: 'Publish', annClear: 'Remove', annNone: 'No announcement running.', annLive: 'Running until {d}:', annPublished: 'Announcement published.', annCleared: 'Announcement removed.', annConfirmClear: 'Remove the current announcement?',
+      annTitle: 'In-app announcement', annSub: 'Shown at the top of the iOS app home until it expires. One at a time; publishing replaces the previous one.', annTitlePh: 'Title', annMsgPh: 'Message', annLinkPh: 'Link (optional, https://…)', annFor: 'Duration', annPublish: 'Publish', annCustom: 'Custom…', unitMin: 'minutes', unitHour: 'hours', unitDay: 'days', annBadDuration: 'Duration: between 1 minute and 30 days.', annClear: 'Remove', annNone: 'No announcement running.', annLive: 'Running until {d}:', annPublished: 'Announcement published.', annCleared: 'Announcement removed.', annConfirmClear: 'Remove the current announcement?',
       fAllKinds: 'All types', fAccounts: 'Accounts', fAnon: 'Anonymous', fAllPlats: 'All platforms', fIosOnly: 'iOS only', fWebOnly: 'Web only', fBoth: 'iOS + Web', fAllVersions: 'All versions',
       updated: 'Updated at {t}', unavailable: 'Stats unavailable ({e})',
     },
@@ -324,7 +336,7 @@
       deleted: '{n} entrada(s) eliminada(s)', remaining: ' · quedan {n}, repite la acción', fail: 'Error: {e}',
       lAnonWeb: 'Eliminar todos los anónimos web', lAnon: 'Eliminar todos los anónimos', lOnce: 'Eliminar las entradas vistas un solo día', lAll: 'Eliminar TODOS los datos de uso', lKey: 'Eliminar {k}',
       syncConfirm: '¿Borrar la copia (historial y progreso) de {u}?', syncDone: 'Copia de {u} borrada.', syncNone: '{u} no tenía copia.',
-      annTitle: 'Anuncio en la app', annSub: 'Se muestra arriba del inicio de la app iOS hasta que caduca. Uno a la vez; publicar uno reemplaza al anterior.', annTitlePh: 'Título', annMsgPh: 'Mensaje', annLinkPh: 'Enlace (opcional, https://…)', annFor: 'Duración', annPublish: 'Publicar', annClear: 'Retirar', annNone: 'Ningún anuncio activo.', annLive: 'Activo hasta el {d}:', annPublished: 'Anuncio publicado.', annCleared: 'Anuncio retirado.', annConfirmClear: '¿Retirar el anuncio activo?',
+      annTitle: 'Anuncio en la app', annSub: 'Se muestra arriba del inicio de la app iOS hasta que caduca. Uno a la vez; publicar uno reemplaza al anterior.', annTitlePh: 'Título', annMsgPh: 'Mensaje', annLinkPh: 'Enlace (opcional, https://…)', annFor: 'Duración', annPublish: 'Publicar', annCustom: 'Personalizada…', unitMin: 'minutos', unitHour: 'horas', unitDay: 'días', annBadDuration: 'Duración: entre 1 minuto y 30 días.', annClear: 'Retirar', annNone: 'Ningún anuncio activo.', annLive: 'Activo hasta el {d}:', annPublished: 'Anuncio publicado.', annCleared: 'Anuncio retirado.', annConfirmClear: '¿Retirar el anuncio activo?',
       fAllKinds: 'Todos los tipos', fAccounts: 'Cuentas', fAnon: 'Anónimos', fAllPlats: 'Todas las plataformas', fIosOnly: 'Solo iOS', fWebOnly: 'Solo web', fBoth: 'iOS + Web', fAllVersions: 'Todas las versiones',
       updated: 'Actualizado a las {t}', unavailable: 'Estadísticas no disponibles ({e})',
     },
@@ -568,9 +580,15 @@
   }
   $('#ann-form').addEventListener('submit', async (e) => {
     e.preventDefault()
-    const ok = await postAnnouncement({ title: $('#ann-title').value, message: $('#ann-message').value, link: $('#ann-link').value, hours: Number($('#ann-hours').value) }, t('annPublished'))
+    let hours = Number($('#ann-hours').value)
+    if ($('#ann-hours').value === 'custom') {
+      hours = Number($('#ann-amount').value) * Number($('#ann-unit').value)
+      if (!(hours >= 1 / 60 - 1e-6 && hours <= 720)) return devMsg(t('annBadDuration'), 'err')
+    }
+    const ok = await postAnnouncement({ title: $('#ann-title').value, message: $('#ann-message').value, link: $('#ann-link').value, hours }, t('annPublished'))
     if (ok) { $('#ann-title').value = ''; $('#ann-message').value = ''; $('#ann-link').value = '' }
   })
+  $('#ann-hours').addEventListener('change', () => { $('#ann-custom').hidden = $('#ann-hours').value !== 'custom' })
   $('#ann-clear').addEventListener('click', () => { if (confirm(t('annConfirmClear'))) postAnnouncement({ clear: true }, t('annCleared')) })
 
   function devMsg(text, kind = '') { const m = $('#dev-msg'); m.textContent = text; m.className = `dev-msg ${kind}` }
