@@ -6,6 +6,20 @@
 
 export const CHANGELOG = [
   {
+    version: '2026.10.05b',
+    items: {
+      fr: [
+        'Plus de VODs réservées aux abonnés ou masquées se lancent : le secours retrouve la vidéo même quand Twitch n’en donne plus l’aperçu habituel.',
+      ],
+      en: [
+        'More subscriber-only or hidden VODs now play: the fallback finds the video even when Twitch no longer provides its usual preview.',
+      ],
+      es: [
+        'Se reproducen más VODs solo para suscriptores u ocultos: el respaldo encuentra el vídeo aunque Twitch ya no dé su vista previa habitual.',
+      ],
+    },
+  },
+  {
     version: '2026.10.05',
     items: {
       fr: [
