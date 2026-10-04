@@ -11,6 +11,10 @@ ENV NODE_ENV=production \
     PORT=8787
 
 WORKDIR /app
+# workerd vérifie le TLS avec le magasin de certificats système, absent de l'image slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 RUN npm install -g wrangler@4 && npm cache clean --force
 
 COPY worker.js ./
