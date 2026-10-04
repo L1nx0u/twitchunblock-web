@@ -204,6 +204,7 @@
       <button class="btn danger" type="button" data-del="anon" data-t="delAnon"></button>
       <button class="btn danger" type="button" data-del="once" data-t="delOnce"></button>
       <button class="btn danger" type="button" data-del="all" data-t="delAll"></button>
+      <button class="btn" type="button" id="migrate-btn" data-t="migrateBtn"></button>
     </div>
     <div class="ann">
       <h3 data-t="annTitle"></h3>
@@ -269,7 +270,7 @@
       loyTitle: 'Fidélité', loySub: 'Nombre de jours différents où chaque identifiant est revenu.',
       retTitle: 'Revenus au moins un 2ᵉ jour', retSub: 'Le meilleur indicateur de vrais utilisateurs : un essai unique ne compte pas.',
       verTitle: 'Versions', verSub: 'Identifiants actifs sur 30 jours, par version.',
-      devTitle: 'Outils développeur', devSub: 'Visible seulement par le compte administrateur. Chaque suppression compte comme une écriture KV (1 000 par jour en gratuit), plafonnée à 500 par action.',
+      devTitle: 'Outils développeur', devSub: 'Visible seulement par le compte administrateur. Chaque suppression compte comme une écriture D1 (100 000 par jour en gratuit), plafonnée à 500 par action.',
       delAnonWeb: 'Supprimer les anonymes web', delAnon: 'Supprimer tous les anonymes', delOnce: 'Supprimer les « vus un seul jour »', delAll: 'Tout réinitialiser',
       loginPh: 'Pseudo Twitch', syncBtn: 'Effacer sa sauvegarde (historique, progression)', filterPh: 'Filtrer (pseudo, version…)',
       footer: 'Comptage : connecté, le compte Twitch (compté une fois sur tous ses appareils) ; sinon un identifiant tiré au hasard par navigateur ou par installation. Au plus un signal par heure, ni adresse IP ni chaîne regardée. Les entrées expirent après 35 jours. Depuis le 3 octobre 2026, les robots, navigateurs automatisés, copies locales du site et navigations privées sans stockage ne sont plus comptés ; les anciens identifiants parasites disparaîtront d’eux-mêmes.',
@@ -287,7 +288,7 @@
       deleted: '{n} entrée(s) supprimée(s)', remaining: ' · {n} restante(s), relance l’action', fail: 'Échec : {e}',
       lAnonWeb: 'Supprimer tous les anonymes web', lAnon: 'Supprimer tous les anonymes', lOnce: 'Supprimer les entrées vues un seul jour', lAll: 'Supprimer TOUTES les données d’utilisation', lKey: 'Supprimer {k}',
       syncConfirm: 'Effacer la sauvegarde (historique et progression) de {u} ?', syncDone: 'Sauvegarde de {u} effacée.', syncNone: '{u} n’avait pas de sauvegarde.',
-      annTitle: 'Annonce (app et site)', annSub: 'Affichée en haut de l’accueil de l’app iOS et du site jusqu’à expiration. Une seule à la fois ; en publier une remplace la précédente.', annTitlePh: 'Titre', annMsgPh: 'Message', annLinkPh: 'Lien (facultatif, https://…)', annFor: 'Durée', annPublish: 'Publier', annCustom: 'Personnalisée…', unitMin: 'minutes', unitHour: 'heures', unitDay: 'jours', annBadDuration: 'Durée : entre 1 minute et 30 jours.', annClear: 'Retirer', annEdit: 'Modifier', annReactions: 'Réactions', annReactTotal: '{n} réaction(s) · une par appareil', annSave: 'Enregistrer', annCancel: 'Annuler', annKeep: 'Garder l’échéance actuelle', annRenotify: 'Réafficher à ceux qui l’avaient fermée', annSaved: 'Annonce modifiée.', annEdited: 'modifiée', annNone: 'Aucune annonce en cours.', annLive: 'En cours jusqu’au {d} :', annPublished: 'Annonce publiée.', annCleared: 'Annonce retirée.', annConfirmClear: 'Retirer l’annonce en cours ?',
+      annTitle: 'Annonce (app et site)', annSub: 'Affichée en haut de l’accueil de l’app iOS et du site jusqu’à expiration. Une seule à la fois ; en publier une remplace la précédente.', annTitlePh: 'Titre', annMsgPh: 'Message', annLinkPh: 'Lien (facultatif, https://…)', annFor: 'Durée', annPublish: 'Publier', annCustom: 'Personnalisée…', unitMin: 'minutes', unitHour: 'heures', unitDay: 'jours', annBadDuration: 'Durée : entre 1 minute et 30 jours.', annClear: 'Retirer', annEdit: 'Modifier', migrateBtn: 'Migrer KV → D1', migrateConfirm: 'Recopier toutes les données de l’ancien KV dans D1 ? Les données déjà présentes dans D1 sont gardées.', migrating: 'Migration… {n} clés copiées', migrated: 'Migration terminée : {n} clés copiées.', annReactions: 'Réactions', annReactTotal: '{n} réaction(s) · une par appareil', annSave: 'Enregistrer', annCancel: 'Annuler', annKeep: 'Garder l’échéance actuelle', annRenotify: 'Réafficher à ceux qui l’avaient fermée', annSaved: 'Annonce modifiée.', annEdited: 'modifiée', annNone: 'Aucune annonce en cours.', annLive: 'En cours jusqu’au {d} :', annPublished: 'Annonce publiée.', annCleared: 'Annonce retirée.', annConfirmClear: 'Retirer l’annonce en cours ?',
       fAllKinds: 'Tous les types', fAccounts: 'Comptes', fAnon: 'Anonymes', fAllPlats: 'Toutes plateformes', fIosOnly: 'iOS seulement', fWebOnly: 'Web seulement', fBoth: 'iOS + Web', fAllVersions: 'Toutes versions',
       updated: 'Mis à jour à {t}', unavailable: 'Statistiques indisponibles ({e})',
     },
@@ -298,7 +299,7 @@
       loyTitle: 'Loyalty', loySub: 'Number of different days each identifier came back.',
       retTitle: 'Came back on a 2nd day', retSub: 'The best signal of real users: a one-off try doesn’t count.',
       verTitle: 'Versions', verSub: 'Identifiers active over 30 days, by version.',
-      devTitle: 'Developer tools', devSub: 'Only visible to the admin account. Each deletion counts as one KV write (1,000 per day on the free plan), capped at 500 per action.',
+      devTitle: 'Developer tools', devSub: 'Only visible to the admin account. Each deletion counts as one D1 write (100,000 per day on the free plan), capped at 500 per action.',
       delAnonWeb: 'Delete anonymous web', delAnon: 'Delete all anonymous', delOnce: 'Delete “seen on one day only”', delAll: 'Reset everything',
       loginPh: 'Twitch username', syncBtn: 'Erase their backup (history, progress)', filterPh: 'Filter (username, version…)',
       footer: 'Counting: when signed in, the Twitch account (counted once across all devices); otherwise a random identifier per browser or install. At most one signal per hour, no IP address and no watched channel. Entries expire after 35 days. Since October 3, 2026, bots, automated browsers, local copies of the site and private browsing without storage are no longer counted; old noisy identifiers will disappear on their own.',
@@ -316,7 +317,7 @@
       deleted: '{n} entry(ies) deleted', remaining: ' · {n} left, run the action again', fail: 'Failed: {e}',
       lAnonWeb: 'Delete all anonymous web entries', lAnon: 'Delete all anonymous entries', lOnce: 'Delete entries seen on one day only', lAll: 'Delete ALL usage data', lKey: 'Delete {k}',
       syncConfirm: 'Erase the backup (history and progress) of {u}?', syncDone: 'Backup of {u} erased.', syncNone: '{u} had no backup.',
-      annTitle: 'Announcement (app and site)', annSub: 'Shown at the top of the iOS app and website home until it expires. One at a time; publishing replaces the previous one.', annTitlePh: 'Title', annMsgPh: 'Message', annLinkPh: 'Link (optional, https://…)', annFor: 'Duration', annPublish: 'Publish', annCustom: 'Custom…', unitMin: 'minutes', unitHour: 'hours', unitDay: 'days', annBadDuration: 'Duration: between 1 minute and 30 days.', annClear: 'Remove', annEdit: 'Edit', annReactions: 'Reactions', annReactTotal: '{n} reaction(s) · one per device', annSave: 'Save', annCancel: 'Cancel', annKeep: 'Keep current end time', annRenotify: 'Show again to people who closed it', annSaved: 'Announcement updated.', annEdited: 'edited', annNone: 'No announcement running.', annLive: 'Running until {d}:', annPublished: 'Announcement published.', annCleared: 'Announcement removed.', annConfirmClear: 'Remove the current announcement?',
+      annTitle: 'Announcement (app and site)', annSub: 'Shown at the top of the iOS app and website home until it expires. One at a time; publishing replaces the previous one.', annTitlePh: 'Title', annMsgPh: 'Message', annLinkPh: 'Link (optional, https://…)', annFor: 'Duration', annPublish: 'Publish', annCustom: 'Custom…', unitMin: 'minutes', unitHour: 'hours', unitDay: 'days', annBadDuration: 'Duration: between 1 minute and 30 days.', annClear: 'Remove', annEdit: 'Edit', migrateBtn: 'Migrate KV → D1', migrateConfirm: 'Copy all data from the old KV into D1? Data already in D1 is kept.', migrating: 'Migrating… {n} keys copied', migrated: 'Migration done: {n} keys copied.', annReactions: 'Reactions', annReactTotal: '{n} reaction(s) · one per device', annSave: 'Save', annCancel: 'Cancel', annKeep: 'Keep current end time', annRenotify: 'Show again to people who closed it', annSaved: 'Announcement updated.', annEdited: 'edited', annNone: 'No announcement running.', annLive: 'Running until {d}:', annPublished: 'Announcement published.', annCleared: 'Announcement removed.', annConfirmClear: 'Remove the current announcement?',
       fAllKinds: 'All types', fAccounts: 'Accounts', fAnon: 'Anonymous', fAllPlats: 'All platforms', fIosOnly: 'iOS only', fWebOnly: 'Web only', fBoth: 'iOS + Web', fAllVersions: 'All versions',
       updated: 'Updated at {t}', unavailable: 'Stats unavailable ({e})',
     },
@@ -327,7 +328,7 @@
       loyTitle: 'Fidelidad', loySub: 'Número de días distintos en que volvió cada identificador.',
       retTitle: 'Volvieron al menos un 2.º día', retSub: 'El mejor indicador de usuarios reales: una prueba única no cuenta.',
       verTitle: 'Versiones', verSub: 'Identificadores activos en 30 días, por versión.',
-      devTitle: 'Herramientas de desarrollo', devSub: 'Solo visible para la cuenta de administrador. Cada eliminación cuenta como una escritura KV (1000 al día en el plan gratuito), con un máximo de 500 por acción.',
+      devTitle: 'Herramientas de desarrollo', devSub: 'Solo visible para la cuenta de administrador. Cada eliminación cuenta como una escritura D1 (100 000 al día en el plan gratuito), con un máximo de 500 por acción.',
       delAnonWeb: 'Eliminar anónimos web', delAnon: 'Eliminar todos los anónimos', delOnce: 'Eliminar «vistos un solo día»', delAll: 'Restablecer todo',
       loginPh: 'Usuario de Twitch', syncBtn: 'Borrar su copia (historial, progreso)', filterPh: 'Filtrar (usuario, versión…)',
       footer: 'Recuento: con sesión iniciada, la cuenta de Twitch (contada una vez en todos sus dispositivos); si no, un identificador aleatorio por navegador o instalación. Como mucho una señal por hora, sin dirección IP ni canal visto. Las entradas caducan a los 35 días. Desde el 3 de octubre de 2026, los bots, navegadores automatizados, copias locales del sitio y la navegación privada sin almacenamiento ya no se cuentan; los antiguos identificadores parásitos desaparecerán solos.',
@@ -345,7 +346,7 @@
       deleted: '{n} entrada(s) eliminada(s)', remaining: ' · quedan {n}, repite la acción', fail: 'Error: {e}',
       lAnonWeb: 'Eliminar todos los anónimos web', lAnon: 'Eliminar todos los anónimos', lOnce: 'Eliminar las entradas vistas un solo día', lAll: 'Eliminar TODOS los datos de uso', lKey: 'Eliminar {k}',
       syncConfirm: '¿Borrar la copia (historial y progreso) de {u}?', syncDone: 'Copia de {u} borrada.', syncNone: '{u} no tenía copia.',
-      annTitle: 'Anuncio (app y sitio)', annSub: 'Se muestra arriba del inicio de la app iOS y del sitio hasta que caduca. Uno a la vez; publicar uno reemplaza al anterior.', annTitlePh: 'Título', annMsgPh: 'Mensaje', annLinkPh: 'Enlace (opcional, https://…)', annFor: 'Duración', annPublish: 'Publicar', annCustom: 'Personalizada…', unitMin: 'minutos', unitHour: 'horas', unitDay: 'días', annBadDuration: 'Duración: entre 1 minuto y 30 días.', annClear: 'Retirar', annEdit: 'Editar', annReactions: 'Reacciones', annReactTotal: '{n} reacción(es) · una por dispositivo', annSave: 'Guardar', annCancel: 'Cancelar', annKeep: 'Mantener el fin actual', annRenotify: 'Volver a mostrar a quien lo cerró', annSaved: 'Anuncio modificado.', annEdited: 'editado', annNone: 'Ningún anuncio activo.', annLive: 'Activo hasta el {d}:', annPublished: 'Anuncio publicado.', annCleared: 'Anuncio retirado.', annConfirmClear: '¿Retirar el anuncio activo?',
+      annTitle: 'Anuncio (app y sitio)', annSub: 'Se muestra arriba del inicio de la app iOS y del sitio hasta que caduca. Uno a la vez; publicar uno reemplaza al anterior.', annTitlePh: 'Título', annMsgPh: 'Mensaje', annLinkPh: 'Enlace (opcional, https://…)', annFor: 'Duración', annPublish: 'Publicar', annCustom: 'Personalizada…', unitMin: 'minutos', unitHour: 'horas', unitDay: 'días', annBadDuration: 'Duración: entre 1 minuto y 30 días.', annClear: 'Retirar', annEdit: 'Editar', migrateBtn: 'Migrar KV → D1', migrateConfirm: '¿Copiar todos los datos del antiguo KV a D1? Los datos ya presentes en D1 se conservan.', migrating: 'Migrando… {n} claves copiadas', migrated: 'Migración terminada: {n} claves copiadas.', annReactions: 'Reacciones', annReactTotal: '{n} reacción(es) · una por dispositivo', annSave: 'Guardar', annCancel: 'Cancelar', annKeep: 'Mantener el fin actual', annRenotify: 'Volver a mostrar a quien lo cerró', annSaved: 'Anuncio modificado.', annEdited: 'editado', annNone: 'Ningún anuncio activo.', annLive: 'Activo hasta el {d}:', annPublished: 'Anuncio publicado.', annCleared: 'Anuncio retirado.', annConfirmClear: '¿Retirar el anuncio activo?',
       fAllKinds: 'Todos los tipos', fAccounts: 'Cuentas', fAnon: 'Anónimos', fAllPlats: 'Todas las plataformas', fIosOnly: 'Solo iOS', fWebOnly: 'Solo web', fBoth: 'iOS + Web', fAllVersions: 'Todas las versiones',
       updated: 'Actualizado a las {t}', unavailable: 'Estadísticas no disponibles ({e})',
     },
@@ -634,6 +635,26 @@
   $('#ann-cancel').addEventListener('click', () => setEditing(false))
   $('#ann-hours').addEventListener('change', () => { $('#ann-custom').hidden = $('#ann-hours').value !== 'custom' })
   $('#ann-clear').addEventListener('click', () => { if (confirm(t('annConfirmClear'))) postAnnouncement({ clear: true }, t('annCleared')) })
+
+  // Migration de l'ancien KV vers D1 : par tranches, jusqu'au bout.
+  $('#migrate-btn').addEventListener('click', async () => {
+    if (!confirm(t('migrateConfirm'))) return
+    const btn = $('#migrate-btn'); btn.disabled = true
+    let cursor = null, total = 0
+    try {
+      for (let i = 0; i < 200; i++) {
+        const res = await authed('/migrate', { method: 'POST', body: JSON.stringify({ cursor }) })
+        const r = await res.json()
+        if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`)
+        total += r.copied || 0
+        devMsg(t('migrating', { n: fmt(total) }))
+        if (r.done) break
+        cursor = r.cursor
+      }
+      devMsg(t('migrated', { n: fmt(total) }), 'ok')
+      await Promise.all([loadEntries(), load()])
+    } catch (e) { devMsg(t('fail', { e: e.message }), 'err') } finally { btn.disabled = false }
+  })
 
   function devMsg(text, kind = '') { const m = $('#dev-msg'); m.textContent = text; m.className = `dev-msg ${kind}` }
 

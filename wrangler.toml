@@ -17,6 +17,15 @@ enabled = false
 persist = true
 head_sampling_rate = 1
 
+# Ancien stockage, gardé le temps de la migration vers D1 (relu en secours,
+# recopié par /api/admin/migrate). À retirer une fois la migration terminée.
 [[kv_namespaces]]
 binding = "TWITCH_DATA"
 id = "a670521e150b450aa4710a6b984cbd0e"
+
+# Base D1 : tout le stockage (sauvegardes, comptage, annonces, réactions).
+# La table est créée par le Worker au premier appel (CREATE TABLE IF NOT EXISTS).
+[[d1_databases]]
+binding = "DB"
+database_name = "twitchunblock"
+database_id = "b586defd-3216-425b-9c13-e75abd8dbd13"

@@ -52,6 +52,7 @@ export default {
                 case '/api/admin/usage': return await handleAdminUsage(request, env);
                 case '/api/admin/usage/delete': return await handleAdminUsageDelete(request, env);
                 case '/api/admin/sync/delete': return await handleAdminSyncDelete(request, env);
+                case '/api/admin/migrate': return await handleAdminMigrate(request, env);
 
                 // Annonces affichées dans l'app (lecture publique, écriture admin)
                 case '/api/announcement': return await handleAnnouncementGet(env);
@@ -117,18 +118,18 @@ async function authorizeSync(request, userId) {
 }
 
 async function handleSyncGet(url, request, env) {
-    if (!env.TWITCH_DATA) return jsonError("Erreur Serveur: KV 'TWITCH_DATA' non lié au Worker.", 500);
+    if (!env.DB) return jsonError("Erreur Serveur : base D1 'DB' non liée au Worker.", 500);
     const userId = String(url.searchParams.get('userId') || '');
     const denied = await authorizeSync(request, userId);
     if (denied) return denied;
 
-    const data = await env.TWITCH_DATA.get(`user_${userId}`, { type: "json" });
+    const data = await store(env).get(`user_${userId}`, { type: "json" });
     return jsonResponse(data || { history: [], progress: {} });
 }
 
 async function handleSyncPost(request, env) {
     if (request.method !== 'POST') return jsonError("Method Not Allowed", 405);
-    if (!env.TWITCH_DATA) return jsonError("Erreur Serveur: KV 'TWITCH_DATA' non lié au Worker.", 500);
+    if (!env.DB) return jsonError("Erreur Serveur : base D1 'DB' non liée au Worker.", 500);
 
     // Taille bornée : une sauvegarde normale pèse quelques kilo-octets.
     const raw = await request.text();
@@ -148,7 +149,7 @@ async function handleSyncPost(request, env) {
     //   • champ absent de l'envoi : on garde celui du serveur.
     const key = `user_${userId}`;
     const incoming = body.data || {};
-    const current = (await env.TWITCH_DATA.get(key, { type: 'json' })) || {};
+    const current = (await store(env).get(key, { type: 'json' })) || {};
     const progress = { ...(current.progress || {}) };
     for (const [id, t] of Object.entries(incoming.progress || {})) {
         const v = Number(t);
@@ -167,13 +168,12 @@ async function handleSyncPost(request, env) {
         progress
     };
 
-    // Rien de neuf : pas d'écriture. Le palier gratuit du KV n'en offre
-    // que 1 000 par jour, contre 100 000 lectures.
+    // Rien de neuf : pas d'écriture (quota D1 gratuit : 100 000 lignes par jour).
     const before = JSON.stringify({ history: current.history || [], progress: current.progress || {} });
     const after = JSON.stringify(next);
     if (before === after) return jsonResponse({ success: true, unchanged: true });
 
-    await env.TWITCH_DATA.put(key, after);
+    await store(env).put(key, after);
     return jsonResponse({ success: true });
 }
 
@@ -449,11 +449,11 @@ const BOT_UA = /headless|bot\b|crawler|spider|slurp|playwright|puppeteer|seleniu
 // POST /api/ping — { id, version, platform } enregistre ; { id, forget: true } efface.
 async function handlePing(request, env) {
     if (request.method !== 'POST') return jsonError('Method Not Allowed', 405);
-    if (!env.TWITCH_DATA) return jsonError("KV 'TWITCH_DATA' non lié au Worker.", 500);
+    if (!env.DB) return jsonError("Base D1 'DB' non liée au Worker.", 500);
     let body;
     try { body = await request.json(); } catch (e) { return jsonError('JSON invalide', 400); }
 
-    // Chaque ping est une écriture KV (1 000 par jour en gratuit) : une même
+    // Chaque ping est une écriture D1 (100 000 par jour en gratuit) : une même
     // adresse ne peut pas en enchaîner des centaines. Compté en mémoire
     // seulement, jamais stocké.
     if (pingFlood(request.headers.get('CF-Connecting-IP') || '')) return jsonError('Trop de requêtes', 429);
@@ -478,8 +478,8 @@ async function handlePing(request, env) {
     const key = who ? USAGE_ACCOUNT_PREFIX + who.userId : anonKey;
 
     if (body.forget === true) {
-        await env.TWITCH_DATA.delete(anonKey);
-        if (who) await env.TWITCH_DATA.delete(key);
+        await store(env).delete(anonKey);
+        if (who) await store(env).delete(key);
         return jsonResponse({ ok: true, forgotten: true });
     }
 
@@ -487,13 +487,13 @@ async function handlePing(request, env) {
     const platform = PLATFORMS.includes(body.platform) ? body.platform : 'ios';
     const version = String(body.version || '?').slice(0, 16);
     let prev = {};
-    try { prev = (await env.TWITCH_DATA.getWithMetadata(key)).metadata || {}; } catch (e) {}
+    try { prev = (await store(env).getWithMetadata(key)).metadata || {}; } catch (e) {}
 
     // Première connexion sur cet appareil : l'historique anonyme est repris
     // par le compte, puis effacé (sinon la même personne compterait deux fois).
     if (who) {
         let anon = null;
-        try { anon = (await env.TWITCH_DATA.getWithMetadata(anonKey)).metadata; } catch (e) {}
+        try { anon = (await store(env).getWithMetadata(anonKey)).metadata; } catch (e) {}
         if (anon) {
             if (!prev.first || (anon.first && anon.first < prev.first)) prev.first = anon.first;
             prev.days = Math.max(prev.days || 0, anon.days || 0);
@@ -501,7 +501,7 @@ async function handlePing(request, env) {
             // Les plateformes vues anonymement restent acquises au compte.
             const seen = new Set([...(prev.ps ? String(prev.ps).split(',') : (prev.p ? [prev.p] : [])), ...(anon.ps ? String(anon.ps).split(',') : (anon.p ? [anon.p] : []))]);
             prev.ps = [...seen].filter((x) => PLATFORMS.includes(x)).sort().join(',');
-            await env.TWITCH_DATA.delete(anonKey);
+            await store(env).delete(anonKey);
         }
     }
 
@@ -510,11 +510,11 @@ async function handlePing(request, env) {
     const meta = { first: prev.first || day, last: day, days, v: version, p: platform, ps: platforms };
     if (who) { meta.k = 'a'; meta.l = who.login.slice(0, 25); }
 
-    // Rien de neuf aujourd'hui : pas d'écriture (1 000 par jour en gratuit).
+    // Rien de neuf aujourd'hui : pas d'écriture.
     if (prev.last === day && prev.v === version && prev.ps === platforms && (!who || prev.l === meta.l)) {
         return jsonResponse({ ok: true, days, unchanged: true });
     }
-    await env.TWITCH_DATA.put(key, '', { expirationTtl: 60 * 60 * 24 * USAGE_RETENTION_DAYS, metadata: meta });
+    await store(env).put(key, '', { expirationTtl: 60 * 60 * 24 * USAGE_RETENTION_DAYS, metadata: meta });
     return jsonResponse({ ok: true, days, account: Boolean(who) });
 }
 
@@ -530,9 +530,9 @@ function pingFlood(ip) {
     return ++hit.n > 10;
 }
 
-// Les statistiques parcourent toutes les clés (list() : 1 000 par jour en
-// gratuit). Mises en cache une minute, pour qu'une page rechargée en boucle
-// ne vide pas le quota.
+// Les statistiques parcourent toutes les entrées de comptage (lectures D1 :
+// 5 millions par jour en gratuit). Mises en cache une minute, pour qu'une
+// page rechargée en boucle ne vide pas le quota.
 // (Cache API inopérant sur workers.dev : cache en mémoire de l'instance.)
 let statsCache = null;   // { body, until }
 async function cachedStats(request, env, ctx) {
@@ -546,7 +546,7 @@ async function cachedStats(request, env, ctx) {
 
 // GET /api/stats — compteurs agrégés, au total et par plateforme.
 async function handleStats(env) {
-    if (!env.TWITCH_DATA) return jsonError("KV 'TWITCH_DATA' non lié au Worker.", 500);
+    if (!env.DB) return jsonError("Base D1 'DB' non liée au Worker.", 500);
     const todayMs = Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
     const blank = () => ({ today: 0, week: 0, month: 0, known: 0, returning: 0 });
     const total = blank();
@@ -563,7 +563,7 @@ async function handleStats(env) {
 
     // list() renvoie les métadonnées sans lecture par clé ; 1000 clés par page.
     do {
-        const page = await env.TWITCH_DATA.list({ prefix: USAGE_PREFIX, limit: 1000, cursor });
+        const page = await store(env).list({ prefix: USAGE_PREFIX, limit: 1000, cursor });
         for (const key of page.keys) {
             const meta = key.metadata || {};
             const then = Date.parse((meta.last || '') + 'T00:00:00Z');
@@ -628,7 +628,7 @@ async function listUsage(env) {
     const out = [];
     let cursor;
     do {
-        const page = await env.TWITCH_DATA.list({ prefix: USAGE_PREFIX, limit: 1000, cursor });
+        const page = await store(env).list({ prefix: USAGE_PREFIX, limit: 1000, cursor });
         out.push(...page.keys);
         cursor = page.list_complete ? undefined : page.cursor;
     } while (cursor);
@@ -673,7 +673,7 @@ async function handleAdminUsageDelete(request, env) {
     if (target === 'key' && !String(body.key || '').startsWith(USAGE_PREFIX)) return jsonError('Clé invalide', 400);
     // Chaque suppression compte comme une écriture KV : plafonnée par appel.
     const doomed = keys.filter(match).slice(0, 500);
-    for (const k of doomed) await env.TWITCH_DATA.delete(k.name);
+    for (const k of doomed) await store(env).delete(k.name);
     statsCache = null;
     return jsonResponse({ ok: true, deleted: doomed.length, remaining: keys.filter(match).length - doomed.length });
 }
@@ -690,8 +690,8 @@ async function handleAdminSyncDelete(request, env) {
     const d = await twitchGQL('query($l: String!) { user(login: $l) { id } }', { l: login });
     const id = d?.data?.user?.id;
     if (!id) return jsonError('Compte introuvable', 404);
-    const existed = Boolean(await env.TWITCH_DATA.get(`user_${id}`));
-    if (existed) await env.TWITCH_DATA.delete(`user_${id}`);
+    const existed = Boolean(await store(env).get(`user_${id}`));
+    if (existed) await store(env).delete(`user_${id}`);
     return jsonResponse({ ok: true, existed });
 }
 
@@ -706,7 +706,7 @@ let announcementCache = null;   // { value, until } — l'app la relit à chaque
 async function readAnnouncement(env) {
     if (announcementCache && announcementCache.until > Date.now()) return announcementCache.value;
     let value = null;
-    try { value = await env.TWITCH_DATA.get(ANNOUNCEMENT_KEY, 'json'); } catch (e) {}
+    try { value = await store(env).get(ANNOUNCEMENT_KEY, 'json'); } catch (e) {}
     if (value && !(value.until > Date.now())) value = null;
     announcementCache = { value, until: Date.now() + 60 * 1000 };
     return value;
@@ -714,7 +714,7 @@ async function readAnnouncement(env) {
 
 // GET /api/announcement — { announcement: null | { id, title, message, link, until } }
 async function handleAnnouncementGet(env) {
-    if (!env.TWITCH_DATA) return jsonResponse({ announcement: null });
+    if (!env.DB) return jsonResponse({ announcement: null });
     return new Response(JSON.stringify({ announcement: await readAnnouncement(env) }), {
         headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
     });
@@ -736,7 +736,7 @@ async function handleAdminAnnouncement(request, env) {
     try { body = await request.json(); } catch (e) { return jsonError('JSON invalide', 400); }
     announcementCache = null;
     if (body.clear === true) {
-        await env.TWITCH_DATA.delete(ANNOUNCEMENT_KEY);
+        await store(env).delete(ANNOUNCEMENT_KEY);
         return jsonResponse({ ok: true, announcement: null });
     }
     const title = String(body.title || '').trim().slice(0, 80);
@@ -746,7 +746,7 @@ async function handleAdminAnnouncement(request, env) {
     if (link && !/^https:\/\/[^\s]+$/i.test(link)) return jsonError('Lien : https:// uniquement', 400);
     let prev = null;
     if (body.edit === true) {
-        try { prev = await env.TWITCH_DATA.get(ANNOUNCEMENT_KEY, 'json'); } catch (e) {}
+        try { prev = await store(env).get(ANNOUNCEMENT_KEY, 'json'); } catch (e) {}
         if (!prev || !(prev.until > Date.now())) return jsonError('Aucune annonce en cours à modifier', 404);
     }
     let ttl;
@@ -764,7 +764,7 @@ async function handleAdminAnnouncement(request, env) {
         ...(prev ? { editedAt: Date.now() } : {}),
     };
     // expirationTtl : 60 s minimum chez Cloudflare.
-    await env.TWITCH_DATA.put(ANNOUNCEMENT_KEY, JSON.stringify(announcement), { expirationTtl: Math.max(60, ttl) });
+    await store(env).put(ANNOUNCEMENT_KEY, JSON.stringify(announcement), { expirationTtl: Math.max(60, ttl) });
     return jsonResponse({ ok: true, announcement });
 }
 
@@ -779,7 +779,7 @@ const reactHits = new Map();   // adresse → { n, until } (mémoire de l'instan
 
 async function handleAnnouncementReact(request, env) {
     if (request.method !== 'POST') return jsonError('Method Not Allowed', 405);
-    if (!env.TWITCH_DATA) return jsonError("KV 'TWITCH_DATA' non lié au Worker.", 500);
+    if (!env.DB) return jsonError("Base D1 'DB' non liée au Worker.", 500);
     const ua = request.headers.get('User-Agent') || '';
     if (BOT_UA.test(ua)) return jsonResponse({ ok: true, ignored: true });
     // Chaque réaction est une écriture KV : 30 par heure et par adresse.
@@ -801,10 +801,10 @@ async function handleAnnouncementReact(request, env) {
     if (emoji !== null && !REACTIONS.includes(emoji)) return jsonError('Réaction inconnue', 400);
 
     const key = `${REACTION_PREFIX}${current.id}_${device.toLowerCase()}`;
-    if (emoji === null) await env.TWITCH_DATA.delete(key);
+    if (emoji === null) await store(env).delete(key);
     else {
         const ttl = Math.max(60, Math.round((current.until - now) / 1000) + 7 * 86400);
-        await env.TWITCH_DATA.put(key, '', { expirationTtl: ttl, metadata: { e: emoji } });
+        await store(env).put(key, '', { expirationTtl: ttl, metadata: { e: emoji } });
     }
     return jsonResponse({ ok: true, emoji });
 }
@@ -813,7 +813,7 @@ async function countReactions(env, announcementId) {
     const counts = Object.fromEntries(REACTIONS.map((e) => [e, 0]));
     let cursor, total = 0;
     do {
-        const page = await env.TWITCH_DATA.list({ prefix: `${REACTION_PREFIX}${announcementId}_`, limit: 1000, cursor });
+        const page = await store(env).list({ prefix: `${REACTION_PREFIX}${announcementId}_`, limit: 1000, cursor });
         for (const k of page.keys) {
             const e = k.metadata?.e;
             if (e in counts) { counts[e]++; total++; }
@@ -850,4 +850,132 @@ async function handleMoobotCommands(url) {
     if (moobotCache.size > 500) moobotCache.clear();
     moobotCache.set(channel, { at: Date.now(), body });
     return new Response(body, { headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json' } });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Stockage : base D1 (binding `DB`), à la place du KV.
+//
+//  Le KV gratuit n'offre que 1 000 écritures par jour ; D1 en offre 100 000.
+//  Pour ne rien changer à la logique éprouvée du Worker (fusion de la
+//  sauvegarde, comptage, stats, admin, annonces, réactions), D1 est exposé
+//  avec les mêmes opérations que le KV : get, getWithMetadata, put (avec
+//  métadonnées et durée de vie), delete, list par préfixe.
+//
+//  Sécurité : la base n'a ni adresse publique ni clé ; seul ce Worker y
+//  accède, par son binding. Toutes les requêtes sont préparées (valeurs
+//  passées par bind, jamais collées dans le SQL).
+//
+//  Transition : tant que l'ancien KV (`TWITCH_DATA`) reste lié, une
+//  sauvegarde absente de D1 y est relue puis recopiée dans D1, et
+//  /api/admin/migrate recopie tout le reste (outils développeur de /stats).
+// ═══════════════════════════════════════════════════════════════════════════
+const SCHEMA = [
+    `CREATE TABLE IF NOT EXISTS kv (
+        key     TEXT PRIMARY KEY,
+        value   TEXT NOT NULL DEFAULT '',
+        meta    TEXT,
+        expires INTEGER
+    )`,
+    `CREATE INDEX IF NOT EXISTS kv_expires ON kv (expires)`,
+];
+let schemaReady = null;   // une fois par instance du Worker
+function ensureSchema(env) {
+    schemaReady ??= env.DB.batch(SCHEMA.map((q) => env.DB.prepare(q))).catch((e) => { schemaReady = null; throw e; });
+    return schemaReady;
+}
+
+const parseMeta = (m) => { if (!m) return null; try { return JSON.parse(m); } catch (e) { return null; } };
+const alive = (now) => `(expires IS NULL OR expires > ${Number(now)})`;
+
+function store(env) {
+    const db = env.DB;
+    const api = {
+        async getWithMetadata(key, type) {
+            await ensureSchema(env);
+            const row = await db.prepare(`SELECT value, meta FROM kv WHERE key = ?1 AND ${alive(Date.now())}`).bind(key).first();
+            if (row) {
+                const json = type === 'json' || type?.type === 'json';
+                let value = row.value;
+                if (json) { try { value = JSON.parse(row.value); } catch (e) { value = null; } }
+                return { value, metadata: parseMeta(row.meta) };
+            }
+            // Pas encore migrée : une sauvegarde est relue dans l'ancien KV,
+            // puis recopiée dans D1 (une seule fois par compte).
+            if (env.TWITCH_DATA && key.startsWith('user_')) {
+                const old = await env.TWITCH_DATA.get(key);
+                if (old != null) {
+                    await api.put(key, old);
+                    const json = type === 'json' || type?.type === 'json';
+                    let value = old;
+                    if (json) { try { value = JSON.parse(old); } catch (e) { value = null; } }
+                    return { value, metadata: null };
+                }
+            }
+            return { value: null, metadata: null };
+        },
+        async get(key, type) {
+            return (await api.getWithMetadata(key, type)).value;
+        },
+        async put(key, value, opts = {}) {
+            await ensureSchema(env);
+            const ttl = Number(opts.expirationTtl) || 0;
+            const expires = ttl > 0 ? Date.now() + ttl * 1000 : null;
+            const meta = opts.metadata == null ? null : JSON.stringify(opts.metadata);
+            await db.prepare(`INSERT INTO kv (key, value, meta, expires) VALUES (?1, ?2, ?3, ?4)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, meta = excluded.meta, expires = excluded.expires`)
+                .bind(key, String(value ?? ''), meta, expires).run();
+            // De temps en temps, ménage des entrées expirées (le KV le faisait seul).
+            if (Math.random() < 0.02) await db.prepare(`DELETE FROM kv WHERE expires IS NOT NULL AND expires <= ?1`).bind(Date.now()).run();
+        },
+        async delete(key) {
+            await ensureSchema(env);
+            await db.prepare(`DELETE FROM kv WHERE key = ?1`).bind(key).run();
+        },
+        /** { keys: [{ name, metadata, expiration }], list_complete, cursor } — le curseur est la dernière clé. */
+        async list({ prefix = '', limit = 1000, cursor } = {}) {
+            await ensureSchema(env);
+            const n = Math.min(1000, Math.max(1, Number(limit) || 1000));
+            const { results } = await db.prepare(
+                `SELECT key, meta, expires FROM kv
+                 WHERE substr(key, 1, ?1) = ?2 AND key > ?3 AND ${alive(Date.now())}
+                 ORDER BY key LIMIT ?4`).bind(prefix.length, prefix, cursor || '', n + 1).all();
+            const rows = results || [];
+            const page = rows.slice(0, n);
+            return {
+                keys: page.map((r) => ({ name: r.key, metadata: parseMeta(r.meta), expiration: r.expires ? Math.floor(r.expires / 1000) : undefined })),
+                list_complete: rows.length <= n,
+                cursor: rows.length > n ? page[page.length - 1].key : undefined,
+            };
+        },
+    };
+    return api;
+}
+
+// POST /api/admin/migrate { cursor? } — recopie l'ancien KV dans D1, par
+// tranches de 200 clés (limite d'opérations par requête). Répondre
+// { done: false, cursor } veut dire : relancer avec ce curseur.
+async function handleAdminMigrate(request, env) {
+    if (request.method !== 'POST') return jsonError('Method Not Allowed', 405);
+    const { denied } = await requireAdmin(request);
+    if (denied) return denied;
+    if (!env.DB) return jsonError("Base D1 'DB' non liée au Worker.", 500);
+    if (!env.TWITCH_DATA) return jsonResponse({ done: true, copied: 0, note: 'Ancien KV non lié : rien à migrer.' });
+    let body = {};
+    try { body = await request.json(); } catch (e) {}
+    await ensureSchema(env);
+    const page = await env.TWITCH_DATA.list({ limit: 200, cursor: body.cursor || undefined });
+    const now = Date.now();
+    const stmts = [];
+    for (const k of page.keys) {
+        const expires = k.expiration ? k.expiration * 1000 : null;
+        if (expires && expires <= now) continue;
+        // Valeur relue seulement quand il y en a une (sauvegarde, annonce) :
+        // comptages et réactions tiennent tout entiers dans les métadonnées.
+        const needsValue = k.name.startsWith('user_') || k.name === 'announcement';
+        const value = needsValue ? (await env.TWITCH_DATA.get(k.name)) ?? '' : '';
+        stmts.push(env.DB.prepare(`INSERT INTO kv (key, value, meta, expires) VALUES (?1, ?2, ?3, ?4)
+            ON CONFLICT(key) DO NOTHING`).bind(k.name, value, k.metadata == null ? null : JSON.stringify(k.metadata), expires));
+    }
+    if (stmts.length) await env.DB.batch(stmts);
+    return jsonResponse({ done: page.list_complete, cursor: page.list_complete ? null : page.cursor, copied: stmts.length, seen: page.keys.length });
 }
