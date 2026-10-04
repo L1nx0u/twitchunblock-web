@@ -27,6 +27,7 @@ const QUALITY_ORDER = ['chunked', 'source', '1080p60', '1080p30', '720p60', '720
 export default {
     async fetch(request, env, ctx) {
         if (request.method === "OPTIONS") return new Response(null, { headers: RESPONSE_HEADERS });
+        applyEnvConfig(env);
 
         const url = new URL(request.url);
         const workerOrigin = url.origin; 
@@ -437,12 +438,12 @@ function getRequestHeaders(login) {
 const USAGE_PREFIX = 'usage_';
 const USAGE_ACCOUNT_PREFIX = 'usage_a_';
 /** Comptes Twitch administrateurs (ID numérique : le pseudo peut changer). mxfia19 */
-const ADMIN_IDS = ['839837720'];
+let ADMIN_IDS = ['839837720'];
 const USAGE_RETENTION_DAYS = 35;
 const PLATFORMS = ['ios', 'web'];
 // Le site officiel : un ping « web » venu d'ailleurs (copie locale, tests,
 // préversions) n'est pas compté. L'app iOS n'envoie pas d'en-tête Origin.
-const USAGE_ORIGINS = ['https://test2-fawn-eta.vercel.app'];
+let USAGE_ORIGINS = ['https://test2-fawn-eta.vercel.app'];
 // Navigateurs automatisés et robots qui exécutent le JavaScript.
 const BOT_UA = /headless|bot\b|crawler|spider|slurp|playwright|puppeteer|selenium|phantomjs|lighthouse|preview/i;
 
@@ -978,4 +979,17 @@ async function handleAdminMigrate(request, env) {
     }
     if (stmts.length) await env.DB.batch(stmts);
     return jsonResponse({ done: page.list_complete, cursor: page.list_complete ? null : page.cursor, copied: stmts.length, seen: page.keys.length });
+}
+
+// ── Réglages par variables d'environnement (auto-hébergement) ─────────────
+// ADMIN_TWITCH_IDS : identifiants Twitch admins, séparés par des virgules.
+// SITE_ORIGINS     : origines du site dont les comptages sont acceptés.
+// Absentes : valeurs de l'instance officielle.
+let envApplied = false;
+function applyEnvConfig(env) {
+    if (envApplied) return;
+    envApplied = true;
+    const list = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
+    if (list(env?.ADMIN_TWITCH_IDS).length) ADMIN_IDS = list(env.ADMIN_TWITCH_IDS).filter((x) => /^\d{1,20}$/.test(x));
+    if (list(env?.SITE_ORIGINS).length) USAGE_ORIGINS = list(env.SITE_ORIGINS);
 }

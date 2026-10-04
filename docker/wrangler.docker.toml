@@ -1,0 +1,17 @@
+# Configuration utilisée uniquement dans le conteneur Docker (pas pour le
+# déploiement Cloudflare, qui lit wrangler.toml).
+name = "twitchunblock"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Le site est servi par le même serveur que le Worker : /api/* va au Worker,
+# le reste aux fichiers de public/ (/stats → stats.html).
+[assets]
+directory = "./public"
+html_handling = "auto-trailing-slash"
+
+# Base D1 locale (SQLite dans /data) ; la table est créée au premier appel.
+[[d1_databases]]
+binding = "DB"
+database_name = "twitchunblock"
+database_id = "00000000-0000-0000-0000-000000000000"

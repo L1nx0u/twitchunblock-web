@@ -5,7 +5,11 @@
 
 import { store } from './store.js'
 
-export const API_URL = 'https://test2.kurzmathis4.workers.dev'
+// Auto-hébergement : public/config.js peut remplacer l'adresse du Worker
+// (« same-origin » = le site et le Worker servis ensemble, comme sous Docker)
+// et l'application Twitch utilisée pour la connexion.
+const CFG = window.TU_CONFIG ?? {}
+export const API_URL = CFG.apiUrl === 'same-origin' ? location.origin : (CFG.apiUrl || 'https://test2.kurzmathis4.workers.dev')
 /** Liens donnés aux applis externes (VLC, Outplayer, Infuse) : par le proxy
  *  (`true`) ou en direct depuis Twitch (`false`, ne charge pas le Worker).
  *  Décidé ici plutôt que par chaque visiteur. La lecture sur le site, elle,
@@ -14,10 +18,10 @@ export const EXTERNAL_LINKS_VIA_PROXY = true
 export const GITHUB_URL = 'https://github.com/MXFia19/TwitchUnblock-Web'
 export const APP_GITHUB_URL = 'https://github.com/MXFia19/TwitchUnblock'
 export const DISCORD_URL = 'https://discord.gg/cEsMRdxsVq'
-export const HELIX_CLIENT_ID = 'uyvqdqrz614y5wx5l4kev6c4ln7u9a'
+export const HELIX_CLIENT_ID = CFG.twitchClientId || 'uyvqdqrz614y5wx5l4kev6c4ln7u9a'
 export const GQL_CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko'
 /** Seule adresse de retour déclarée chez Twitch : elle ne doit pas changer. */
-export const REDIRECT_URI = 'https://test2-fawn-eta.vercel.app/'
+export const REDIRECT_URI = CFG.redirectUri || 'https://test2-fawn-eta.vercel.app/'
 /** `chat:read` / `chat:edit` en plus de l'ancien périmètre : sans eux, l'IRC
  *  refuse le jeton et on ne peut que lire le chat en anonyme. */
 export const SCOPES = ['user:read:follows', 'chat:read', 'chat:edit']

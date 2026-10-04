@@ -1,0 +1,23 @@
+# Auto-hébergement : `docker compose up -d`, puis http://localhost:8787
+services:
+  twitchunblock:
+    build: .
+    image: twitchunblock-web
+    container_name: twitchunblock
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    volumes:
+      - twitchunblock-data:/data
+    environment:
+      # Adresse publique du site (sans / final). Sert à l'adresse de retour
+      # de la connexion Twitch et aux origines acceptées pour le comptage.
+      PUBLIC_URL: "http://localhost:8787"
+      # Connexion Twitch (facultatif) : crée une application sur
+      # https://dev.twitch.tv/console avec PUBLIC_URL/ comme adresse de retour.
+      TWITCH_CLIENT_ID: ""
+      # Ton identifiant Twitch, pour les outils développeur de /stats.
+      ADMIN_TWITCH_IDS: ""
+
+volumes:
+  twitchunblock-data:

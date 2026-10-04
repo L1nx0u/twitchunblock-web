@@ -256,8 +256,11 @@
   <footer data-t="footer"></footer>
 </main>
 
+<script src="config.js"></script>
 <script type="module">
-  const API = 'https://test2.kurzmathis4.workers.dev/api/stats'
+  const CFG = window.TU_CONFIG ?? {}
+  const BASE = CFG.apiUrl === 'same-origin' ? location.origin : (CFG.apiUrl || 'https://test2.kurzmathis4.workers.dev')
+  const API = `${BASE}/api/stats`
   const $ = (s) => document.querySelector(s)
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 
@@ -499,7 +502,7 @@
   }
 
   // ── Compte connecté et outils développeur ────────────────────────────
-  const ADMIN = 'https://test2.kurzmathis4.workers.dev/api/admin'
+  const ADMIN = `${BASE}/api/admin`
   let token = null
   try { token = localStorage.getItem('twitch_token') } catch {}
   const authed = (path, init = {}) => fetch(ADMIN + path, { ...init, cache: 'no-store', headers: { ...(init.headers || {}), Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } })

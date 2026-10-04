@@ -163,6 +163,30 @@ python3 -m http.server 8080
 ```
 Twitch login only works at the address set in `REDIRECT_URI`.
 
+### Self-hosting with Docker
+
+The website and the Worker run together in one container, with a local D1
+database (SQLite) for backups, usage count and announcements. No Cloudflare
+account needed.
+
+```bash
+docker compose up -d
+# then open http://localhost:8787
+```
+
+Settings (in `docker-compose.yml`):
+
+| Variable | What it does |
+|---|---|
+| `PUBLIC_URL` | Public address of your instance, without a trailing `/` (default `http://localhost:8787`). |
+| `TWITCH_CLIENT_ID` | Optional. To log in with Twitch, create an app on [dev.twitch.tv/console](https://dev.twitch.tv/console) with `PUBLIC_URL/` as the redirect URL, and paste its Client ID. |
+| `ADMIN_TWITCH_IDS` | Optional. Your Twitch user ID(s), comma-separated, for the developer tools on `/stats`. |
+
+Data lives in the `twitchunblock-data` volume. Watching lives, VODs and clips,
+the chat (read-only without login), categories and device follows all work
+out of the box; logging in needs your own Twitch app (see above). The iOS app
+keeps using the official backend.
+
 ---
 
 ## Credits
