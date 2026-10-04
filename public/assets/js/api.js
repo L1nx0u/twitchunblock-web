@@ -59,7 +59,7 @@ export async function gql(query, variables = {}) {
 export async function getChannelInfo(login) {
   const data = await gql(`query($l: String!) {
     user(login: $l) {
-      id login displayName profileImageURL(width: 150)
+      id login displayName profileImageURL(width: 150) lastBroadcast { startedAt }
       stream { id title viewersCount createdAt game { displayName name } previewImageURL(width: 640, height: 360) }
       broadcastSettings { title game { displayName } }
     }
@@ -96,10 +96,18 @@ export async function getChannelsByLogins(logins) {
   const out = []
   for (let i = 0; i < logins.length; i += 100) {
     const data = await gql(`query($l: [String!]) { users(logins: $l) { login displayName profileImageURL(width: 70)
+      lastBroadcast { startedAt }
+      videos(first: 1, type: ARCHIVE, sort: TIME) { edges { node { publishedAt lengthSeconds } } }
       stream { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { displayName } } } }`, { l: logins.slice(i, i + 100) })
     for (const u of data?.users ?? []) {
       if (!u?.login) continue
-      out.push({ login: u.login, name: u.displayName || u.login, avatar: u.profileImageURL || '', stream: u.stream ? streamFromGQL({ ...u.stream, broadcaster: u }) : null })
+      // Fin du dernier live : la dernière VOD (début + durée) ou, si plus
+      // tard, le dernier live lancé.
+      const v = u.videos?.edges?.[0]?.node
+      const vodEnd = v ? Date.parse(v.publishedAt) + (v.lengthSeconds || 0) * 1000 : NaN
+      const started = Date.parse(u.lastBroadcast?.startedAt)
+      const best = Math.max(Number.isFinite(vodEnd) ? vodEnd : 0, Number.isFinite(started) ? started : 0)
+      out.push({ login: u.login, name: u.displayName || u.login, avatar: u.profileImageURL || '', lastEnd: best ? new Date(best).toISOString() : null, stream: u.stream ? streamFromGQL({ ...u.stream, broadcaster: u }) : null })
     }
   }
   return out
@@ -354,6 +362,16 @@ export function loginUrl() {
 // ── Clips ──────────────────────────────────────────────────────────────────
 /** Clips d'une chaîne, les plus vus sur la période (LAST_DAY, LAST_WEEK,
  *  LAST_MONTH, ALL_TIME). */
+/** Highlights d'une chaîne (les 50 plus récents). */
+export async function getHighlights(login) {
+  const data = await gql(`query($l: String!) { user(login: $l) {
+    videos(first: 50, type: HIGHLIGHT, sort: TIME) { edges { node {
+      id title lengthSeconds createdAt publishedAt viewCount previewThumbnailURL(width: 320, height: 180)
+    } } }
+  } }`, { l: login })
+  return (data?.user?.videos?.edges ?? []).map((e) => e.node).filter((v) => v?.id)
+}
+
 /** Playlists (collections) d'une chaîne, avec leurs vidéos — vides exclues. */
 export async function getCollections(login) {
   const data = await gql(`query($l: String!) {

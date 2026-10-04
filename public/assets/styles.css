@@ -928,6 +928,8 @@ input[type='search']::-webkit-search-cancel-button { filter: invert(1) opacity(0
 /* Accueil : sous-onglets Suivies | Top */
 .home-tabs { margin-bottom: 18px; }
 .home-tabs button { padding: 7px 16px; }
+.channel-tabs { margin: 4px 0 18px; max-width: 100%; overflow-x: auto; }
+.channel-tabs button { padding: 7px 16px; white-space: nowrap; }
 /* Chaînes suivies hors ligne */
 .sub-head { display: flex; align-items: center; gap: 8px; margin: 26px 0 10px; font-size: 15px; font-weight: 700; color: var(--muted); }
 .sub-head small { font-weight: 600; }
@@ -935,7 +937,9 @@ input[type='search']::-webkit-search-cancel-button { filter: invert(1) opacity(0
 .offline-row { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); font: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; }
 .offline-row:hover { border-color: var(--purple); }
 .offline-row img, .offline-row .avatar { flex: none; opacity: 0.8; }
-.offline-row span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.offline-text { display: flex; flex-direction: column; min-width: 0; }
+.offline-text > span, .offline-text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.offline-text small { font-size: 12px; font-weight: 500; }
 /* Catégories */
 .cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 18px 14px; margin-top: 6px; }
 .cat-card { cursor: pointer; min-width: 0; outline: none; }

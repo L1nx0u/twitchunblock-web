@@ -6,6 +6,29 @@
 
 export const CHANGELOG = [
   {
+    version: '2026.10.05',
+    items: {
+      fr: [
+        'Page streamer en onglets : VODs, Highlights, Playlists et Clips.',
+        'Sauvegarde : exporte et importe tes chaînes suivies, catégories et réglages (Réglages > Sauvegarde), compatible avec l’app iOS.',
+        'Nouvelle option : désactiver la pause au clic sur la vidéo (Réglages > Lecteur).',
+        '« Hors ligne depuis » dans ta langue, avec la date du dernier live — aussi pour chaque chaîne hors ligne de l’accueil.',
+      ],
+      en: [
+        'Streamer page in tabs: VODs, Highlights, Playlists and Clips.',
+        'Backup: export and import your followed channels, categories and settings (Settings > Backup), compatible with the iOS app.',
+        'New option: turn off click-to-pause on the video (Settings > Player).',
+        '“Offline for” now uses your language and shows the date of the last stream — also for each offline channel on Home.',
+      ],
+      es: [
+        'Página del streamer en pestañas: VODs, Destacados, Listas y Clips.',
+        'Copia de seguridad: exporta e importa tus canales seguidos, categorías y ajustes (Ajustes > Copia de seguridad), compatible con la app iOS.',
+        'Nueva opción: desactivar la pausa al hacer clic en el vídeo (Ajustes > Reproductor).',
+        '«Desconectado hace» en tu idioma, con la fecha del último directo — también para cada canal desconectado en Inicio.',
+      ],
+    },
+  },
+  {
     version: '2026.10.04c',
     items: {
       fr: [

@@ -265,6 +265,8 @@ function bindGlobal() {
     if (all) return playPlaylist(all.dataset.playAll)
     const clip = e.target.closest('[data-clip]')
     if (clip) return openClip(clip.dataset.clip)
+    const ctab = e.target.closest('[data-ctab]')
+    if (ctab) return setChannelTab(ctab.dataset.ctab)
     const period = e.target.closest('[data-clip-period]')
     if (period) return loadChannelClips(period.dataset.clipPeriod)
     const chan = e.target.closest('[data-channel]')
@@ -348,6 +350,8 @@ const actions = {
     b.classList.toggle('on', on)
     b.innerHTML = followLocalInner(on)
   },
+  'export-data': () => exportData(),
+  'import-data': () => $('#import-file')?.click(),
   'clear-blocked': () => {
     store.prefs.blockedUsers = []
     store.savePrefs()
@@ -523,6 +527,7 @@ async function loadFollowed({ silent = false } = {}) {
       api.getFollowedStreams(session.userId),
       api.getFollowedLogins(session.userId).catch(() => []),
     ])
+    state.accountFollows = logins
     const all = [...new Set([...logins, ...local])]
     const channels = await api.getChannelsByLogins(all).catch(() => null)
     if (session.token !== token) return   // déconnecté entre-temps
@@ -553,7 +558,7 @@ function renderOffline(list) {
     <div class="offline-list">${list.map((c) => `
       <button type="button" class="offline-row" data-channel="${esc(c.login)}">
         ${c.avatar ? `<img class="avatar sm" src="${esc(c.avatar)}" alt="" loading="lazy">` : `<span class="avatar sm placeholder">${esc((c.name || '?')[0])}</span>`}
-        <span>${esc(c.name)}</span>
+        <span class="offline-text"><span>${esc(c.name)}</span>${c.lastEnd ? `<small class="muted">${esc(offlineFor(null, 0, c.lastEnd))} · ${esc(offlineDate(null, 0, c.lastEnd))}</small>` : ''}</span>
       </button>`).join('')}</div>` : ''
 }
 
@@ -875,6 +880,7 @@ async function searchChannel(raw) {
     out.innerHTML = emptyState(t('not_found'), 'search')
     return
   }
+  if (state.channel?.login !== login) state.channelTab = 'vods'
   state.channel = { login, info, videos: videos?.videos ?? [] }
   store.addHistory(login, 'channel', info?.displayName || login, { avatar: info?.profileImageURL || videos?.avatar || '' })
   pushSync()
@@ -882,8 +888,42 @@ async function searchChannel(raw) {
   renderChannel(keyword)
 }
 
+// Onglets de la page streamer, comme sur Twitch.
+const CHANNEL_TABS = [['vods', 'vods'], ['highlights', 'highlights'], ['playlists', 'playlists'], ['clips', 'clips']]
+
+/** Charge le contenu de l'onglet à sa première ouverture. */
+function loadChannelTab(tab) {
+  if (tab === 'highlights') loadChannelHighlights()
+  if (tab === 'playlists') loadChannelPlaylists()
+  if (tab === 'clips') loadChannelClips()
+}
+
+function setChannelTab(tab) {
+  state.channelTab = tab
+  for (const b of $$('#channel-tabs [data-ctab]')) b.classList.toggle('active', b.dataset.ctab === tab)
+  for (const p of $$('[data-cpanel]')) p.hidden = p.dataset.cpanel !== tab
+  loadChannelTab(tab)
+}
+
+async function loadChannelHighlights() {
+  const login = state.channel?.login
+  const box = $('#channel-highlights')
+  if (!login || !box) return
+  state.highlightCache ??= new Map()
+  let list = state.highlightCache.get(login)
+  if (!list) {
+    box.innerHTML = skeleton(4, 'vod')
+    list = await api.getHighlights(login).catch(() => null)
+    if (list) state.highlightCache.set(login, list)
+  }
+  if (state.channel?.login !== login || !$('#channel-highlights')) return
+  const name = state.channel.info?.displayName || login
+  $('#channel-highlights').innerHTML = list?.length ? list.map((v) => vodCard(v, name)).join('') : emptyState(t('no_highlights'), 'film')
+}
+
 function renderChannel(keyword = '') {
   const { login, info, videos } = state.channel
+  const tab = state.channelTab ?? 'vods'
   watchChannelLive()
   const name = info?.displayName || login
   const avatar = info?.profileImageURL || ''
@@ -904,11 +944,13 @@ function renderChannel(keyword = '') {
       <img class="hero-thumb" src="${esc(live.previewImageURL)}" alt="" data-live="${esc(login)}">`
   } else {
     const last = videos[0]
-    const since = last ? offlineFor(last.publishedAt, last.lengthSeconds) : ''
+    const lastStart = info?.lastBroadcast?.startedAt
+    const since = offlineFor(last?.publishedAt, last?.lengthSeconds, lastStart)
+    const sinceDate = offlineDate(last?.publishedAt, last?.lengthSeconds, lastStart)
     status = `
       <div class="hero-live">
         <div class="hero-badges"><span class="pill off">${esc(t('offline'))}</span>
-        ${since ? `<span class="muted">${esc(t('offline_since', { t: since }))}</span>` : ''}</div>
+        ${since ? `<span class="muted">${esc(t('offline_since', { t: since }))} · ${esc(sinceDate)}</span>` : ''}</div>
         ${info?.broadcastSettings?.title ? `<p class="hero-title muted">${esc(info.broadcastSettings.title)}</p>` : ''}
       </div>`
   }
@@ -927,7 +969,10 @@ function renderChannel(keyword = '') {
       </div>
       ${status}
     </section>
-    <section class="block">
+    <div class="segmented channel-tabs" id="channel-tabs">
+      ${CHANNEL_TABS.map(([id, k]) => `<button type="button" data-ctab="${id}" class="${tab === id ? 'active' : ''}">${esc(t(k))}</button>`).join('')}
+    </div>
+    <section class="block" data-cpanel="vods" ${tab === 'vods' ? '' : 'hidden'}>
       <div class="block-head">
         <h2>${icon('film', 18)}<span>${esc(t('vods'))}</span></h2>
         <label class="filter">${icon('search', 16)}<input id="vod-filter" type="search" value="${esc(keyword)}" placeholder="${esc(t('search'))}…"></label>
@@ -935,10 +980,12 @@ function renderChannel(keyword = '') {
       ${keyword ? `<p class="muted filter-count">${esc(filtered.length ? t('filter_count', { n: filtered.length, k: keyword }) : t('filter_none', { k: keyword }))}</p>` : ''}
       <div class="grid vods">${filtered.length ? filtered.map((v) => vodCard(v, name)).join('') : (keyword ? '' : emptyState(t('no_vod'), 'film'))}</div>
     </section>
-    <section class="block" id="channel-playlists" hidden></section>
-    <section class="block">
+    <section class="block" data-cpanel="highlights" ${tab === 'highlights' ? '' : 'hidden'}>
+      <div class="grid vods" id="channel-highlights"></div>
+    </section>
+    <section class="block" data-cpanel="playlists" id="channel-playlists" ${tab === 'playlists' ? '' : 'hidden'}></section>
+    <section class="block" data-cpanel="clips" ${tab === 'clips' ? '' : 'hidden'}>
       <div class="block-head">
-        <h2>${icon('scissors', 18)}<span>${esc(t('clips'))}</span></h2>
         <div class="segmented sm">
           ${[['LAST_DAY', 'period_day'], ['LAST_WEEK', 'period_week'], ['LAST_MONTH', 'period_month'], ['ALL_TIME', 'period_all']]
             .map(([p, k]) => `<button type="button" data-clip-period="${p}" class="${(state.clipPeriod ?? 'LAST_WEEK') === p ? 'active' : ''}">${esc(t(k))}</button>`).join('')}
@@ -946,8 +993,7 @@ function renderChannel(keyword = '') {
       </div>
       <div class="grid vods" id="channel-clips"></div>
     </section>`
-  loadChannelClips()
-  loadChannelPlaylists()
+  loadChannelTab(tab)
 
   const filter = $('#vod-filter')
   filter.addEventListener('input', debounce(() => {
@@ -985,14 +1031,37 @@ function watchChannelLive() {
   }, 1000)
 }
 
-function offlineFor(publishedAt, lengthSeconds) {
-  const end = Date.parse(publishedAt) + (lengthSeconds || 0) * 1000
+/** Fin du dernier live connu : la VOD la plus récente (début + durée) ou,
+ *  si plus tard, le dernier live lancé (un live sans VOD n'en laisse pas). */
+function lastLiveEnd(publishedAt, lengthSeconds, lastStart) {
+  const fromVod = Date.parse(publishedAt) + (lengthSeconds || 0) * 1000
+  const start = Date.parse(lastStart)
+  const end = Math.max(Number.isFinite(fromVod) ? fromVod : 0, Number.isFinite(start) ? start : 0)
+  return end || NaN
+}
+
+/** « 13 j » en français, « 13d » en anglais : unités de la langue choisie. */
+function offlineFor(publishedAt, lengthSeconds, lastStart) {
+  const end = lastLiveEnd(publishedAt, lengthSeconds, lastStart)
   const diff = Date.now() - end
   if (!Number.isFinite(diff) || diff < 0) return ''
   const d = Math.floor(diff / 86_400_000)
   const h = Math.floor(diff / 3_600_000)
   const m = Math.floor(diff / 60_000)
-  return d > 0 ? `${d} j` : h > 0 ? `${h} h` : `${m} min`
+  const [n, unit] = d > 0 ? [d, 'day'] : h > 0 ? [h, 'hour'] : [m, 'minute']
+  try {
+    return new Intl.NumberFormat(lang(), { style: 'unit', unit, unitDisplay: 'narrow' }).format(n)
+  } catch {
+    return `${n} ${unit[0]}`
+  }
+}
+
+/** Date du dernier live, courte (« 21 sept. »), avec l'année si ce n'est pas celle-ci. */
+function offlineDate(publishedAt, lengthSeconds, lastStart) {
+  const end = new Date(lastLiveEnd(publishedAt, lengthSeconds, lastStart))
+  if (!Number.isFinite(end.getTime())) return ''
+  const sameYear = end.getFullYear() === new Date().getFullYear()
+  return end.toLocaleDateString(lang(), { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) })
 }
 
 // ── Lecteur ────────────────────────────────────────────────────────────────
@@ -1306,16 +1375,16 @@ async function loadChannelPlaylists() {
   state.playlistCache ??= new Map()
   let lists = state.playlistCache.get(login)
   if (!lists) {
+    const b = $('#channel-playlists')
+    if (b) b.innerHTML = `<div class="grid vods">${skeleton(4, 'vod')}</div>`
     lists = await api.getCollections(login).catch(() => null)
     if (lists) state.playlistCache.set(login, lists)
   }
   const box = $('#channel-playlists')
   if (state.channel?.login !== login || !box) return
-  if (!lists?.length) { box.hidden = true; return }
+  if (!lists?.length) { box.innerHTML = emptyState(t('no_playlists'), 'list'); return }
   const name = state.channel.info?.displayName || login
-  box.hidden = false
   box.innerHTML = `
-    <div class="block-head"><h2>${icon('list', 18)}<span>${esc(t('playlists'))}</span></h2></div>
     ${lists.map((c) => `
       <div class="playlist">
         <div class="playlist-head">
@@ -1564,6 +1633,10 @@ function openSettings() {
       ${toggle('set-homelist', t('home_list'), p.homeList, t('home_list_sub'))}
     </div>
     <div class="sheet-section">
+      <h3>${esc(t('player_settings'))}</h3>
+      ${toggle('set-clickpause', t('click_pause'), p.clickPause !== false, t('click_pause_sub'))}
+    </div>
+    <div class="sheet-section">
       <h3>${esc(t('chat_settings'))}</h3>
       ${toggle('set-sync', t('chat_sync'), p.chatSync, t('chat_sync_sub'))}
       ${toggle('set-raid', t('auto_raid'), p.autoRaid, t('auto_raid_sub'))}
@@ -1588,6 +1661,15 @@ function openSettings() {
         <span class="setting-text"><span>${esc(t('chat_size'))}</span></span>
         <span class="size-ctl"><input type="range" id="set-size" min="12" max="20" step="1" value="${p.chatSize}"><output>${p.chatSize}</output></span>
       </label>
+    </div>
+    <div class="sheet-section">
+      <h3>${esc(t('backup'))}</h3>
+      <p class="muted small">${esc(t('backup_sub'))}</p>
+      <div class="sheet-group">
+        <button class="sheet-row" type="button" data-action="export-data">${icon('download', 18)}<span>${esc(t('export_data'))}</span></button>
+        <button class="sheet-row" type="button" data-action="import-data">${icon('refresh', 18)}<span>${esc(t('import_data'))}</span></button>
+      </div>
+      <input type="file" id="import-file" accept="application/json,.json" hidden>
     </div>
     <div class="sheet-section">
       <h3>${esc(t('usage'))}</h3>
@@ -1646,6 +1728,8 @@ function openSettings() {
     if (id === 'set-words') {
       p.highlightWords = e.target.value.split(',').map((w) => w.trim().toLowerCase()).filter(Boolean).slice(0, 30)
     }
+    if (id === 'import-file') { importData(e.target.files?.[0]); e.target.value = ''; return }
+    if (id === 'set-clickpause') p.clickPause = e.target.checked
     if (id === 'set-homelist') { p.homeList = e.target.checked; store.savePrefs(); applyLayout(); return }
     if (id === 'set-toplang') {
       p.topLang = e.target.value === 'auto' ? null : e.target.value
@@ -1669,6 +1753,79 @@ function openSettings() {
     store.savePrefs()
     chat.applyPrefs()
   }
+}
+
+// ── Sauvegarde : export / import ───────────────────────────────────────
+// Même format que l'app iOS : les suivis passent d'un appareil à l'autre,
+// et les réglages communs aux deux portent le même nom.
+const BACKUP_FORMAT = 'twitchunblock-backup'
+// Réglages exportés : tout sauf ce qui dépend de l'appareil.
+const BACKUP_SKIP = new Set(['volume', 'muted', 'chatOpen'])
+
+function exportData() {
+  const p = store.prefs
+  const settings = Object.fromEntries(Object.entries(p).filter(([k]) => !BACKUP_SKIP.has(k) && k !== 'localFollows' && k !== 'followedCategories'))
+  const data = {
+    format: BACKUP_FORMAT,
+    version: 1,
+    platform: 'web',
+    exportedAt: new Date().toISOString(),
+    follows: [...(p.localFollows ?? [])],
+    accountFollows: [...(state.accountFollows ?? [])],
+    followedCategories: [...(p.followedCategories ?? [])],
+    settings,
+  }
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
+  a.download = `twitchunblock-${new Date().toISOString().slice(0, 10)}.json`
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+  toast(t('export_done'), 'success')
+}
+
+async function importData(file) {
+  if (!file) return
+  let data
+  try {
+    if (file.size > 2_000_000) throw new Error('size')
+    data = JSON.parse(await file.text())
+    if (data?.format !== BACKUP_FORMAT) throw new Error('format')
+  } catch {
+    return toast(t('import_bad'), 'error')
+  }
+  const p = store.prefs
+  const login = (x) => (typeof x === 'string' && /^[a-zA-Z0-9_]{1,25}$/.test(x) ? x.toLowerCase() : null)
+  const incoming = [...(data.follows ?? []), ...(data.accountFollows ?? [])].map(login).filter(Boolean)
+  const before = new Set(p.localFollows ?? [])
+  p.localFollows = [...new Set([...(p.localFollows ?? []), ...incoming])].slice(0, 300)
+  const added = p.localFollows.filter((l) => !before.has(l)).length
+
+  const cats = new Map((p.followedCategories ?? []).map((c) => [c.id, c]))
+  for (const c of data.followedCategories ?? []) {
+    if (c && typeof c.id === 'string' && typeof c.name === 'string' && !cats.has(c.id)) {
+      cats.set(c.id, { id: c.id, name: c.name, box: typeof c.box === 'string' ? c.box : '' })
+    }
+  }
+  p.followedCategories = [...cats.values()].slice(0, 200)
+
+  // Réglages : seulement les clés connues du site, du même type que la
+  // valeur actuelle. Une sauvegarde de l'app iOS apporte les réglages
+  // communs (langue, filtres du chat…), qu'elle exporte sous ces noms-là.
+  if (data.settings && typeof data.settings === 'object' && !Array.isArray(data.settings)) {
+    for (const [k, v] of Object.entries(data.settings)) {
+      if (BACKUP_SKIP.has(k) || !(k in p) || k === 'localFollows' || k === 'followedCategories') continue
+      const cur = p[k]
+      if (cur === null || typeof cur === typeof v || (Array.isArray(cur) && Array.isArray(v))) p[k] = v
+    }
+  }
+  store.savePrefs()
+  if (p.lang) setLang(p.lang)
+  applyStatic()
+  applyLayout()
+  chat.applyPrefs()
+  loadFollowed()
+  toast(t('import_done', { n: added }), 'success')
+  openSettings()
 }
 
 // ── Langue du top des lives ────────────────────────────────────────────

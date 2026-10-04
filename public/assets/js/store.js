@@ -34,6 +34,7 @@ const DEFAULT_PREFS = {
   shareUsage: true,
   chatSync: true,
   autoRaid: true,
+  clickPause: true,  // un clic sur la vidéo met en pause (ordinateur)
   highlightWords: [],
   hideBots: false,
   hideCommands: false,

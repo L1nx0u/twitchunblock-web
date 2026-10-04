@@ -617,7 +617,8 @@ export class Player {
     if (e.target.closest('.p-bottom, .p-menu, .p-big, .p-unmute')) return
     if (!this.el.menu.hidden) { this.closeMenu(); return }
     const touch = !matchMedia('(pointer: fine)').matches
-    if (!touch) { this.togglePlay(); this.showUI(); return }
+    // Le clic sur l'image peut être désactivé dans les réglages (« clickPause »).
+    if (!touch) { if (this.o.prefs.clickPause !== false) this.togglePlay(); this.showUI(); return }
 
     const now = Date.now()
     const rect = this.root.getBoundingClientRect()
