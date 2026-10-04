@@ -47,6 +47,7 @@ async function boot() {
   loadHls()   // prêt avant le premier clic
   applyStatic()
   renderTopLocal()
+  applyLayout()
   loadAnnouncement(true)
   renderIcons()
   bindGlobal()
@@ -313,6 +314,15 @@ const actions = {
   logout,
   settings: () => openSettings(),
   'refresh-discover': () => { loadFollowed(); loadTop(state.topLang) },
+  'toggle-layout': () => { store.prefs.homeList = !store.prefs.homeList; store.savePrefs(); applyLayout() },
+  'follow-local': (e) => {
+    const b = e.target.closest('[data-follow]')
+    if (!b) return
+    toggleLocalFollow(b.dataset.follow)
+    const on = isLocallyFollowed(b.dataset.follow)
+    b.classList.toggle('on', on)
+    b.innerHTML = followLocalInner(on)
+  },
   'clear-blocked': () => {
     store.prefs.blockedUsers = []
     store.savePrefs()
@@ -339,6 +349,11 @@ const actions = {
     if (w.kind === 'live') openLive(w.login)
     else openVod(w.id)
   },
+}
+
+// Bouton « Suivre » sans compte (page d'une chaîne).
+function followLocalInner(on) {
+  return `${icon('heart', 15)}<span>${esc(t(on ? 'following' : 'follow'))}</span><small class="muted">· ${esc(t('on_this_device'))}</small>`
 }
 
 // ── Cartes ─────────────────────────────────────────────────────────────────
@@ -422,18 +437,52 @@ function renderContinue() {
   }).join('')
 }
 
+// ── Suivis sans compte et affichage de l'accueil ─────────────────────────
+const localFollows = () => store.prefs.localFollows ?? []
+function isLocallyFollowed(login) { return localFollows().includes(String(login).toLowerCase()) }
+function toggleLocalFollow(login) {
+  const l = String(login).toLowerCase()
+  const list = localFollows()
+  store.prefs.localFollows = list.includes(l) ? list.filter((x) => x !== l) : [l, ...list].slice(0, 300)
+  store.savePrefs()
+  state.loaded.followed = 0
+}
+
+/** Grille de cartes ou liste façon Twitch, au choix (bouton + réglage). */
+function applyLayout() {
+  const list = Boolean(store.prefs.homeList)
+  for (const id of ['#followed-grid', '#top-grid']) $(id)?.classList.toggle('as-list', list)
+  const b = $('#layout-toggle')
+  if (b) {
+    b.innerHTML = icon(list ? 'grid' : 'list', 18)
+    b.title = t(list ? 'layout_grid' : 'layout_list')
+    b.setAttribute('aria-label', b.title)
+  }
+}
+
 async function loadFollowed({ silent = false } = {}) {
   const grid = $('#followed-grid')
   const head = $('#followed-block')
   state.loaded.followed = Date.now()
+  const local = localFollows()
   if (!session.token) {
     head.classList.add('logged-out')
-    grid.innerHTML = `
-      <div class="login-card">
-        <div class="login-card-icon">${icon('heart', 26)}</div>
-        <p>${esc(t('login_prompt'))}</p>
-        <button class="btn primary" type="button" data-action="login">${icon('twitch', 18)}<span>${esc(t('login'))}</span></button>
+    const loginCard = (compact) => `
+      <div class="login-card${compact ? ' compact' : ''}">
+        ${compact ? '' : `<div class="login-card-icon">${icon('heart', 26)}</div>`}
+        <p>${esc(t(compact ? 'login_optional' : 'login_prompt_local'))}</p>
+        <button class="btn primary${compact ? ' sm' : ''}" type="button" data-action="login">${icon('twitch', 18)}<span>${esc(t('login'))}</span></button>
       </div>`
+    if (!local.length) { grid.innerHTML = loginCard(false); return }
+    // Sans compte : les chaînes suivies sur cet appareil, par la requête publique.
+    if (!silent) grid.innerHTML = skeleton(Math.min(4, local.length))
+    try {
+      const streams = await api.getLiveByLogins(local)
+      if (session.token) return
+      grid.innerHTML = (streams.length ? streams.map(streamCard).join('') : emptyState(t('no_live_followed'), 'heart')) + loginCard(true)
+    } catch {
+      if (!silent) grid.innerHTML = emptyState(t('err_loading'), 'refresh')
+    }
     return
   }
   head.classList.remove('logged-out')
@@ -441,10 +490,16 @@ async function loadFollowed({ silent = false } = {}) {
   if (!silent) grid.innerHTML = skeleton(4)
   const token = session.token
   try {
-    const streams = await api.getFollowedStreams(session.userId)
+    // Suivis du compte, puis ceux de cet appareil qui n'y sont pas déjà.
+    const [streams, extra] = await Promise.all([
+      api.getFollowedStreams(session.userId),
+      local.length ? api.getLiveByLogins(local).catch(() => []) : [],
+    ])
     if (session.token !== token) return   // déconnecté entre-temps
     followedRetried = false
-    grid.innerHTML = streams.length ? streams.map(streamCard).join('') : emptyState(t('no_live_followed'), 'heart')
+    const known = new Set(streams.map((s) => s.login.toLowerCase()))
+    const all = [...streams, ...extra.filter((s) => !known.has(s.login.toLowerCase()))]
+    grid.innerHTML = all.length ? all.map(streamCard).join('') : emptyState(t('no_live_followed'), 'heart')
   } catch (err) {
     if (session.token !== token) return
     // Une seule nouvelle tentative : un jeton valide mais refusé par Helix
@@ -644,6 +699,7 @@ function renderChannel(keyword = '') {
       <div class="hero-id">
         ${avatar ? `<img class="avatar lg${live ? ' ring' : ''}" src="${esc(avatar)}" alt="">` : ''}
         <div><h2>${esc(name)}</h2><p class="muted">@${esc(login)}</p></div>
+        <button class="btn ghost sm follow-local${isLocallyFollowed(login) ? ' on' : ''}" type="button" data-action="follow-local" data-follow="${esc(login)}" title="${esc(t('follow_local_sub'))}">${followLocalInner(isLocallyFollowed(login))}</button>
       </div>
       ${status}
     </section>
@@ -1219,6 +1275,7 @@ function openSettings() {
           ${TOP_LANGS.map((c) => [c, topLangName(c)]).sort((a, b) => a[1].localeCompare(b[1], lang())).map(([c, n]) => `<option value="${c}" ${p.topLang === c ? 'selected' : ''}>${esc(n)}</option>`).join('')}
         </select>
       </label>
+      ${toggle('set-homelist', t('home_list'), p.homeList, t('home_list_sub'))}
     </div>
     <div class="sheet-section">
       <h3>${esc(t('chat_settings'))}</h3>
@@ -1299,6 +1356,7 @@ function openSettings() {
     if (id === 'set-words') {
       p.highlightWords = e.target.value.split(',').map((w) => w.trim().toLowerCase()).filter(Boolean).slice(0, 30)
     }
+    if (id === 'set-homelist') { p.homeList = e.target.checked; store.savePrefs(); applyLayout(); return }
     if (id === 'set-toplang') {
       p.topLang = e.target.value === 'auto' ? null : e.target.value
       store.savePrefs()
@@ -1468,6 +1526,7 @@ actions['login-again'] = () => login()
 /** Après un changement de langue : ce qui a été rendu en JS est refait. */
 function refreshTexts() {
   renderTopLocal()
+  applyLayout()
   renderAnnouncement()
   renderContinue()
   renderRecentChannels()

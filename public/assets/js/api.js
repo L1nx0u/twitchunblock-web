@@ -86,6 +86,19 @@ function streamFromGQL(n) {
   }
 }
 
+/** Lesquelles de ces chaînes sont en live (suivis sans compte), par GQL public. */
+export async function getLiveByLogins(logins) {
+  const out = []
+  for (let i = 0; i < logins.length; i += 100) {
+    const data = await gql(`query($l: [String!]) { users(logins: $l) { login displayName profileImageURL(width: 50)
+      stream { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { displayName } } } }`, { l: logins.slice(i, i + 100) })
+    for (const u of data?.users ?? []) {
+      if (u?.stream) out.push(streamFromGQL({ ...u.stream, broadcaster: u }))
+    }
+  }
+  return out.sort((a, b) => b.viewers - a.viewers)
+}
+
 export function streamFromHelix(s) {
   return {
     login: s.user_login,

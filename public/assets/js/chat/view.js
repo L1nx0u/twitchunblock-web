@@ -8,6 +8,7 @@
 
 import { LiveChat } from './live.js'
 import { fetchPinned } from './pinned.js'
+import { fetchBotCommands } from './botcmds.js'
 import { VodChat } from './vod.js'
 import { parseBadgeTag } from './badges.js'
 import { emoteCatalog, suggestEmotes } from './emotes.js'
@@ -61,8 +62,10 @@ export class ChatView {
       <header class="chat-head">
         <span class="chat-title">${icon('chat', 16)}<span class="chat-title-text"></span></span>
         <span class="chat-status"></span>
+        <button class="icon-btn sm chat-cmds-btn" type="button" data-i18n-title="bot_commands" title="${esc(t('bot_commands'))}">${icon('terminal', 17)}</button>
         <button class="icon-btn sm chat-hide" type="button" data-i18n-title="close">${icon('x', 18)}</button>
       </header>
+      <div class="bot-cmds" hidden role="dialog"></div>
       <div class="chat-pinned" hidden role="region"></div>
       <div class="chat-events"></div>
       <button class="pin-chip" type="button" hidden>${icon('pin', 13)}<span data-i18n="pinned_short">${esc(t('pinned_short'))}</span></button>
@@ -111,6 +114,12 @@ export class ChatView {
     }
 
     this.el.list.addEventListener('scroll', () => this.onScroll(), { passive: true })
+    $('.chat-cmds-btn', this.root).addEventListener('click', () => this.toggleBotCommands())
+    // La liste change de hauteur (message épinglé déplié, clavier, fenêtre) :
+    // on reste calé en bas si on suivait, sinon le suivi semble s'arrêter.
+    if ('ResizeObserver' in window) {
+      new ResizeObserver(() => { if (this.stick) this.scrollToBottom() }).observe(this.el.list)
+    }
     this.el.resume.addEventListener('click', () => this.scrollToBottom(true))
     this.el.list.addEventListener('click', (e) => this.onListClick(e))
     $('.chat-hide', this.root).addEventListener('click', () => this.o.onHide?.())
@@ -134,7 +143,9 @@ export class ChatView {
       }
       // Déplier n'a de sens que si le texte dépasse.
       if (!this.el.pinned.classList.contains('can-open')) return
+      const follow = this.stick
       const open = this.el.pinned.classList.toggle('open')
+      if (follow) requestAnimationFrame(() => this.scrollToBottom(true))
       $('[data-pin-toggle]', this.el.pinned)?.setAttribute('aria-expanded', String(open))
     })
 
@@ -788,6 +799,45 @@ export class ChatView {
     this.el.input.setSelectionRange(caret, caret)
     this.el.input.focus()
     this.hideSuggestions()
+  }
+
+  // ── Commandes des bots ─────────────────────────────────────────────────
+  async toggleBotCommands() {
+    const box = $('.bot-cmds', this.root)
+    if (!box.hidden) { box.hidden = true; return }
+    const channel = this.channel
+    if (!channel) return
+    box.hidden = false
+    box.innerHTML = `<div class="bot-cmds-head">${icon('terminal', 16)}<b>${esc(t('bot_commands'))}</b>
+        <button class="icon-btn xs" type="button" data-close>${icon('x', 16)}</button></div>
+      <input class="bot-cmds-filter" type="search" autocomplete="off" placeholder="${esc(t('bot_commands_filter'))}">
+      <div class="bot-cmds-list"><p class="muted small">${esc(t('loading'))}</p></div>`
+    box.querySelector('[data-close]').onclick = () => { box.hidden = true }
+    const sets = await fetchBotCommands(channel)
+    if (box.hidden || this.channel !== channel) return
+    const list = box.querySelector('.bot-cmds-list')
+    const render = (q = '') => {
+      q = q.trim().toLowerCase()
+      const shown = sets.map((s) => ({ ...s, commands: q ? s.commands.filter((c) => c.name.toLowerCase().includes(q) || c.response.toLowerCase().includes(q)) : s.commands }))
+        .filter((s) => s.commands.length)
+      list.innerHTML = !sets.length
+        ? `<p class="muted small">${esc(t('bot_commands_none'))}</p>`
+        : shown.map((s) => `<section><h4><img src="${esc(s.icon)}" alt="">${esc(s.bot)} <span class="muted">${s.commands.length}</span></h4>
+            ${s.commands.map((c) => `<button type="button" class="bot-cmd" data-cmd="${esc(c.name)}"><code>${esc(c.name)}</code>${c.response ? `<span>${esc(c.response)}</span>` : ''}</button>`).join('')}</section>`).join('')
+    }
+    render()
+    box.querySelector('.bot-cmds-filter').oninput = (e) => render(e.target.value)
+    list.onclick = async (e) => {
+      const b = e.target.closest('[data-cmd]')
+      if (!b) return
+      // On peut écrire : la commande va dans le champ ; sinon elle est copiée.
+      if (!this.el.composer.hidden && this.o.session().canChat) {
+        box.hidden = true
+        this.insertText(b.dataset.cmd)
+      } else {
+        try { await navigator.clipboard.writeText(b.dataset.cmd); b.classList.add('copied'); setTimeout(() => b.classList.remove('copied'), 900) } catch {}
+      }
+    }
   }
 
   insertText(text) {
