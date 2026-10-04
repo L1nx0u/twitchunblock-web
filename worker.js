@@ -56,6 +56,9 @@ export default {
                 // Annonces affichées dans l'app (lecture publique, écriture admin)
                 case '/api/announcement': return await handleAnnouncementGet(env);
                 case '/api/announcement/react': return await handleAnnouncementReact(request, env);
+
+                // Commandes Moobot pour le site (son API refuse les navigateurs)
+                case '/api/bot-commands/moobot': return await handleMoobotCommands(url);
                 case '/api/admin/announcement': return await handleAdminAnnouncement(request, env);
                 
                 default: return new Response("Not Found", { status: 404, headers: RESPONSE_HEADERS });
@@ -818,4 +821,33 @@ async function countReactions(env, announcementId) {
         cursor = page.list_complete ? undefined : page.cursor;
     } while (cursor);
     return { counts, total };
+}
+
+// ── Commandes Moobot (relais pour le site) ───────────────────────────────
+// Nightbot, StreamElements et Fossabot sont appelés directement par le site ;
+// Moobot n'autorise que moo.bot (CORS), d'où ce relais. Cache 10 min par chaîne.
+const moobotCache = new Map();   // chaîne → { at, body }
+async function handleMoobotCommands(url) {
+    const channel = String(url.searchParams.get('channel') || '').toLowerCase();
+    if (!/^[a-z0-9_]{1,25}$/.test(channel)) return jsonError('Chaîne invalide', 400);
+    const hit = moobotCache.get(channel);
+    if (hit && Date.now() - hit.at < 10 * 60 * 1000) {
+        return new Response(hit.body, { headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json' } });
+    }
+    let commands = [];
+    try {
+        const meta = await (await fetch(`https://api.moo.bot/1/channel/meta?name=${channel}`)).json();
+        const id = meta?.channel?.userid;
+        if (id) {
+            const list = await (await fetch(`https://api.moo.bot/1/channel/public/commands/list?channel=${encodeURIComponent(id)}`)).json();
+            commands = (list?.list ?? [])
+                .filter((c) => c?.identifier)
+                .map((c) => ({ name: String(c.identifier).startsWith('!') ? String(c.identifier) : `!${c.identifier}`, response: String(c.response ?? '') }))
+                .slice(0, 500);
+        }
+    } catch (e) {}
+    const body = JSON.stringify({ commands });
+    if (moobotCache.size > 500) moobotCache.clear();
+    moobotCache.set(channel, { at: Date.now(), body });
+    return new Response(body, { headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json' } });
 }

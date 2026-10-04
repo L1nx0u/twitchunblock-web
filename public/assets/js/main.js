@@ -9,6 +9,7 @@ import { Player, loadHls, qualityLabel } from './player.js'
 import { ChatView } from './chat/view.js'
 import { Hermes } from './chat/hermes.js'
 import * as usage from './usage.js'
+import { CHANGELOG } from './changelog.js'
 import {
   $, $$, debounce, esc, formatClock, formatDuration, formatViewers, icon, isIOS, isMobile,
   thumb, toast, uptimeSince,
@@ -49,6 +50,7 @@ async function boot() {
   renderTopLocal()
   applyLayout()
   loadAnnouncement(true)
+  setTimeout(welcomeOrWhatsNew, 900)
   renderIcons()
   bindGlobal()
   setupPlayer()
@@ -314,6 +316,8 @@ const actions = {
   logout,
   settings: () => openSettings(),
   'refresh-discover': () => { loadFollowed(); loadTop(state.topLang) },
+  'whats-new': () => showWhatsNew(CHANGELOG.slice(0, 3)),
+  'replay-tutorial': () => showWelcome(0),
   'toggle-layout': () => { store.prefs.homeList = !store.prefs.homeList; store.savePrefs(); applyLayout() },
   'follow-local': (e) => {
     const b = e.target.closest('[data-follow]')
@@ -498,7 +502,8 @@ async function loadFollowed({ silent = false } = {}) {
     if (session.token !== token) return   // déconnecté entre-temps
     followedRetried = false
     const known = new Set(streams.map((s) => s.login.toLowerCase()))
-    const all = [...streams, ...extra.filter((s) => !known.has(s.login.toLowerCase()))]
+    // Mêlés et triés par audience, comme sur Twitch (pas relégués en bas).
+    const all = [...streams, ...extra.filter((s) => !known.has(s.login.toLowerCase()))].sort((a, b) => b.viewers - a.viewers)
     grid.innerHTML = all.length ? all.map(streamCard).join('') : emptyState(t('no_live_followed'), 'heart')
   } catch (err) {
     if (session.token !== token) return
@@ -541,6 +546,69 @@ function startLiveTicker() {
     if (now - state.loaded.top > 60_000) loadTop(state.topLang, { silent: true })
     if (session.userId && now - state.loaded.followed > 60_000) loadFollowed({ silent: true })
   }, 1000)
+}
+
+// ── Tutoriel du premier passage et nouveautés ──────────────────────────
+// Première visite : un court tutoriel. Ensuite, à chaque nouvelle version du
+// site (SITE_VERSION), les nouveautés pas encore vues.
+const SEEN_VERSION = 'tu_seen_version'
+// Lu au chargement, avant que le site n'écrive quoi que ce soit : une trace
+// d'une visite précédente = pas de tutoriel, mais les nouveautés.
+const RETURNING = (() => {
+  try { return Boolean(localStorage.getItem('tu_prefs') || localStorage.getItem('twitch_token') || localStorage.getItem('twitch_vod_history')) } catch { return true }
+})()
+function welcomeOrWhatsNew() {
+  // Ouvert sur un lien de lecture partagé : on ne coupe pas la vidéo.
+  if (state.watch || !$('#sheet')?.hidden) return
+  let seen = null
+  const returning = RETURNING
+  try {
+    seen = localStorage.getItem(SEEN_VERSION)
+    localStorage.setItem(SEEN_VERSION, usage.SITE_VERSION)
+  } catch { return }
+  if (!seen && !returning) return showWelcome(0)
+  const unseen = seen ? CHANGELOG.filter((e) => e.version > seen) : CHANGELOG.slice(0, 1)
+  if (unseen.length) showWhatsNew(unseen)
+}
+
+function showWhatsNew(entries) {
+  const l = lang()
+  openSheet(`
+    <div class="sheet-head"><h2>${icon('sparkles', 20)} ${esc(t('whats_new'))}</h2><button class="icon-btn" type="button" data-sheet-close>${icon('x', 20)}</button></div>
+    ${entries.map((e) => `<div class="sheet-section whats-new">
+      <h3>${esc(e.version)}</h3>
+      <ul>${(e.items[l] ?? e.items.en).map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
+    </div>`).join('')}
+    <div class="sheet-section"><button class="btn primary" type="button" data-sheet-close style="width:100%">${esc(t('got_it'))}</button></div>`)
+  $('#sheet').onclick = (e) => { if (e.target.closest('[data-sheet-close]')) closeSheet() }
+}
+
+const WELCOME = [
+  ['play', 'wl_1_title', 'wl_1_text'],
+  ['search', 'wl_2_title', 'wl_2_text'],
+  ['heart', 'wl_3_title', 'wl_3_text'],
+  ['chat', 'wl_4_title', 'wl_4_text'],
+]
+function showWelcome(step) {
+  const [ic, title, text] = WELCOME[step]
+  const last = step === WELCOME.length - 1
+  openSheet(`
+    <div class="welcome">
+      <button class="icon-btn welcome-skip" type="button" data-sheet-close title="${esc(t('close'))}">${icon('x', 20)}</button>
+      <div class="welcome-ic">${icon(ic, 40)}</div>
+      <h2>${esc(t(title))}</h2>
+      <p>${esc(t(text))}</p>
+      <div class="welcome-dots">${WELCOME.map((_, i) => `<i class="${i === step ? 'on' : ''}"></i>`).join('')}</div>
+      <div class="welcome-actions">
+        ${step > 0 ? `<button class="btn ghost" type="button" data-step="${step - 1}">${esc(t('back'))}</button>` : ''}
+        <button class="btn primary" type="button" ${last ? 'data-sheet-close' : `data-step="${step + 1}"`}>${esc(t(last ? 'wl_start' : 'next'))}</button>
+      </div>
+    </div>`)
+  $('#sheet').onclick = (e) => {
+    if (e.target.closest('[data-sheet-close]')) return closeSheet()
+    const s = e.target.closest('[data-step]')?.dataset.step
+    if (s != null) showWelcome(Number(s))
+  }
 }
 
 function creditsHtml() {
@@ -1316,6 +1384,10 @@ function openSettings() {
         <a class="sheet-row" href="${api.GITHUB_URL}" target="_blank" rel="noopener">${icon('github', 18)}<span>${esc(t('source_site'))}</span>${icon('external', 16)}</a>
         <a class="sheet-row" href="${api.APP_GITHUB_URL}" target="_blank" rel="noopener">${icon('github', 18)}<span>${esc(t('source_app'))}</span>${icon('external', 16)}</a>
         <a class="sheet-row" href="${api.DISCORD_URL}" target="_blank" rel="noopener">${icon('discord', 18)}<span>${esc(t('discord_join'))}</span>${icon('external', 16)}</a>
+      </div>
+      <div class="sheet-group">
+        <button class="sheet-row" type="button" data-action="whats-new">${icon('sparkles', 18)}<span>${esc(t('whats_new'))}</span></button>
+        <button class="sheet-row" type="button" data-action="replay-tutorial">${icon('play', 18)}<span>${esc(t('replay_tutorial'))}</span></button>
       </div>
       ${creditsHtml()}
     </div>`)

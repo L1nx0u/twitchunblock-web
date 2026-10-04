@@ -518,9 +518,13 @@ input[type='search']::-webkit-search-cancel-button { filter: invert(1) opacity(0
 .chat-status[data-state='disconnected'] { color: var(--danger); }
 /* Message épinglé : bandeau compact d'une ligne, déplié au chevron. */
 .chat-pinned {
-  position: relative; flex: none; padding: 6px 6px 6px 10px; overflow: hidden;
+  position: relative; flex: none; overflow: hidden;
   background: var(--card-hi); border-bottom: 1px solid var(--line);
 }
+.pin-panel { position: relative; padding: 6px 6px 6px 10px; background: var(--card-hi); }
+/* Déplié : par-dessus la liste, sans la pousser. */
+.chat-pinned.open { overflow: visible; z-index: 6; }
+.chat-pinned.open .pin-panel { position: absolute; top: 0; left: 0; right: 0; border-bottom: 1px solid var(--line-strong); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5); }
 .chat-pinned.can-open { cursor: pointer; }
 .pin-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .pin-ic { flex: none; display: inline-flex; color: var(--purple); }
@@ -896,3 +900,17 @@ input[type='search']::-webkit-search-cancel-button { filter: invert(1) opacity(0
 .p-chap-row b { font-variant-numeric: tabular-nums; color: var(--muted); margin-right: 6px; }
 .p-menu[data-kind='chapters'] { left: 12px; right: auto; }
 .p-btn.p-chapters[hidden] { display: none !important; }
+
+/* Nouveautés et tutoriel du premier passage */
+.whats-new h3 { color: var(--purple); }
+.whats-new ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--text); font-size: 14px; line-height: 1.45; }
+.welcome { position: relative; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 28px 22px 22px; text-align: center; }
+.welcome-skip { position: absolute; top: 8px; right: 8px; }
+.welcome-ic { display: grid; place-items: center; width: 92px; height: 92px; border-radius: 50%; color: #fff; background: linear-gradient(135deg, var(--primary), var(--purple)); box-shadow: 0 10px 30px rgba(145, 70, 255, 0.45); }
+.welcome h2 { margin: 6px 0 0; font-size: 22px; font-weight: 800; }
+.welcome p { margin: 0; max-width: 420px; color: var(--muted); font-size: 15px; line-height: 1.5; }
+.welcome-dots { display: flex; gap: 6px; margin-top: 4px; }
+.welcome-dots i { width: 8px; height: 8px; border-radius: 4px; background: var(--line-strong); transition: width 0.2s; }
+.welcome-dots i.on { width: 22px; background: var(--primary); }
+.welcome-actions { display: flex; gap: 8px; width: 100%; max-width: 360px; }
+.welcome-actions .btn { flex: 1; }

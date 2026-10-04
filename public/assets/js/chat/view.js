@@ -143,9 +143,12 @@ export class ChatView {
       }
       // Déplier n'a de sens que si le texte dépasse.
       if (!this.el.pinned.classList.contains('can-open')) return
-      const follow = this.stick
-      const open = this.el.pinned.classList.toggle('open')
-      if (follow) requestAnimationFrame(() => this.scrollToBottom(true))
+      // Déplié, le message passe par-dessus le chat : la boîte garde sa
+      // hauteur repliée, la liste ne bouge pas et continue de défiler.
+      const box = this.el.pinned
+      if (!box.classList.contains('open')) box.style.height = `${box.offsetHeight}px`
+      const open = box.classList.toggle('open')
+      if (!open) box.style.height = ''
       $('[data-pin-toggle]', this.el.pinned)?.setAttribute('aria-expanded', String(open))
     })
 
@@ -240,8 +243,9 @@ export class ChatView {
     if (!changed && !box.hidden) { this.updatePinMeta(); return }
 
     box.classList.remove('open', 'can-open')
+    box.style.height = ''
     const badges = pin.badges.map((b) => `<img class="badge" src="${esc(b.url)}" alt="" title="${esc(b.set)}">`).join('')
-    box.innerHTML = `
+    box.innerHTML = `<div class="pin-panel">
       <div class="pin-row">
         <span class="pin-ic">${icon('pin', 14)}</span>
         <div class="pin-body">${badges}<span class="pin-sender" style="color:${esc(pin.color)}">${esc(pin.sender)}</span><span class="pin-colon">:</span> ${this.renderTokens(pin.tokens, this.o.session().login)}</div>
@@ -249,7 +253,7 @@ export class ChatView {
         <button class="icon-btn xs" type="button" data-pin-close aria-label="${esc(t('close'))}">${icon('x', 14)}</button>
       </div>
       <div class="pin-meta"></div>
-      ${pin.endsAt && pin.startsAt ? '<div class="pin-progress"><i></i></div>' : ''}`
+      ${pin.endsAt && pin.startsAt ? '<div class="pin-progress"><i></i></div>' : ''}</div>`
     for (const img of box.querySelectorAll('img.badge')) img.addEventListener('error', () => img.remove(), { once: true })
     box.hidden = false
     this.updatePinMeta()

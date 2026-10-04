@@ -2,10 +2,13 @@
 //  Commandes des bots du chat, lues sans écrire « !commands » : mêmes API
 //  publiques que l'extension « View Twitch Commands In Chat » (1011025m).
 //  Nightbot, StreamElements et Fossabot acceptent les appels du navigateur ;
-//  Moobot les refuse (CORS), il n'est donc proposé que dans l'app iOS.
+//  Moobot les refuse (CORS) : il passe par le Worker.
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { API_URL } from '../api.js'
+
 const ICONS = {
+  Moobot: 'https://static-cdn.jtvnw.net/jtv_user_pictures/663db70b-80e7-424b-a54f-ed88f7ac9355-profile_image-50x50.png',
   Nightbot: 'https://static-cdn.jtvnw.net/jtv_user_pictures/nightbot-profile_image-2345338c09b4d468-50x50.png',
   StreamElements: 'https://static-cdn.jtvnw.net/jtv_user_pictures/streamelements-profile_image-a89b9d61499d365f-50x50.png',
   Fossabot: 'https://static-cdn.jtvnw.net/jtv_user_pictures/719a0ffa-6c86-4321-83f1-44990fd644bc-profile_image-50x50.png',
@@ -45,6 +48,10 @@ async function fossabot(ch) {
   return list.filter((c) => c.name && c.enabled_online !== false).map((c) => ({ name: bang(c.name), response: String(c.response ?? '') }))
 }
 
+async function moobot(ch) {
+  return (await json(`${API_URL}/api/bot-commands/moobot?channel=${ch}`))?.commands ?? null
+}
+
 const cache = new Map()   // chaîne → { at, sets }
 
 /** [{ bot, icon, commands: [{ name, response }] }], bots sans commande exclus. */
@@ -52,8 +59,8 @@ export async function fetchBotCommands(channel) {
   const ch = encodeURIComponent(String(channel).toLowerCase())
   const hit = cache.get(ch)
   if (hit && Date.now() - hit.at < 10 * 60_000) return hit.sets
-  const [n, s, f] = await Promise.all([nightbot(ch), streamElements(ch), fossabot(ch)])
-  const sets = [['Nightbot', n], ['StreamElements', s], ['Fossabot', f]]
+  const [n, s, f, m] = await Promise.all([nightbot(ch), streamElements(ch), fossabot(ch), moobot(ch)])
+  const sets = [['Nightbot', n], ['StreamElements', s], ['Fossabot', f], ['Moobot', m]]
     .filter(([, cmds]) => cmds?.length)
     .map(([bot, cmds]) => ({ bot, icon: ICONS[bot], commands: cmds.sort((a, b) => a.name.localeCompare(b.name)) }))
   cache.set(ch, { at: Date.now(), sets })
