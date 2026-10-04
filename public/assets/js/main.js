@@ -1356,6 +1356,32 @@ function renderTopLocal() {
 // Relue à l'ouverture et au retour sur l'onglet (au plus toutes les 5 min) ;
 // une annonce fermée ne revient pas (une nouvelle, si).
 const ANN_DISMISSED = 'tu_ann_dismissed'
+// Réactions : une par appareil, la même toucher deux fois la retire.
+const ANN_REACTIONS = ['👍', '❤️', '🔥', '😂', '👎']
+const ANN_REACTED = 'tu_ann_reacted'
+function annReactions() { try { return JSON.parse(localStorage.getItem(ANN_REACTED) || '{}') } catch { return {} } }
+function annReaction(id) { return annReactions()[id] ?? null }
+async function reactToAnnouncement(a, emoji) {
+  const all = annReactions()
+  const prev = all[a.id] ?? null
+  const next = prev === emoji ? null : emoji
+  // Affichage immédiat ; on revient en arrière si le serveur refuse.
+  const save = (v) => {
+    const m = annReactions()
+    if (v) m[a.id] = v; else delete m[a.id]
+    // Seules les 10 dernières annonces sont gardées.
+    try { localStorage.setItem(ANN_REACTED, JSON.stringify(Object.fromEntries(Object.entries(m).slice(-10)))) } catch {}
+    renderAnnouncement()
+  }
+  save(next)
+  try {
+    const res = await fetch(`${api.API_URL}/api/announcement/react`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ announcementId: a.id, id: usage.installId(), emoji: next }),
+    })
+    if (!res.ok) throw new Error(String(res.status))
+  } catch { save(prev); toast(t('react_failed')) }
+}
 let annFetchedAt = 0
 let annCurrent = null
 async function loadAnnouncement(force = false) {
@@ -1382,10 +1408,15 @@ function renderAnnouncement() {
       ${a.title ? `<h3>${esc(a.title)}</h3>` : ''}
       ${a.message ? `<p>${esc(a.message)}</p>` : ''}
       ${link ? `<a class="btn primary sm" href="${esc(link)}" target="_blank" rel="noopener">${esc(t('announcement_open'))} ${icon('external', 14)}</a>` : ''}
+      <div class="announce-reacts" role="group" aria-label="${esc(t('react'))}">${ANN_REACTIONS.map((e) => `<button type="button" data-react="${e}" class="${annReaction(a.id) === e ? 'on' : ''}" aria-pressed="${annReaction(a.id) === e}">${e}</button>`).join('')}</div>
     </div>
     <button class="icon-btn" type="button" data-ann-close title="${esc(t('close'))}">${icon('x', 18)}</button>
   </div>`
   box.hidden = false
+  box.querySelector('.announce-reacts').onclick = (e) => {
+    const b = e.target.closest('[data-react]')
+    if (b) reactToAnnouncement(a, b.dataset.react)
+  }
   box.querySelector('[data-ann-close]').onclick = () => {
     try { localStorage.setItem(ANN_DISMISSED, JSON.stringify([...dismissed, a.id].slice(-20))) } catch {}
     box.hidden = true

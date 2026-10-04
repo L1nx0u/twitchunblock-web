@@ -23,7 +23,7 @@ const LAST_KEY = 'tu_last_ping'
  *  inutile de lui écrire à chaque rechargement de page. */
 const PING_EVERY = 60 * 60 * 1000
 
-function installId() {
+export function installId() {
   let id = null
   try { id = localStorage.getItem(ID_KEY) } catch {}
   if (!id || !/^[0-9a-f-]{36}$/i.test(id)) {

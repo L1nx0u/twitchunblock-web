@@ -55,6 +55,7 @@ export default {
 
                 // Annonces affichées dans l'app (lecture publique, écriture admin)
                 case '/api/announcement': return await handleAnnouncementGet(env);
+                case '/api/announcement/react': return await handleAnnouncementReact(request, env);
                 case '/api/admin/announcement': return await handleAdminAnnouncement(request, env);
                 
                 default: return new Response("Not Found", { status: 404, headers: RESPONSE_HEADERS });
@@ -723,7 +724,10 @@ async function handleAnnouncementGet(env) {
 async function handleAdminAnnouncement(request, env) {
     const { denied } = await requireAdmin(request);
     if (denied) return denied;
-    if (request.method === 'GET') return jsonResponse({ announcement: await readAnnouncement(env) });
+    if (request.method === 'GET') {
+        const announcement = await readAnnouncement(env);
+        return jsonResponse({ announcement, reactions: announcement ? await countReactions(env, announcement.id) : null });
+    }
     if (request.method !== 'POST') return jsonError('Method Not Allowed', 405);
     let body;
     try { body = await request.json(); } catch (e) { return jsonError('JSON invalide', 400); }
@@ -759,4 +763,59 @@ async function handleAdminAnnouncement(request, env) {
     // expirationTtl : 60 s minimum chez Cloudflare.
     await env.TWITCH_DATA.put(ANNOUNCEMENT_KEY, JSON.stringify(announcement), { expirationTtl: Math.max(60, ttl) });
     return jsonResponse({ ok: true, announcement });
+}
+
+// ── Réactions aux annonces ───────────────────────────────────────────────
+// Une réaction par appareil (identifiant aléatoire de l'app ou du site),
+// modifiable ou retirable. Clé `annr_<annonce>_<appareil>`, l'emoji en
+// métadonnées : le décompte (réservé à l'admin) se fait avec list(), sans
+// lecture par clé. Les clés expirent une semaine après l'annonce.
+const REACTIONS = ['👍', '❤️', '🔥', '😂', '👎'];
+const REACTION_PREFIX = 'annr_';
+const reactHits = new Map();   // adresse → { n, until } (mémoire de l'instance)
+
+async function handleAnnouncementReact(request, env) {
+    if (request.method !== 'POST') return jsonError('Method Not Allowed', 405);
+    if (!env.TWITCH_DATA) return jsonError("KV 'TWITCH_DATA' non lié au Worker.", 500);
+    const ua = request.headers.get('User-Agent') || '';
+    if (BOT_UA.test(ua)) return jsonResponse({ ok: true, ignored: true });
+    // Chaque réaction est une écriture KV : 30 par heure et par adresse.
+    const ip = request.headers.get('CF-Connecting-IP') || '';
+    const now = Date.now();
+    const hit = reactHits.get(ip);
+    if (!hit || hit.until < now) {
+        if (reactHits.size > 5000) reactHits.clear();
+        reactHits.set(ip, { n: 1, until: now + 60 * 60 * 1000 });
+    } else if (++hit.n > 30) return jsonError('Trop de requêtes', 429);
+
+    let body;
+    try { body = await request.json(); } catch (e) { return jsonError('JSON invalide', 400); }
+    const device = String(body.id || '');
+    if (!/^[0-9a-fA-F-]{36}$/.test(device)) return jsonError('ID invalide', 400);
+    const current = await readAnnouncement(env);
+    if (!current || current.id !== String(body.announcementId || '')) return jsonError('Annonce terminée', 410);
+    const emoji = body.emoji == null ? null : String(body.emoji);
+    if (emoji !== null && !REACTIONS.includes(emoji)) return jsonError('Réaction inconnue', 400);
+
+    const key = `${REACTION_PREFIX}${current.id}_${device.toLowerCase()}`;
+    if (emoji === null) await env.TWITCH_DATA.delete(key);
+    else {
+        const ttl = Math.max(60, Math.round((current.until - now) / 1000) + 7 * 86400);
+        await env.TWITCH_DATA.put(key, '', { expirationTtl: ttl, metadata: { e: emoji } });
+    }
+    return jsonResponse({ ok: true, emoji });
+}
+
+async function countReactions(env, announcementId) {
+    const counts = Object.fromEntries(REACTIONS.map((e) => [e, 0]));
+    let cursor, total = 0;
+    do {
+        const page = await env.TWITCH_DATA.list({ prefix: `${REACTION_PREFIX}${announcementId}_`, limit: 1000, cursor });
+        for (const k of page.keys) {
+            const e = k.metadata?.e;
+            if (e in counts) { counts[e]++; total++; }
+        }
+        cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+    return { counts, total };
 }

@@ -4,6 +4,8 @@ Watch Twitch lives and VODs in your browser, no subscription needed, with the re
 
 **Website: https://test2-fawn-eta.vercel.app**
 
+> 🤖 **Vibe-coded project.** Built with AI coding assistants (prompted, reviewed and tested by a human). Expect rough edges: bug reports on [Discord](https://discord.gg/cEsMRdxsVq) help a lot.
+
 > 📱 **Also on iPhone and iPad** — [TwitchUnblock for iOS](https://github.com/MXFia19/TwitchUnblock) is the native app this website comes from: same backend, plus channel points, an immersive landscape player, a sleep timer and more. Install it through AltStore, SideStore or Feather.
 
 ---

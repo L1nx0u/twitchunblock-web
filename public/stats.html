@@ -132,6 +132,9 @@
     .ann-renotify { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; }
     .ann-renotify[hidden] { display: none; }
     .ann-editing { outline: 2px solid var(--purple); outline-offset: 4px; border-radius: 10px; }
+    .ann-reacts { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin-top: 8px; font-size: 15px; }
+    .ann-reacts b { font-size: 13px; color: var(--text); font-variant-numeric: tabular-nums; }
+    .ann-reacts .zero { opacity: 0.4; }
     .ann-current { margin-bottom: 10px; font-size: 13px; color: var(--muted); }
     .ann-current b { color: var(--text); }
     .ann-current .card-ish { border-left: 3px solid var(--purple); padding: 6px 10px; background: var(--card); border-radius: 6px; margin-top: 4px; white-space: pre-wrap; }
@@ -284,7 +287,7 @@
       deleted: '{n} entrée(s) supprimée(s)', remaining: ' · {n} restante(s), relance l’action', fail: 'Échec : {e}',
       lAnonWeb: 'Supprimer tous les anonymes web', lAnon: 'Supprimer tous les anonymes', lOnce: 'Supprimer les entrées vues un seul jour', lAll: 'Supprimer TOUTES les données d’utilisation', lKey: 'Supprimer {k}',
       syncConfirm: 'Effacer la sauvegarde (historique et progression) de {u} ?', syncDone: 'Sauvegarde de {u} effacée.', syncNone: '{u} n’avait pas de sauvegarde.',
-      annTitle: 'Annonce (app et site)', annSub: 'Affichée en haut de l’accueil de l’app iOS et du site jusqu’à expiration. Une seule à la fois ; en publier une remplace la précédente.', annTitlePh: 'Titre', annMsgPh: 'Message', annLinkPh: 'Lien (facultatif, https://…)', annFor: 'Durée', annPublish: 'Publier', annCustom: 'Personnalisée…', unitMin: 'minutes', unitHour: 'heures', unitDay: 'jours', annBadDuration: 'Durée : entre 1 minute et 30 jours.', annClear: 'Retirer', annEdit: 'Modifier', annSave: 'Enregistrer', annCancel: 'Annuler', annKeep: 'Garder l’échéance actuelle', annRenotify: 'Réafficher à ceux qui l’avaient fermée', annSaved: 'Annonce modifiée.', annEdited: 'modifiée', annNone: 'Aucune annonce en cours.', annLive: 'En cours jusqu’au {d} :', annPublished: 'Annonce publiée.', annCleared: 'Annonce retirée.', annConfirmClear: 'Retirer l’annonce en cours ?',
+      annTitle: 'Annonce (app et site)', annSub: 'Affichée en haut de l’accueil de l’app iOS et du site jusqu’à expiration. Une seule à la fois ; en publier une remplace la précédente.', annTitlePh: 'Titre', annMsgPh: 'Message', annLinkPh: 'Lien (facultatif, https://…)', annFor: 'Durée', annPublish: 'Publier', annCustom: 'Personnalisée…', unitMin: 'minutes', unitHour: 'heures', unitDay: 'jours', annBadDuration: 'Durée : entre 1 minute et 30 jours.', annClear: 'Retirer', annEdit: 'Modifier', annReactions: 'Réactions', annReactTotal: '{n} réaction(s) · une par appareil', annSave: 'Enregistrer', annCancel: 'Annuler', annKeep: 'Garder l’échéance actuelle', annRenotify: 'Réafficher à ceux qui l’avaient fermée', annSaved: 'Annonce modifiée.', annEdited: 'modifiée', annNone: 'Aucune annonce en cours.', annLive: 'En cours jusqu’au {d} :', annPublished: 'Annonce publiée.', annCleared: 'Annonce retirée.', annConfirmClear: 'Retirer l’annonce en cours ?',
       fAllKinds: 'Tous les types', fAccounts: 'Comptes', fAnon: 'Anonymes', fAllPlats: 'Toutes plateformes', fIosOnly: 'iOS seulement', fWebOnly: 'Web seulement', fBoth: 'iOS + Web', fAllVersions: 'Toutes versions',
       updated: 'Mis à jour à {t}', unavailable: 'Statistiques indisponibles ({e})',
     },
@@ -313,7 +316,7 @@
       deleted: '{n} entry(ies) deleted', remaining: ' · {n} left, run the action again', fail: 'Failed: {e}',
       lAnonWeb: 'Delete all anonymous web entries', lAnon: 'Delete all anonymous entries', lOnce: 'Delete entries seen on one day only', lAll: 'Delete ALL usage data', lKey: 'Delete {k}',
       syncConfirm: 'Erase the backup (history and progress) of {u}?', syncDone: 'Backup of {u} erased.', syncNone: '{u} had no backup.',
-      annTitle: 'Announcement (app and site)', annSub: 'Shown at the top of the iOS app and website home until it expires. One at a time; publishing replaces the previous one.', annTitlePh: 'Title', annMsgPh: 'Message', annLinkPh: 'Link (optional, https://…)', annFor: 'Duration', annPublish: 'Publish', annCustom: 'Custom…', unitMin: 'minutes', unitHour: 'hours', unitDay: 'days', annBadDuration: 'Duration: between 1 minute and 30 days.', annClear: 'Remove', annEdit: 'Edit', annSave: 'Save', annCancel: 'Cancel', annKeep: 'Keep current end time', annRenotify: 'Show again to people who closed it', annSaved: 'Announcement updated.', annEdited: 'edited', annNone: 'No announcement running.', annLive: 'Running until {d}:', annPublished: 'Announcement published.', annCleared: 'Announcement removed.', annConfirmClear: 'Remove the current announcement?',
+      annTitle: 'Announcement (app and site)', annSub: 'Shown at the top of the iOS app and website home until it expires. One at a time; publishing replaces the previous one.', annTitlePh: 'Title', annMsgPh: 'Message', annLinkPh: 'Link (optional, https://…)', annFor: 'Duration', annPublish: 'Publish', annCustom: 'Custom…', unitMin: 'minutes', unitHour: 'hours', unitDay: 'days', annBadDuration: 'Duration: between 1 minute and 30 days.', annClear: 'Remove', annEdit: 'Edit', annReactions: 'Reactions', annReactTotal: '{n} reaction(s) · one per device', annSave: 'Save', annCancel: 'Cancel', annKeep: 'Keep current end time', annRenotify: 'Show again to people who closed it', annSaved: 'Announcement updated.', annEdited: 'edited', annNone: 'No announcement running.', annLive: 'Running until {d}:', annPublished: 'Announcement published.', annCleared: 'Announcement removed.', annConfirmClear: 'Remove the current announcement?',
       fAllKinds: 'All types', fAccounts: 'Accounts', fAnon: 'Anonymous', fAllPlats: 'All platforms', fIosOnly: 'iOS only', fWebOnly: 'Web only', fBoth: 'iOS + Web', fAllVersions: 'All versions',
       updated: 'Updated at {t}', unavailable: 'Stats unavailable ({e})',
     },
@@ -342,7 +345,7 @@
       deleted: '{n} entrada(s) eliminada(s)', remaining: ' · quedan {n}, repite la acción', fail: 'Error: {e}',
       lAnonWeb: 'Eliminar todos los anónimos web', lAnon: 'Eliminar todos los anónimos', lOnce: 'Eliminar las entradas vistas un solo día', lAll: 'Eliminar TODOS los datos de uso', lKey: 'Eliminar {k}',
       syncConfirm: '¿Borrar la copia (historial y progreso) de {u}?', syncDone: 'Copia de {u} borrada.', syncNone: '{u} no tenía copia.',
-      annTitle: 'Anuncio (app y sitio)', annSub: 'Se muestra arriba del inicio de la app iOS y del sitio hasta que caduca. Uno a la vez; publicar uno reemplaza al anterior.', annTitlePh: 'Título', annMsgPh: 'Mensaje', annLinkPh: 'Enlace (opcional, https://…)', annFor: 'Duración', annPublish: 'Publicar', annCustom: 'Personalizada…', unitMin: 'minutos', unitHour: 'horas', unitDay: 'días', annBadDuration: 'Duración: entre 1 minuto y 30 días.', annClear: 'Retirar', annEdit: 'Editar', annSave: 'Guardar', annCancel: 'Cancelar', annKeep: 'Mantener el fin actual', annRenotify: 'Volver a mostrar a quien lo cerró', annSaved: 'Anuncio modificado.', annEdited: 'editado', annNone: 'Ningún anuncio activo.', annLive: 'Activo hasta el {d}:', annPublished: 'Anuncio publicado.', annCleared: 'Anuncio retirado.', annConfirmClear: '¿Retirar el anuncio activo?',
+      annTitle: 'Anuncio (app y sitio)', annSub: 'Se muestra arriba del inicio de la app iOS y del sitio hasta que caduca. Uno a la vez; publicar uno reemplaza al anterior.', annTitlePh: 'Título', annMsgPh: 'Mensaje', annLinkPh: 'Enlace (opcional, https://…)', annFor: 'Duración', annPublish: 'Publicar', annCustom: 'Personalizada…', unitMin: 'minutos', unitHour: 'horas', unitDay: 'días', annBadDuration: 'Duración: entre 1 minuto y 30 días.', annClear: 'Retirar', annEdit: 'Editar', annReactions: 'Reacciones', annReactTotal: '{n} reacción(es) · una por dispositivo', annSave: 'Guardar', annCancel: 'Cancelar', annKeep: 'Mantener el fin actual', annRenotify: 'Volver a mostrar a quien lo cerró', annSaved: 'Anuncio modificado.', annEdited: 'editado', annNone: 'Ningún anuncio activo.', annLive: 'Activo hasta el {d}:', annPublished: 'Anuncio publicado.', annCleared: 'Anuncio retirado.', annConfirmClear: '¿Retirar el anuncio activo?',
       fAllKinds: 'Todos los tipos', fAccounts: 'Cuentas', fAnon: 'Anónimos', fAllPlats: 'Todas las plataformas', fIosOnly: 'Solo iOS', fWebOnly: 'Solo web', fBoth: 'iOS + Web', fAllVersions: 'Todas las versiones',
       updated: 'Actualizado a las {t}', unavailable: 'Estadísticas no disponibles ({e})',
     },
@@ -567,14 +570,15 @@
   // ── Annonce dans l'app ──────────────────────────────────────────────
   let annCurrent = null
   let annEditing = false
-  function renderAnnouncement(a) {
+  function renderAnnouncement(a, reactions = null) {
     annCurrent = a
     const box = $('#ann-current')
     if (!a) { box.textContent = t('annNone'); if (annEditing) setEditing(false); return }
     const until = new Date(a.until).toLocaleString(LOCALE, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
     box.innerHTML = `${esc(t('annLive', { d: until }))}${a.editedAt ? ` <span class="tag">${esc(t('annEdited'))}</span>` : ''}
       <button class="btn sm" type="button" id="ann-edit" style="margin-left:6px">${esc(t('annEdit'))}</button>
-      <div class="card-ish">${a.title ? `<b>${esc(a.title)}</b>\n` : ''}${esc(a.message || '')}${a.link ? `\n<a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.link)}</a>` : ''}</div>`
+      <div class="card-ish">${a.title ? `<b>${esc(a.title)}</b>\n` : ''}${esc(a.message || '')}${a.link ? `\n<a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.link)}</a>` : ''}</div>
+      ${reactions ? `<div class="ann-reacts" title="${esc(t('annReactions'))}">${Object.entries(reactions.counts).map(([e, n]) => `<span class="${n ? '' : 'zero'}">${e} <b>${fmt(n)}</b></span>`).join('')}<span class="sub" style="margin:0">${esc(t('annReactTotal', { n: fmt(reactions.total) }))}</span></div>` : ''}`
     $('#ann-edit').onclick = () => setEditing(true)
   }
   /** Mode modification : le formulaire reprend l'annonce en cours. */
@@ -600,7 +604,7 @@
     $('#ann-custom').hidden = $('#ann-hours').value !== 'custom'
   }
   async function loadAnnouncement() {
-    try { renderAnnouncement((await (await authed('/announcement')).json()).announcement) } catch {}
+    try { const r = await (await authed('/announcement')).json(); renderAnnouncement(r.announcement, r.reactions) } catch {}
   }
   async function postAnnouncement(body, okMsg) {
     try {
@@ -608,6 +612,7 @@
       const r = await res.json()
       if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`)
       renderAnnouncement(r.announcement)
+      loadAnnouncement()   // décompte des réactions à jour
       devMsg(okMsg, 'ok')
       return true
     } catch (e) { devMsg(t('fail', { e: e.message }), 'err'); return false }
@@ -691,7 +696,7 @@
   let lastDaily = null
   let resizeTimer = null
   addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => lastDaily && chartNew(lastDaily), 150) })
-  $('#refresh').addEventListener('click', () => { load(); if (!$('#dev').hidden) loadEntries() })
+  $('#refresh').addEventListener('click', () => { load(); if (!$('#dev').hidden) { loadEntries(); loadAnnouncement() } })
   load()
   checkAdmin()
   // Rafraîchi toutes les 2 minutes tant que la page est affichée.

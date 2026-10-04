@@ -159,6 +159,11 @@ input[type='search']::-webkit-search-cancel-button { filter: invert(1) opacity(0
 .announce-body p { margin: 0; color: var(--muted); font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .announce-body .btn { margin-top: 10px; }
 .announce .icon-btn { flex: none; margin: -6px -8px 0 0; }
+.announce-reacts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.announce-reacts button { height: 32px; min-width: 40px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); font-size: 16px; line-height: 1; cursor: pointer; transition: transform 0.1s, border-color 0.15s, background 0.15s; }
+.announce-reacts button:hover { border-color: var(--purple); }
+.announce-reacts button:active { transform: scale(0.92); }
+.announce-reacts button.on { border-color: var(--purple); background: rgba(145, 70, 255, 0.22); }
 .block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .block-head h2 { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 800; letter-spacing: -0.01em; }
 .block-head h2 .ic { color: var(--purple); }
