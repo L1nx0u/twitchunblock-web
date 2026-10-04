@@ -59,6 +59,7 @@
       </a>
       <nav class="nav" aria-label="Navigation">
         <button type="button" data-tab="discover" class="active"><span data-icon="compass" data-size="18"></span><span data-i18n="nav_discover"></span></button>
+        <button type="button" data-tab="categories"><span data-icon="layers" data-size="18"></span><span data-i18n="nav_categories"></span></button>
         <button type="button" data-tab="channel"><span data-icon="user" data-size="18"></span><span data-i18n="nav_channel"></span></button>
         <button type="button" data-tab="link"><span data-icon="link" data-size="18"></span><span data-i18n="nav_link"></span></button>
       </nav>
@@ -77,6 +78,11 @@
           <div class="rail" id="continue-rail"></div>
         </section>
 
+        <div class="segmented home-tabs" id="home-seg">
+          <button type="button" data-home="followed" data-i18n="followed"></button>
+          <button type="button" data-home="top" data-i18n="top"></button>
+        </div>
+
         <section class="block" id="followed-block">
           <div class="block-head">
             <h2><span data-icon="heart" data-size="18"></span><span data-i18n="followed"></span></h2>
@@ -86,9 +92,10 @@
             </span>
           </div>
           <div class="grid" id="followed-grid"></div>
+          <div id="followed-offline"></div>
         </section>
 
-        <section class="block">
+        <section class="block" id="top-block">
           <div class="block-head">
             <h2><span data-icon="flame" data-size="18"></span><span data-i18n="top"></span></h2>
             <div class="segmented" id="top-seg">
@@ -98,6 +105,22 @@
           </div>
           <div class="grid" id="top-grid"></div>
         </section>
+      </section>
+
+      <!-- ── Catégories ────────────────────────────────────────────── -->
+      <section class="view" id="view-categories" hidden>
+        <div id="cat-browser">
+          <div class="block-head">
+            <div class="segmented" id="cat-seg">
+              <button type="button" data-cat-tab="followed" data-i18n="cat_followed"></button>
+              <button type="button" data-cat-tab="all" class="active" data-i18n="cat_all"></button>
+            </div>
+            <label class="filter" id="cat-search-wrap"><span data-icon="search" data-size="16"></span><input id="cat-search" type="search" autocomplete="off" data-i18n-ph="cat_search_ph"></label>
+          </div>
+          <div class="cat-grid" id="cat-grid"></div>
+          <div class="load-more" id="cat-more"></div>
+        </div>
+        <div id="cat-detail" hidden></div>
       </section>
 
       <!-- ── Streamer ──────────────────────────────────────────────── -->
@@ -143,6 +166,7 @@
     <!-- ── Barre d'onglets (mobile) ──────────────────────────────────── -->
     <nav class="tabbar" aria-label="Navigation">
       <button type="button" data-tab="discover" class="active"><span data-icon="compass" data-size="22"></span><span data-i18n="nav_discover"></span></button>
+      <button type="button" data-tab="categories"><span data-icon="layers" data-size="22"></span><span data-i18n="nav_categories"></span></button>
       <button type="button" data-tab="channel"><span data-icon="user" data-size="22"></span><span data-i18n="nav_channel"></span></button>
       <button type="button" data-tab="link"><span data-icon="link" data-size="22"></span><span data-i18n="nav_link"></span></button>
     </nav>

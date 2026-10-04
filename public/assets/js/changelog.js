@@ -6,6 +6,29 @@
 
 export const CHANGELOG = [
   {
+    version: '2026.10.04b',
+    items: {
+      fr: [
+        'Nouvel onglet Catégories : toutes les catégories, recherche, et tes catégories suivies (bouton « Suivre »).',
+        'Accueil en deux onglets : « Chaînes suivies » et « Top des lives ».',
+        'Les chaînes suivies hors ligne sont listées : un clic ouvre leur page (VODs, clips).',
+        'Dans le lecteur, cliquer sur le pseudo ouvre la page de la chaîne.',
+      ],
+      en: [
+        'New Categories tab: all categories, search, and your followed categories (“Follow” button).',
+        'Home split into two tabs: “Followed channels” and “Top streams”.',
+        'Offline followed channels are listed: one click opens their page (VODs, clips).',
+        'In the player, clicking the streamer name opens their channel page.',
+      ],
+      es: [
+        'Nueva pestaña Categorías: todas las categorías, búsqueda y tus categorías seguidas (botón «Seguir»).',
+        'Inicio en dos pestañas: «Canales seguidos» y «Top de directos».',
+        'Los canales seguidos desconectados aparecen en una lista: un clic abre su página (VODs, clips).',
+        'En el reproductor, hacer clic en el nombre del streamer abre su canal.',
+      ],
+    },
+  },
+  {
     version: '2026.10.04',
     items: {
       fr: [

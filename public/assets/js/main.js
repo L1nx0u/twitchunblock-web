@@ -49,6 +49,8 @@ async function boot() {
   applyStatic()
   renderTopLocal()
   applyLayout()
+  applyHomeTab()
+  setupCategories()
   loadAnnouncement(true)
   setTimeout(welcomeOrWhatsNew, 900)
   renderIcons()
@@ -237,6 +239,7 @@ function setTab(tab) {
     renderContinue()
   }
   if (tab === 'channel') renderRecentChannels()
+  if (tab === 'categories' && !cat.current && (cat.tab === 'followed' || Date.now() - cat.loaded > 120_000)) loadCategories()
   window.scrollTo({ top: 0 })
 }
 
@@ -264,6 +267,8 @@ function bindGlobal() {
     if (period) return loadChannelClips(period.dataset.clipPeriod)
     const chan = e.target.closest('[data-channel]')
     if (chan) {
+      // Depuis le lecteur (pseudo) : réduit en mini-lecteur pour voir la page.
+      if (chan.closest('#watch')) minimizeWatch()
       setTab('channel')
       $('#channel-input').value = chan.dataset.channel
       return searchChannel(chan.dataset.channel)
@@ -316,6 +321,20 @@ const actions = {
   logout,
   settings: () => openSettings(),
   'refresh-discover': () => { loadFollowed(); loadTop(state.topLang) },
+  'cat-more': () => loadCategories({ more: true }),
+  'cat-streams-more': () => cat.current && openCategory(cat.current, { more: true }),
+  'cat-back': () => closeCategory(),
+  'cat-follow': (e) => {
+    const c = cat.current
+    if (!c) return
+    const list = followedCats()
+    store.prefs.followedCategories = isCatFollowed(c.id) ? list.filter((x) => x.id !== c.id) : [{ id: c.id, name: c.name, box: c.box }, ...list].slice(0, 200)
+    store.savePrefs()
+    const b = e.target.closest('[data-action="cat-follow"]')
+    const on = isCatFollowed(c.id)
+    b.classList.toggle('on', on)
+    b.innerHTML = `${icon('heart', 15)}<span>${esc(t(on ? 'following' : 'follow'))}</span>`
+  },
   'whats-new': () => showWhatsNew(CHANGELOG.slice(0, 3)),
   'replay-tutorial': () => showWelcome(0),
   'toggle-layout': () => { store.prefs.homeList = !store.prefs.homeList; store.savePrefs(); applyLayout() },
@@ -477,13 +496,15 @@ async function loadFollowed({ silent = false } = {}) {
         <p>${esc(t(compact ? 'login_optional' : 'login_prompt_local'))}</p>
         <button class="btn primary${compact ? ' sm' : ''}" type="button" data-action="login">${icon('twitch', 18)}<span>${esc(t('login'))}</span></button>
       </div>`
-    if (!local.length) { grid.innerHTML = loginCard(false); return }
+    if (!local.length) { grid.innerHTML = loginCard(false); renderOffline([]); return }
     // Sans compte : les chaînes suivies sur cet appareil, par la requête publique.
     if (!silent) grid.innerHTML = skeleton(Math.min(4, local.length))
     try {
-      const streams = await api.getLiveByLogins(local)
+      const channels = await api.getChannelsByLogins(local)
       if (session.token) return
-      grid.innerHTML = (streams.length ? streams.map(streamCard).join('') : emptyState(t('no_live_followed'), 'heart')) + loginCard(true)
+      const live = channels.filter((c) => c.stream).map((c) => c.stream).sort((a, b) => b.viewers - a.viewers)
+      grid.innerHTML = (live.length ? live.map(streamCard).join('') : emptyState(t('no_live_followed'), 'heart')) + loginCard(true)
+      renderOffline(channels.filter((c) => !c.stream))
     } catch {
       if (!silent) grid.innerHTML = emptyState(t('err_loading'), 'refresh')
     }
@@ -494,17 +515,22 @@ async function loadFollowed({ silent = false } = {}) {
   if (!silent) grid.innerHTML = skeleton(4)
   const token = session.token
   try {
-    // Suivis du compte, puis ceux de cet appareil qui n'y sont pas déjà.
-    const [streams, extra] = await Promise.all([
+    // Lives du compte (Helix), plus toutes les chaînes suivies (compte +
+    // appareil) pour les lives de l'appareil et la liste hors ligne.
+    const [streams, logins] = await Promise.all([
       api.getFollowedStreams(session.userId),
-      local.length ? api.getLiveByLogins(local).catch(() => []) : [],
+      api.getFollowedLogins(session.userId).catch(() => []),
     ])
+    const all = [...new Set([...logins, ...local])]
+    const channels = await api.getChannelsByLogins(all).catch(() => null)
     if (session.token !== token) return   // déconnecté entre-temps
     followedRetried = false
     const known = new Set(streams.map((s) => s.login.toLowerCase()))
+    const extra = (channels ?? []).filter((c) => c.stream && !known.has(c.login.toLowerCase())).map((c) => c.stream)
     // Mêlés et triés par audience, comme sur Twitch (pas relégués en bas).
-    const all = [...streams, ...extra.filter((s) => !known.has(s.login.toLowerCase()))].sort((a, b) => b.viewers - a.viewers)
-    grid.innerHTML = all.length ? all.map(streamCard).join('') : emptyState(t('no_live_followed'), 'heart')
+    const live = [...streams, ...extra].sort((a, b) => b.viewers - a.viewers)
+    grid.innerHTML = live.length ? live.map(streamCard).join('') : emptyState(t('no_live_followed'), 'heart')
+    if (channels) renderOffline(channels.filter((c) => !c.stream))
   } catch (err) {
     if (session.token !== token) return
     // Une seule nouvelle tentative : un jeton valide mais refusé par Helix
@@ -513,6 +539,134 @@ async function loadFollowed({ silent = false } = {}) {
     // En rafraîchissement silencieux, une panne passagère garde l'existant.
     if (!silent) grid.innerHTML = emptyState(t('err_loading'), 'refresh')
   }
+}
+
+/** Chaînes suivies hors ligne : accès direct à leur page sans chercher. */
+function renderOffline(list) {
+  const box = $('#followed-offline')
+  if (!box) return
+  list = list.slice().sort((a, b) => a.name.localeCompare(b.name, lang()))
+  box.innerHTML = list.length ? `
+    <h3 class="sub-head">${icon('clock', 16)}<span>${esc(t('offline_channels'))}</span><small class="muted">${list.length}</small></h3>
+    <div class="offline-list">${list.map((c) => `
+      <button type="button" class="offline-row" data-channel="${esc(c.login)}">
+        ${c.avatar ? `<img class="avatar sm" src="${esc(c.avatar)}" alt="" loading="lazy">` : `<span class="avatar sm placeholder">${esc((c.name || '?')[0])}</span>`}
+        <span>${esc(c.name)}</span>
+      </button>`).join('')}</div>` : ''
+}
+
+// ── Sous-onglets de l'accueil : Suivies | Top ───────────────────────────
+function applyHomeTab() {
+  const tab = store.prefs.homeTab === 'top' ? 'top' : 'followed'
+  for (const b of $$('#home-seg [data-home]')) b.classList.toggle('active', b.dataset.home === tab)
+  $('#followed-block').hidden = tab !== 'followed'
+  $('#top-block').hidden = tab !== 'top'
+}
+
+// ── Catégories ─────────────────────────────────────────────────────────
+const cat = { tab: 'all', items: [], cursor: null, q: '', loaded: 0, current: null, streamsCursor: null }
+const followedCats = () => store.prefs.followedCategories ?? []
+const isCatFollowed = (id) => followedCats().some((c) => c.id === id)
+
+function catCard(c) {
+  return `<article class="cat-card" data-cat="${esc(c.id)}" data-cat-name="${esc(c.name)}" data-cat-box="${esc(c.box)}" tabindex="0">
+    <div class="cat-box"><img src="${esc(c.box)}" alt="" loading="lazy" decoding="async"></div>
+    <h3 title="${esc(c.name)}">${esc(c.name)}</h3>
+    ${c.viewers != null ? `<p class="meta">${icon('eye', 12)} ${esc(formatViewers(c.viewers))}</p>` : ''}
+  </article>`
+}
+
+async function loadCategories({ more = false } = {}) {
+  const grid = $('#cat-grid')
+  for (const b of $$('#cat-seg [data-cat-tab]')) b.classList.toggle('active', b.dataset.catTab === cat.tab)
+  $('#cat-search-wrap').hidden = cat.tab !== 'all'
+  $('#cat-more').innerHTML = ''
+  if (cat.tab === 'followed') {
+    const list = followedCats()
+    if (!list.length) { grid.innerHTML = emptyState(t('cat_followed_empty_web'), 'heart'); return }
+    grid.innerHTML = list.map(catCard).join('')
+    // Audience à jour, triées de la plus regardée à la moins regardée.
+    try {
+      const fresh = await api.getCategoriesByIds(list.map((c) => c.id))
+      if (cat.tab !== 'followed') return
+      const byId = Object.fromEntries(fresh.map((c) => [c.id, c]))
+      grid.innerHTML = list.map((c) => byId[c.id] ?? c).sort((a, b) => (b.viewers ?? 0) - (a.viewers ?? 0)).map(catCard).join('')
+    } catch {}
+    return
+  }
+  if (!more) grid.innerHTML = skeleton(12, 'cat')
+  try {
+    if (cat.q) {
+      cat.items = await api.searchCategories(cat.q); cat.cursor = null
+    } else {
+      const page = await api.getTopCategories(more ? cat.cursor : null)
+      cat.items = more ? [...cat.items, ...page.items.filter((x) => !cat.items.some((y) => y.id === x.id))] : page.items
+      cat.cursor = page.cursor
+    }
+    cat.loaded = Date.now()
+    grid.innerHTML = cat.items.length ? cat.items.map(catCard).join('') : emptyState(t('no_result'), 'search')
+    if (cat.cursor && !cat.q) $('#cat-more').innerHTML = `<button class="btn ghost" type="button" data-action="cat-more">${esc(t('load_more'))}</button>`
+  } catch {
+    grid.innerHTML = emptyState(t('err_loading'), 'refresh')
+  }
+}
+
+async function openCategory(c, { more = false } = {}) {
+  cat.current = c
+  $('#cat-browser').hidden = true
+  const box = $('#cat-detail')
+  box.hidden = false
+  if (!more) {
+    const on = isCatFollowed(c.id)
+    box.innerHTML = `
+      <div class="cat-head">
+        <button class="btn ghost sm" type="button" data-action="cat-back">${icon('chevronLeft', 16)}<span>${esc(t('nav_categories'))}</span></button>
+        ${c.box ? `<img class="cat-head-box" src="${esc(c.box)}" alt="">` : ''}
+        <h2>${esc(c.name)}</h2>
+        <button class="btn ghost sm follow-local${on ? ' on' : ''}" type="button" data-action="cat-follow">${icon('heart', 15)}<span>${esc(t(on ? 'following' : 'follow'))}</span></button>
+      </div>
+      <div class="grid${store.prefs.homeList ? ' as-list' : ''}" id="cat-streams">${skeleton(8)}</div>
+      <div class="load-more" id="cat-streams-more"></div>`
+    window.scrollTo({ top: 0 })
+  }
+  try {
+    const page = await api.getCategoryStreams(c.id, more ? cat.streamsCursor : null)
+    if (cat.current !== c) return
+    cat.streamsCursor = page.cursor
+    const grid = $('#cat-streams')
+    const html = page.items.map(streamCard).join('')
+    if (more) grid.insertAdjacentHTML('beforeend', html)
+    else grid.innerHTML = html || emptyState(t('no_live'))
+    $('#cat-streams-more').innerHTML = page.cursor ? `<button class="btn ghost" type="button" data-action="cat-streams-more">${esc(t('load_more'))}</button>` : ''
+  } catch {
+    if (!more) $('#cat-streams').innerHTML = emptyState(t('err_loading'), 'refresh')
+  }
+}
+
+function closeCategory() {
+  cat.current = null
+  $('#cat-detail').hidden = true
+  $('#cat-browser').hidden = false
+  if (cat.tab === 'followed') loadCategories()
+}
+
+function setupCategories() {
+  $('#cat-seg').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-cat-tab]')
+    if (b && b.dataset.catTab !== cat.tab) { cat.tab = b.dataset.catTab; loadCategories() }
+  })
+  $('#cat-grid').addEventListener('click', (e) => {
+    const c = e.target.closest('[data-cat]')
+    if (c) openCategory({ id: c.dataset.cat, name: c.dataset.catName, box: c.dataset.catBox })
+  })
+  $('#cat-search').addEventListener('input', debounce((e) => { cat.q = e.target.value.trim(); loadCategories() }, 350))
+  $('#home-seg').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-home]')
+    if (!b) return
+    store.prefs.homeTab = b.dataset.home
+    store.savePrefs()
+    applyHomeTab()
+  })
 }
 
 async function loadTop(language, { silent = false } = {}) {
@@ -902,6 +1056,7 @@ function showWatch(kind, title) {
   document.documentElement.classList.add('watching')
   $('#watch-loading').hidden = false
   $('#watch-title').textContent = title || ''
+  setWatchChannel(kind === 'live' ? state.watch?.login : null)
   $('#watch-sub').innerHTML = ''
   $('#watch-avatar').hidden = true
   $('#mini-title').textContent = title || ''
@@ -1045,6 +1200,7 @@ function renderLiveInfo(info, links) {
   const game = s?.game?.displayName || links?.game || ''
   if (state.watch && s?.createdAt) state.watch.startedAt = s.createdAt
   $('#watch-title').textContent = name
+  setWatchChannel(state.watch?.login)
   $('#mini-title').textContent = `${name}${title ? ` · ${title}` : ''}`
   setAvatar(avatar)
   $('#watch-sub').innerHTML = `
@@ -1083,6 +1239,7 @@ async function openClip(slug) {
   }
   const name = clip.broadcaster?.displayName || token.login || ''
   $('#watch-title').textContent = name
+  setWatchChannel(clip.broadcaster?.login || token.login)
   $('#mini-title').textContent = clip.title || t('clip')
   setAvatar(clip.broadcaster?.profileImageURL)
   $('#watch-sub').innerHTML = `<span class="pill vod sm">${esc(t('clip'))}</span><span>${icon('eye', 13)} ${esc(formatViewers(clip.viewCount ?? 0))}</span><span>${icon('clock', 13)} ${esc(formatClock(clip.durationSeconds ?? 0))}</span>`
@@ -1177,6 +1334,7 @@ async function openVod(id, preset) {
   pushSync()
 
   $('#watch-title').textContent = streamer || title
+  setWatchChannel(meta?.owner?.login)
   $('#mini-title').textContent = title
   setAvatar(meta?.owner?.profileImageURL)
   const date = meta?.createdAt ? new Date(meta.createdAt).toLocaleDateString(lang(), { day: 'numeric', month: 'long', year: 'numeric' }) : ''
@@ -1220,6 +1378,15 @@ function stopPlayback() {
   player.destroy()
   chat.close()
   lastSave = 0
+}
+
+/** Pseudo et avatar du lecteur cliquables : ouvrent la page de la chaîne. */
+function setWatchChannel(login) {
+  for (const el of [$('#watch-title'), $('#watch-avatar')]) {
+    if (!el) continue
+    if (login) { el.dataset.channel = String(login).toLowerCase(); el.classList.add('linkish') }
+    else { delete el.dataset.channel; el.classList.remove('linkish') }
+  }
 }
 
 function minimizeWatch() {

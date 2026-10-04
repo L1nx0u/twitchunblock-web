@@ -86,6 +86,69 @@ function streamFromGQL(n) {
   }
 }
 
+/** Chaînes (avatar + live éventuel) par GQL public, 100 par requête.
+ *  [{ login, name, avatar, stream }] ; stream au format des cartes, ou null. */
+export async function getChannelsByLogins(logins) {
+  const out = []
+  for (let i = 0; i < logins.length; i += 100) {
+    const data = await gql(`query($l: [String!]) { users(logins: $l) { login displayName profileImageURL(width: 70)
+      stream { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { displayName } } } }`, { l: logins.slice(i, i + 100) })
+    for (const u of data?.users ?? []) {
+      if (!u?.login) continue
+      out.push({ login: u.login, name: u.displayName || u.login, avatar: u.profileImageURL || '', stream: u.stream ? streamFromGQL({ ...u.stream, broadcaster: u }) : null })
+    }
+  }
+  return out
+}
+
+/** Toutes les chaînes suivies par le compte (Helix, pages de 100, 1 000 max). */
+export async function getFollowedLogins(userId) {
+  const logins = []
+  let after = ''
+  do {
+    const data = await helix(`channels/followed?user_id=${encodeURIComponent(userId)}&first=100${after ? `&after=${encodeURIComponent(after)}` : ''}`)
+    for (const f of data?.data ?? []) if (f.broadcaster_login) logins.push(f.broadcaster_login.toLowerCase())
+    after = data?.pagination?.cursor ?? ''
+  } while (after && logins.length < 1000)
+  return logins
+}
+
+// ── Catégories (GQL public) ────────────────────────────────────────────────
+const CAT_FIELDS = 'id name displayName boxArtURL(width: 188, height: 250) viewersCount'
+const catFrom = (n) => ({ id: n.id, name: n.displayName || n.name, box: n.boxArtURL || '', viewers: n.viewersCount ?? null })
+
+/** Catégories les plus regardées. { items, cursor } */
+export async function getTopCategories(cursor = null) {
+  const data = await gql(`query($c: Cursor) { games(first: 40, after: $c) { edges { cursor node { ${CAT_FIELDS} } } pageInfo { hasNextPage } } }`, { c: cursor })
+  const edges = data?.games?.edges ?? []
+  return { items: edges.map((e) => catFrom(e.node)), cursor: data?.games?.pageInfo?.hasNextPage ? edges.at(-1)?.cursor ?? null : null }
+}
+
+export async function searchCategories(q) {
+  const data = await gql(`query($q: String!) { searchCategories(query: $q, first: 30) { edges { node { ${CAT_FIELDS} } } } }`, { q })
+  return (data?.searchCategories?.edges ?? []).map((e) => catFrom(e.node))
+}
+
+/** Audience et jaquette à jour de catégories connues (suivies). */
+export async function getCategoriesByIds(ids) {
+  ids = ids.slice(0, 60)
+  if (!ids.length) return []
+  // Une requête, un alias par catégorie (pas de filtre par identifiants).
+  const vars = Object.fromEntries(ids.map((id, i) => [`i${i}`, String(id)]))
+  const q = `query(${ids.map((_, i) => `$i${i}: ID`).join(', ')}) { ${ids.map((_, i) => `g${i}: game(id: $i${i}) { ${CAT_FIELDS} }`).join(' ')} }`
+  const data = await gql(q, vars)
+  return ids.map((_, i) => data?.[`g${i}`]).filter(Boolean).map(catFrom)
+}
+
+/** Lives d'une catégorie. { items, cursor } */
+export async function getCategoryStreams(id, cursor = null) {
+  const data = await gql(`query($id: ID!, $c: Cursor) { game(id: $id) { streams(first: 30, after: $c) {
+    edges { cursor node { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { displayName }
+      broadcaster { login displayName profileImageURL(width: 50) } } } pageInfo { hasNextPage } } } }`, { id, c: cursor })
+  const edges = data?.game?.streams?.edges ?? []
+  return { items: edges.map((e) => streamFromGQL(e.node)).filter((s) => s.login), cursor: data?.game?.streams?.pageInfo?.hasNextPage ? edges.at(-1)?.cursor ?? null : null }
+}
+
 /** Lesquelles de ces chaînes sont en live (suivis sans compte), par GQL public. */
 export async function getLiveByLogins(logins) {
   const out = []
