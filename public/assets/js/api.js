@@ -354,6 +354,24 @@ export function loginUrl() {
 // ── Clips ──────────────────────────────────────────────────────────────────
 /** Clips d'une chaîne, les plus vus sur la période (LAST_DAY, LAST_WEEK,
  *  LAST_MONTH, ALL_TIME). */
+/** Playlists (collections) d'une chaîne, avec leurs vidéos — vides exclues. */
+export async function getCollections(login) {
+  const data = await gql(`query($l: String!) {
+    user(login: $l) { collections(first: 20) { edges { node {
+      id title description
+      items(first: 50) { totalCount edges { node { ... on Video {
+        id title lengthSeconds createdAt viewCount
+        previewThumbnailURL(width: 320, height: 180)
+      } } } }
+    } } } }
+  }`, { l: login })
+  return (data?.user?.collections?.edges ?? [])
+    .map((e) => e.node)
+    .filter(Boolean)
+    .map((c) => ({ ...c, videos: (c.items?.edges ?? []).map((e) => e.node).filter((v) => v?.id), total: c.items?.totalCount ?? 0 }))
+    .filter((c) => c.videos.length)
+}
+
 export async function getClips(login, period = 'LAST_WEEK') {
   const data = await gql(`query($l: String!, $p: ClipsPeriod) {
     user(login: $l) { clips(first: 24, criteria: { period: $p, sort: VIEWS_DESC }) { edges { node {

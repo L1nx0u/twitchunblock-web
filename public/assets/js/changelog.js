@@ -6,6 +6,26 @@
 
 export const CHANGELOG = [
   {
+    version: '2026.10.04c',
+    items: {
+      fr: [
+        'Playlists des chaînes : nouvelle section sur la page streamer, avec « Tout lire » qui enchaîne les vidéos.',
+        'Les highlights (vidéos des playlists) se lancent même quand Twitch refuse le jeton de lecture.',
+        'Une VOD indisponible affiche « VOD introuvable » au lieu d’une fausse erreur réseau.',
+      ],
+      en: [
+        'Channel playlists: new section on the streamer page, with “Play all” to chain the videos.',
+        'Highlights (playlist videos) now play even when Twitch refuses the playback token.',
+        'An unavailable VOD now says so instead of showing a misleading network error.',
+      ],
+      es: [
+        'Listas de los canales: nueva sección en la página del streamer, con «Reproducir todo» para encadenar los vídeos.',
+        'Los highlights (vídeos de las listas) se reproducen aunque Twitch rechace el token de reproducción.',
+        'Un VOD no disponible lo indica en lugar de mostrar un falso error de red.',
+      ],
+    },
+  },
+  {
     version: '2026.10.04b',
     items: {
       fr: [

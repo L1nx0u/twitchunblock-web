@@ -261,6 +261,8 @@ function bindGlobal() {
     if (live) return openLive(live.dataset.live)
     const vod = e.target.closest('[data-vod]')
     if (vod) return openVod(vod.dataset.vod)
+    const all = e.target.closest('[data-play-all]')
+    if (all) return playPlaylist(all.dataset.playAll)
     const clip = e.target.closest('[data-clip]')
     if (clip) return openClip(clip.dataset.clip)
     const period = e.target.closest('[data-clip-period]')
@@ -933,6 +935,7 @@ function renderChannel(keyword = '') {
       ${keyword ? `<p class="muted filter-count">${esc(filtered.length ? t('filter_count', { n: filtered.length, k: keyword }) : t('filter_none', { k: keyword }))}</p>` : ''}
       <div class="grid vods">${filtered.length ? filtered.map((v) => vodCard(v, name)).join('') : (keyword ? '' : emptyState(t('no_vod'), 'film'))}</div>
     </section>
+    <section class="block" id="channel-playlists" hidden></section>
     <section class="block">
       <div class="block-head">
         <h2>${icon('scissors', 18)}<span>${esc(t('clips'))}</span></h2>
@@ -944,6 +947,7 @@ function renderChannel(keyword = '') {
       <div class="grid vods" id="channel-clips"></div>
     </section>`
   loadChannelClips()
+  loadChannelPlaylists()
 
   const filter = $('#vod-filter')
   filter.addEventListener('input', debounce(() => {
@@ -1023,6 +1027,8 @@ function setupPlayer() {
   })
   applyChatOpen()
   applyStatic(watch)
+  // Playlist lancée avec « Tout lire » : vidéo suivante à la fin.
+  player.video.addEventListener('ended', () => playNextInPlaylist())
   // Clic sur la vidéo réduite : on rouvre.
   $('#player').addEventListener('click', (e) => {
     if (watch.classList.contains('minimized')) { e.stopPropagation(); expandWatch() }
@@ -1080,7 +1086,7 @@ async function openLive(rawLogin) {
   setUrl({ channel: login })
 
   const [links, info] = await Promise.all([
-    api.getLive(login).catch(() => ({ error: 'network' })),
+    api.getLive(login).catch((e) => ({ error: e?.status ? 'missing' : 'network' })),
     api.getChannelInfo(login).catch(() => null),
   ])
   if (state.watch !== token) return
@@ -1293,8 +1299,53 @@ async function loadChannelClips(period = state.clipPeriod ?? 'LAST_WEEK') {
   $('#channel-clips').innerHTML = clips?.length ? clips.map(clipCard).join('') : emptyState(t('no_clips'), 'film')
 }
 
-async function openVod(id, preset) {
+/** Playlists de la chaîne : une rangée défilante par playlist, comme sur Twitch. */
+async function loadChannelPlaylists() {
+  const login = state.channel?.login
+  if (!login) return
+  state.playlistCache ??= new Map()
+  let lists = state.playlistCache.get(login)
+  if (!lists) {
+    lists = await api.getCollections(login).catch(() => null)
+    if (lists) state.playlistCache.set(login, lists)
+  }
+  const box = $('#channel-playlists')
+  if (state.channel?.login !== login || !box) return
+  if (!lists?.length) { box.hidden = true; return }
+  const name = state.channel.info?.displayName || login
+  box.hidden = false
+  box.innerHTML = `
+    <div class="block-head"><h2>${icon('list', 18)}<span>${esc(t('playlists'))}</span></h2></div>
+    ${lists.map((c) => `
+      <div class="playlist">
+        <div class="playlist-head">
+          <h3>${esc(c.title)}</h3>
+          <button class="btn ghost sm" type="button" data-play-all="${esc(c.id)}">${icon('play', 14)}<span>${esc(t('play_all'))}</span></button>
+        </div>
+        <p class="muted playlist-sub">${c.description ? `${esc(c.description)} · ` : ''}${esc(t('videos_count', { n: c.total }))}</p>
+        <div class="rail">${c.videos.map((v) => vodCard(v, name)).join('')}</div>
+      </div>`).join('')}`
+}
+
+/** « Tout lire » : lance la première vidéo, la suivante démarre à la fin. */
+function playPlaylist(id) {
+  const list = state.playlistCache?.get(state.channel?.login)?.find((c) => c.id === id)
+  if (!list) return
+  state.playlist = { ids: list.videos.map((v) => String(v.id)) }
+  openVod(list.videos[0].id)
+}
+
+function playNextInPlaylist() {
+  const w = state.watch, q = state.playlist
+  if (w?.kind !== 'vod' || !q) return
+  const next = q.ids[q.ids.indexOf(w.id) + 1]
+  if (next) openVod(next, undefined, { keepPlaylist: true })
+  else state.playlist = null
+}
+
+async function openVod(id, preset, { keepPlaylist = false } = {}) {
   const vodId = String(id)
+  if (!keepPlaylist && !state.playlist?.ids.includes(vodId)) state.playlist = null
   stopPlayback()
   const known = preset ?? state.vodMeta.get(vodId) ?? {}
   state.watch = { kind: 'vod', id: vodId, info: null, links: null }
@@ -1303,7 +1354,7 @@ async function openVod(id, preset) {
   setUrl({ id: vodId })
 
   const [links, meta] = await Promise.all([
-    api.getVodLinks(vodId).catch(() => ({ error: 'network' })),
+    api.getVodLinks(vodId).catch((e) => ({ error: e?.status ? 'missing' : 'network' })),
     api.getVodMeta(vodId).catch(() => null),
   ])
   if (state.watch !== token) return

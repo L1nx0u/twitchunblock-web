@@ -274,17 +274,21 @@ async function handleGetM3U8(url, workerOrigin) {
                 const links = parseAndProxyM3U8(await res.text(), res.url, workerOrigin, true, useProxy); 
                 return jsonResponse({ links, best: links["Source"] || links["Auto"] }); 
             }
-        }
-    } catch (e) {}
+            // Sans ce journal, l'échec ne laissait aucune trace (Docker compris).
+            console.warn(`get-m3u8 ${vodId} : usher ${res.status}`);
+        } else console.warn(`get-m3u8 ${vodId} : pas de jeton`);
+    } catch (e) { console.warn(`get-m3u8 ${vodId} :`, e.message); }
     
     // --- 2. Plan de Secours ---
     try {
         const data = await twitchGQL(`query($id: ID!) { video(id: $id) { seekPreviewsURL } }`, { id: vodId }); const seekUrl = data.data?.video?.seekPreviewsURL;
         if (seekUrl) {
-            const rawLinks = await storyboardHack(seekUrl);
+            const rawLinks = await storyboardHack(seekUrl, vodId);
             if (Object.keys(rawLinks).length > 0) {
                 let finalLinks = {}; 
-                finalLinks["Auto"] = useProxy ? `${workerOrigin}/api/proxy?url=${encodeURIComponent(Object.values(rawLinks)[0])}&isVod=true` : Object.values(rawLinks)[0];
+                // « Auto » = la meilleure qualité trouvée (l'ordre des réponses était aléatoire).
+                const top = rawLinks[QUALITY_ORDER.find(q => rawLinks[q])];
+                finalLinks["Auto"] = useProxy ? `${workerOrigin}/api/proxy?url=${encodeURIComponent(top)}&isVod=true` : top;
                 
                 ['Source', '1080p60', '1080p30', '720p60', '720p30', '480p30', '360p30', '160p30', 'audio_only'].forEach(key => { 
                     Object.keys(rawLinks).forEach(k => { 
@@ -296,8 +300,9 @@ async function handleGetM3U8(url, workerOrigin) {
                 });
                 return jsonResponse({ links: finalLinks, best: finalLinks["Source"] || finalLinks["Auto"], info: "Backup" });
             }
-        }
-    } catch (e) {}
+            console.warn(`get-m3u8 ${vodId} : secours sans résultat`);
+        } else console.warn(`get-m3u8 ${vodId} : pas d'aperçu (VOD supprimée ?)`);
+    } catch (e) { console.warn(`get-m3u8 ${vodId} : secours`, e.message); }
     return jsonError("VOD introuvable", 404);
 }
 
@@ -399,7 +404,11 @@ async function getAccessToken(id, isLive) {
     return isLive ? data.data?.streamPlaybackAccessToken : data.data?.videoPlaybackAccessToken;
 }
 
-async function storyboardHack(seekUrl) {
+// Une archive a sa playlist dans `<qualité>/index-dvr.m3u8` ; un highlight
+// (les vidéos des playlists de chaîne) dans `<qualité>/highlight-<id>.m3u8`.
+// Seul le premier nom était essayé : le secours échouait toujours sur les
+// highlights, et la VOD tombait en « introuvable ».
+async function storyboardHack(seekUrl, vodId) {
     try {
         const parts = seekUrl.split('/');
         const storyIndex = parts.indexOf('storyboards');
@@ -408,10 +417,13 @@ async function storyboardHack(seekUrl) {
         const root = `https://${new URL(seekUrl).host}/${hash}`;
 
         let found = {};
+        const names = ['index-dvr.m3u8', ...(VOD_ID_RE.test(vodId || '') ? [`highlight-${vodId}.m3u8`] : [])];
         await Promise.all(QUALITY_ORDER.map(async q => {
-            const u = `${root}/${q}/index-dvr.m3u8`;
-            const res = await fetch(u, { method: 'HEAD', headers: REQUEST_HEADERS });
-            if (res.status === 200) found[q] = u;
+            for (const name of names) {
+                const u = `${root}/${q}/${name}`;
+                const res = await fetch(u, { method: 'HEAD', headers: REQUEST_HEADERS });
+                if (res.status === 200) { found[q] = u; return; }
+            }
         }));
         return found;
     } catch(e) { return {}; }
