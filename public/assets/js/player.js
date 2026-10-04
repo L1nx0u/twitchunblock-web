@@ -9,7 +9,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { t } from './i18n.js'
-import { fixProxiedUrl } from './api.js'
+import { API_URL, fixProxiedUrl } from './api.js'
 import { $, esc, formatClock, icon, isIOS } from './util.js'
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
@@ -21,6 +21,28 @@ const HLS_SOURCES = [
   'https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js',
 ]
+
+// ── Segments par le relais du Worker (secours) ──────────────────────────
+// Les segments d'un direct partent normalement en direct vers le CDN de
+// Twitch (moins de requêtes sur le Worker). Chez certains (Firefox avec la
+// protection renforcée, extensions, réseaux filtrés), ces requêtes
+// n'aboutissent jamais : on bascule alors sur le relais, et on s'en souvient
+// une semaine sur cet appareil.
+const SEG_PROXY_KEY = 'tu_segment_proxy'
+const SEG_PROXY_DAYS = 7
+function segmentProxyOn() {
+  try { return Number(localStorage.getItem(SEG_PROXY_KEY) || 0) > Date.now() } catch { return false }
+}
+function enableSegmentProxy() {
+  try { localStorage.setItem(SEG_PROXY_KEY, String(Date.now() + SEG_PROXY_DAYS * 86400000)) } catch {}
+}
+/** Segment de direct servi en direct par le CDN (pas déjà relayé). */
+function isDirectSegment(u) {
+  try {
+    const h = new URL(u).hostname
+    return h !== new URL(API_URL).hostname && /(^|\.)(ttvnw\.net|twitchcdn\.net)$/.test(h) && !/(^|\.)playlist\.ttvnw\.net$/.test(h)
+  } catch { return false }
+}
 
 let hlsPromise = null
 /** Charge hls.js, avec un second CDN si le premier ne répond pas : sans lui,
@@ -300,7 +322,11 @@ export class Player {
         // Rouvrir la requête avec l'adresse corrigée : c'est le point
         // d'accroche que hls.js offre pour réécrire une URL avant envoi.
         xhrSetup: (xhr, reqUrl) => {
-          const fixed = fixProxiedUrl(reqUrl, url)
+          let fixed = fixProxiedUrl(reqUrl, url)
+          // Secours : segments par le relais quand le direct n'aboutit pas.
+          if (segmentProxyOn() && isDirectSegment(fixed)) {
+            fixed = `${API_URL}/api/proxy?url=${encodeURIComponent(fixed)}&isVod=false`
+          }
           if (fixed !== reqUrl) xhr.open('GET', fixed, true)
         },
         backBufferLength: 90,
@@ -320,6 +346,14 @@ export class Player {
         this.updateQualityLabel()
       })
       hls.on(Hls.Events.ERROR, (_e, data) => {
+        // Segment jamais arrivé (code 0 : bloqué avant d'atteindre Twitch) :
+        // les prochaines tentatives passent par le relais du Worker.
+        if (!segmentProxyOn() && data.type === Hls.ErrorTypes.NETWORK_ERROR
+            && /^frag/i.test(data.details || '') && !data.response?.code && isDirectSegment(data.frag?.url || data.url || '')) {
+          enableSegmentProxy()
+          console.info('[TwitchUnblock] Segments directs bloqués : passage par le relais.')
+          if (data.fatal) { hls.startLoad(); return }
+        }
         if (!data.fatal) return
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad()
         else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError()
