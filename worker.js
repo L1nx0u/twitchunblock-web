@@ -53,7 +53,6 @@ export default {
                 case '/api/admin/usage': return await handleAdminUsage(request, env);
                 case '/api/admin/usage/delete': return await handleAdminUsageDelete(request, env);
                 case '/api/admin/sync/delete': return await handleAdminSyncDelete(request, env);
-                case '/api/admin/migrate': return await handleAdminMigrate(request, env);
 
                 // Annonces affichées dans l'app (lecture publique, écriture admin)
                 case '/api/announcement': return await handleAnnouncementGet(env);
@@ -73,7 +72,7 @@ export default {
     }
 };
 
-// --- SYSTÈME DE SYNCHRONISATION CLOUD (KV) ---
+// --- SYSTÈME DE SYNCHRONISATION CLOUD (D1) ---
 // ── Authentification de la sauvegarde ─────────────────────────────────────
 // Avant, il suffisait de connaître l'identifiant Twitch de quelqu'un — il est
 // public — pour lire ou écraser son historique. Chaque requête doit
@@ -896,9 +895,10 @@ async function handleMoobotCommands(url) {
 //  accède, par son binding. Toutes les requêtes sont préparées (valeurs
 //  passées par bind, jamais collées dans le SQL).
 //
-//  Transition : tant que l'ancien KV (`TWITCH_DATA`) reste lié, une
-//  sauvegarde absente de D1 y est relue puis recopiée dans D1, et
-//  /api/admin/migrate recopie tout le reste (outils développeur de /stats).
+//  L'ancien KV (`TWITCH_DATA`) a été recopié dans D1 (bouton « Migrer
+//  KV → D1 » de /stats) puis délié : D1 est la seule source. Avant, une
+//  sauvegarde absente de D1 était encore relue dans le KV ; ce secours et
+//  la route /api/admin/migrate n'ont plus lieu d'être.
 // ═══════════════════════════════════════════════════════════════════════════
 const SCHEMA = [
     `CREATE TABLE IF NOT EXISTS kv (
@@ -929,18 +929,6 @@ function store(env) {
                 let value = row.value;
                 if (json) { try { value = JSON.parse(row.value); } catch (e) { value = null; } }
                 return { value, metadata: parseMeta(row.meta) };
-            }
-            // Pas encore migrée : une sauvegarde est relue dans l'ancien KV,
-            // puis recopiée dans D1 (une seule fois par compte).
-            if (env.TWITCH_DATA && key.startsWith('user_')) {
-                const old = await env.TWITCH_DATA.get(key);
-                if (old != null) {
-                    await api.put(key, old);
-                    const json = type === 'json' || type?.type === 'json';
-                    let value = old;
-                    if (json) { try { value = JSON.parse(old); } catch (e) { value = null; } }
-                    return { value, metadata: null };
-                }
             }
             return { value: null, metadata: null };
         },
@@ -980,35 +968,6 @@ function store(env) {
         },
     };
     return api;
-}
-
-// POST /api/admin/migrate { cursor? } — recopie l'ancien KV dans D1, par
-// tranches de 200 clés (limite d'opérations par requête). Répondre
-// { done: false, cursor } veut dire : relancer avec ce curseur.
-async function handleAdminMigrate(request, env) {
-    if (request.method !== 'POST') return jsonError('Method Not Allowed', 405);
-    const { denied } = await requireAdmin(request);
-    if (denied) return denied;
-    if (!env.DB) return jsonError("Base D1 'DB' non liée au Worker.", 500);
-    if (!env.TWITCH_DATA) return jsonResponse({ done: true, copied: 0, note: 'Ancien KV non lié : rien à migrer.' });
-    let body = {};
-    try { body = await request.json(); } catch (e) {}
-    await ensureSchema(env);
-    const page = await env.TWITCH_DATA.list({ limit: 200, cursor: body.cursor || undefined });
-    const now = Date.now();
-    const stmts = [];
-    for (const k of page.keys) {
-        const expires = k.expiration ? k.expiration * 1000 : null;
-        if (expires && expires <= now) continue;
-        // Valeur relue seulement quand il y en a une (sauvegarde, annonce) :
-        // comptages et réactions tiennent tout entiers dans les métadonnées.
-        const needsValue = k.name.startsWith('user_') || k.name === 'announcement';
-        const value = needsValue ? (await env.TWITCH_DATA.get(k.name)) ?? '' : '';
-        stmts.push(env.DB.prepare(`INSERT INTO kv (key, value, meta, expires) VALUES (?1, ?2, ?3, ?4)
-            ON CONFLICT(key) DO NOTHING`).bind(k.name, value, k.metadata == null ? null : JSON.stringify(k.metadata), expires));
-    }
-    if (stmts.length) await env.DB.batch(stmts);
-    return jsonResponse({ done: page.list_complete, cursor: page.list_complete ? null : page.cursor, copied: stmts.length, seen: page.keys.length });
 }
 
 // ── Réglages par variables d'environnement (auto-hébergement) ─────────────

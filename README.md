@@ -102,7 +102,7 @@ Browser ──► Cloudflare Worker ──► Twitch (playlists, video segments)
     └──► BTTV / FFZ / 7TV / recent-messages   emotes and chat history
 ```
 
-Video always goes through the Worker: Twitch's VOD CDN only accepts requests coming from `twitch.tv`, so a direct link would be blocked by the browser. The Worker also stores history backups and the usage count (Cloudflare KV).
+Video always goes through the Worker: Twitch's VOD CDN only accepts requests coming from `twitch.tv`, so a direct link would be blocked by the browser. The Worker also stores history backups, the usage count and announcements (Cloudflare D1).
 
 The iOS app uses the same Worker.
 
@@ -153,7 +153,7 @@ Every push to `main` is deployed automatically. `vercel.json` serves the `public
 ```bash
 npx wrangler deploy
 ```
-The `TWITCH_DATA` KV namespace (history backups and usage count) is declared in `wrangler.toml`.
+The `DB` D1 database (history backups, usage count, announcements) is declared in `wrangler.toml`; the Worker creates its table on first use.
 
 ### Locally
 ```bash
