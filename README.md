@@ -169,10 +169,16 @@ The website and the Worker run together in one container, with a local D1
 database (SQLite) for backups, usage count and announcements. No Cloudflare
 account needed.
 
+Only [`docker-compose.yml`](docker-compose.yml) is needed, no clone: put it in
+a folder and run
+
 ```bash
 docker compose up -d
 # then open http://localhost:8787
 ```
+
+The image is built straight from this GitHub repository (`main`). From a clone,
+you can use `build: .` instead.
 
 Settings (in `docker-compose.yml`):
 

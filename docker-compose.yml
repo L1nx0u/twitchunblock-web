@@ -1,7 +1,10 @@
-# Auto-hébergement : `docker compose up -d`, puis http://localhost:8787
+# Auto-hébergement : ce fichier suffit, pas besoin de cloner le dépôt.
+#   docker compose up -d      puis http://localhost:8787
+# L'image est construite directement depuis GitHub (branche main). Depuis un
+# clone du dépôt, on peut remplacer la ligne `build:` par `build: .`.
 services:
   twitchunblock:
-    build: .
+    build: https://github.com/MXFia19/TwitchUnblock-Web.git#main
     image: twitchunblock-web
     container_name: twitchunblock
     restart: unless-stopped
