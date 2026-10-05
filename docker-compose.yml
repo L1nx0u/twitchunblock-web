@@ -1,11 +1,12 @@
 # Auto-hébergement : ce fichier suffit, pas besoin de cloner le dépôt.
-#   docker compose up -d      puis http://localhost:8787
-# L'image est construite directement depuis GitHub (branche main). Depuis un
-# clone du dépôt, on peut remplacer la ligne `build:` par `build: .`.
+#   docker compose up -d                           puis http://localhost:8787
+#   docker compose pull && docker compose up -d    pour mettre à jour
+# L'image est construite par GitHub à chaque mise à jour du site (branche
+# main) et publiée sur ghcr.io : rien à compiler chez soi. Depuis un clone du
+# dépôt, on peut la construire soi-même avec `build: .` à la place de `image:`.
 services:
   twitchunblock:
-    build: https://github.com/MXFia19/TwitchUnblock-Web.git#main
-    image: twitchunblock-web
+    image: ghcr.io/mxfia19/twitchunblock-web:latest
     container_name: twitchunblock
     restart: unless-stopped
     ports:

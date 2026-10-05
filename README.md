@@ -177,8 +177,18 @@ docker compose up -d
 # then open http://localhost:8787
 ```
 
-The image is built straight from this GitHub repository (`main`). From a clone,
-you can use `build: .` instead.
+To update:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+The image (`ghcr.io/mxfia19/twitchunblock-web`, amd64 and arm64) is built by
+GitHub Actions on every update of `main`: nothing to compile on your side.
+From a clone, you can build it yourself with `build: .` instead of `image:`.
+
+Older `docker-compose.yml` files built the image locally: download the new one
+once, then update as above.
 
 Settings (in `docker-compose.yml`):
 
