@@ -6,6 +6,23 @@
 
 export const CHANGELOG = [
   {
+    version: '2026.10.05c',
+    items: {
+      fr: [
+        'Barre de lecture des VODs : en la faisant glisser, le compteur affiche l’instant visé, et au doigt l’infobulle passe au-dessus du pouce.',
+        'Réglages : lignes régulièrement espacées dans « À propos ».',
+      ],
+      en: [
+        'VOD seek bar: while dragging, the time display shows where you are seeking to, and on touch screens the tooltip sits above your thumb.',
+        'Settings: evenly spaced rows in “About”.',
+      ],
+      es: [
+        'Barra de reproducción de los VODs: al deslizarla, el contador muestra el instante elegido y, en pantallas táctiles, la etiqueta queda por encima del pulgar.',
+        'Ajustes: filas espaciadas de forma regular en «Acerca de».',
+      ],
+    },
+  },
+  {
     version: '2026.10.05',
     items: {
       fr: [

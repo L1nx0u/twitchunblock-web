@@ -1082,6 +1082,7 @@ function setupPlayer() {
     // par minute si l'on enchaîne pause et lecture.
     onPause: () => { if (Date.now() - lastSyncAt > 60_000) flushSync({ force: true }) },
     onError: () => showWatchError(state.watch?.kind === 'live' ? t('err_live') : t('err_vod')),
+    onWorkerDown: (base) => switchWorker(base),
   })
   chat = new ChatView($('#chat'), {
     prefs: store.prefs,
@@ -1102,6 +1103,30 @@ function setupPlayer() {
   $('#player').addEventListener('click', (e) => {
     if (watch.classList.contains('minimized')) { e.stopPropagation(); expandWatch() }
   }, true)
+}
+
+/**
+ * Le Worker qui servait la vidéo ne répond plus (quota du jour atteint) : on
+ * redemande les liens — un autre Worker répond — et la lecture reprend au
+ * même endroit. Au plus une fois par minute, pour ne pas boucler si tous les
+ * Workers tombent : le lecteur retente alors comme avant. `false` = rien fait.
+ */
+let lastWorkerSwitch = 0
+function switchWorker(base) {
+  const w = state.watch
+  if (w?.kind !== 'live' && w?.kind !== 'vod') return false
+  if (Date.now() - lastWorkerSwitch < 60_000 || !api.markWorkerDown(base)) return false
+  lastWorkerSwitch = Date.now()
+  console.info('[TwitchUnblock] Worker injoignable, passage au secours :', base)
+  const request = w.kind === 'live' ? api.getLive(w.login) : api.getVodLinks(w.id)
+  request
+    .then((links) => {
+      if (state.watch !== w || !links?.links || !Object.keys(links.links).length) return
+      w.links = links.links
+      player.swapLinks(links.links)
+    })
+    .catch(() => {})
+  return true
 }
 
 /** Mode théâtre : la vidéo prend toute la hauteur, sans le bandeau d'infos. */
@@ -1684,8 +1709,6 @@ function openSettings() {
         <a class="sheet-row" href="${api.GITHUB_URL}" target="_blank" rel="noopener">${icon('github', 18)}<span>${esc(t('source_site'))}</span>${icon('external', 16)}</a>
         <a class="sheet-row" href="${api.APP_GITHUB_URL}" target="_blank" rel="noopener">${icon('github', 18)}<span>${esc(t('source_app'))}</span>${icon('external', 16)}</a>
         <a class="sheet-row" href="${api.DISCORD_URL}" target="_blank" rel="noopener">${icon('discord', 18)}<span>${esc(t('discord_join'))}</span>${icon('external', 16)}</a>
-      </div>
-      <div class="sheet-group">
         <button class="sheet-row" type="button" data-action="whats-new">${icon('sparkles', 18)}<span>${esc(t('whats_new'))}</span></button>
         <button class="sheet-row" type="button" data-action="replay-tutorial">${icon('play', 18)}<span>${esc(t('replay_tutorial'))}</span></button>
       </div>

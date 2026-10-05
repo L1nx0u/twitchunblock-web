@@ -138,6 +138,7 @@ Everything lives at the top of `public/assets/js/api.js`:
 | Constant | Purpose |
 |---|---|
 | `API_URL` | Worker address |
+| `DEFAULT_FALLBACK_URLS` | Fallback Workers used when the main one hits its daily limit (see [Fallback Worker](#fallback-worker-daily-limit)) |
 | `HELIX_CLIENT_ID` | Twitch application ID (login) |
 | `REDIRECT_URI` | Where Twitch sends you back after login — must be registered exactly as-is in the Twitch developer console |
 | `EXTERNAL_LINKS_VIA_PROXY` | Links handed to VLC / Outplayer / Infuse: through the Worker (`true`) or straight from Twitch (`false`) |
@@ -154,6 +155,28 @@ Every push to `main` is deployed automatically. `vercel.json` serves the `public
 npx wrangler deploy
 ```
 The `DB` D1 database (history backups, usage count, announcements) is declared in `wrangler.toml`; the Worker creates its table on first use.
+
+### Fallback Worker (daily limit)
+
+The free Workers plan allows 100,000 requests per day **per Cloudflare
+account**. Past that, the Worker answers `error code: 1027` (HTTP 429) until
+midnight UTC. The website and the iOS app then switch to a second Worker,
+deployed on **another** Cloudflare account, for everything that doesn't need
+the D1 database: lives, VODs, the video relay and Moobot commands. Backups,
+the usage count and announcements stay on the main Worker. A video that is
+already playing switches over by itself and resumes where it was.
+
+1. On the other Cloudflare account: *Workers & Pages → Create → Import a
+   repository*, pick this repository and the `main` branch.
+2. Name the Worker `test2-fallback` and set the deploy command to
+   `npx wrangler deploy --env fallback`. The `fallback` environment in
+   `wrangler.toml` has no D1 binding.
+3. Add its address (`https://test2-fallback.<subdomain>.workers.dev`) to
+   `DEFAULT_FALLBACK_URLS` in `public/assets/js/api.js`, and to
+   `kAPIFallbackURLs` in the iOS app.
+
+A copy of the site with its own Worker lists its fallbacks in
+`public/config.js`: `window.TU_CONFIG = { apiUrl: '…', fallbackApiUrls: ['…'] }`.
 
 ### Locally
 ```bash

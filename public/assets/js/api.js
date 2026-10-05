@@ -10,6 +10,99 @@ import { store } from './store.js'
 // et l'application Twitch utilisée pour la connexion.
 const CFG = window.TU_CONFIG ?? {}
 export const API_URL = CFG.apiUrl === 'same-origin' ? location.origin : (CFG.apiUrl || 'https://test2.kurzmathis4.workers.dev')
+
+// ── Workers de secours ─────────────────────────────────────────────────────
+// Le Worker gratuit est limité à 100 000 requêtes par jour et par compte
+// Cloudflare : au-delà, il répond « error code: 1027 » (HTTP 429) jusqu'à
+// minuit UTC. Un second Worker, déployé sur un autre compte (README,
+// « Fallback Worker »), prend alors le relais pour tout ce qui ne dépend pas
+// de la base D1 : lives, VODs, relais vidéo, commandes Moobot. Sauvegarde,
+// comptage et annonces restent sur le principal : leurs données y sont.
+// Une instance avec sa propre adresse (config.js) n'hérite pas des secours
+// officiels : elle donne les siens dans `fallbackApiUrls`, ou aucun.
+const DEFAULT_FALLBACK_URLS = []
+const FALLBACK_URLS = CFG.fallbackApiUrls ?? (CFG.apiUrl ? [] : DEFAULT_FALLBACK_URLS)
+const originOf = (u) => { try { return new URL(u).origin } catch { return null } }
+/** Le principal d'abord, puis les secours, dans l'ordre. */
+export const WORKER_BASES = [...new Set([API_URL, ...FALLBACK_URLS.map(originOf).filter(Boolean)])]
+
+// Worker mis de côté sur cet appareil, pour ne pas le retenter à chaque
+// requête. La page d'erreur de Cloudflare n'a pas d'en-tête CORS : le
+// navigateur ne voit qu'un échec réseau, jamais le code 1027. Un Worker qui
+// échoue alors qu'un autre répond est donc écarté 30 minutes, puis retenté —
+// son quota repart à minuit UTC.
+const DOWN_KEY = 'tu_worker_down'
+const DOWN_MS = 30 * 60_000
+// Copie en mémoire : la mise à l'écart tient aussi quand le navigateur refuse
+// le stockage (navigation privée, cookies bloqués) — sinon chaque requête
+// repassait d'abord par le Worker en panne.
+const downMem = {}
+function downStored() {
+  try { return JSON.parse(localStorage.getItem(DOWN_KEY) || '{}') || {} } catch { return {} }
+}
+const isDown = (base) => Math.max(downStored()[base] || 0, downMem[base] || 0) > Date.now()
+
+/** Écarte un Worker en panne. `false` s'il n'y a aucun autre Worker vers
+ *  qui se tourner : l'appelant garde alors son comportement habituel. */
+export function markWorkerDown(base) {
+  if (WORKER_BASES.length < 2 || !WORKER_BASES.includes(base)) return false
+  const until = Date.now() + DOWN_MS
+  downMem[base] = until
+  const m = downStored()
+  m[base] = until
+  try { localStorage.setItem(DOWN_KEY, JSON.stringify(m)) } catch {}
+  return true
+}
+
+/** Worker (principal ou secours) qui a servi cette adresse, sinon null. */
+export function workerBaseOf(url) {
+  const o = originOf(url)
+  return WORKER_BASES.includes(o) ? o : null
+}
+
+/**
+ * JSON d'une route du Worker qui ne touche pas à la base D1, en passant au
+ * Worker suivant quand l'un d'eux ne répond pas (quota atteint) — ceux qui
+ * répondent d'abord, les Workers écartés en dernier recours.
+ * Une réponse d'erreur du Worker lui-même (404 « VOD introuvable »…) n'est
+ * pas une panne : un autre Worker dirait la même chose.
+ */
+export async function workerJson(path, { timeout = 0 } = {}) {
+  const bases = WORKER_BASES.filter((b) => !isDown(b))
+  const failed = []
+  for (const base of [...bases, ...WORKER_BASES.filter((b) => !bases.includes(b))]) {
+    const ctrl = timeout ? new AbortController() : null
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), timeout) : null
+    let res
+    try {
+      res = await fetch(base + path, ctrl ? { signal: ctrl.signal } : undefined)
+    } catch (e) {
+      // Trop lent n'est pas « hors service » : le service derrière le
+      // Worker peut traîner (Moobot), un autre Worker n'y changerait rien.
+      if (e?.name === 'AbortError') throw e
+      failed.push(base)
+      continue
+    } finally {
+      clearTimeout(timer)
+    }
+    if (res.status === 429 || res.status === 502 || res.status === 503 || res.status === 504) {
+      failed.push(base)
+      continue
+    }
+    // Ce Worker répond : ceux qui ont échoué avant lui sont bien en panne —
+    // pas la connexion de l'appareil —, on les écarte un moment.
+    for (const b of failed) markWorkerDown(b)
+    if (!res.ok) {
+      const err = new Error(`HTTP ${res.status}`)
+      err.status = res.status
+      throw err
+    }
+    return res.json()
+  }
+  // Aucun Worker joignable : erreur sans statut, affichée comme un problème
+  // de réseau, pas comme une vidéo introuvable.
+  throw new Error('Worker injoignable')
+}
 /** Liens donnés aux applis externes (VLC, Outplayer, Infuse) : par le proxy
  *  (`true`) ou en direct depuis Twitch (`false`, ne charge pas le Worker).
  *  Décidé ici plutôt que par chaque visiteur. La lecture sur le site, elle,
@@ -234,18 +327,18 @@ export async function getVodMeta(id) {
 // « proxy » ne concerne plus que les liens donnés aux applis externes
 // (VLC, Infuse…), voir `directUrl`.
 export function getLive(login) {
-  return json(`${API_URL}/api/get-live?name=${encodeURIComponent(login)}&proxy=true`)
+  return workerJson(`/api/get-live?name=${encodeURIComponent(login)}&proxy=true`)
 }
 
 export function getVodLinks(id) {
-  return json(`${API_URL}/api/get-m3u8?id=${encodeURIComponent(id)}&proxy=true`)
+  return workerJson(`/api/get-m3u8?id=${encodeURIComponent(id)}&proxy=true`)
 }
 
 /** Adresse d'origine derrière un lien du proxy, pour les applis externes. */
 export function directUrl(link) {
   try {
     const u = new URL(link)
-    if (u.origin === API_URL && u.pathname === '/api/proxy') return u.searchParams.get('url') || link
+    if (workerBaseOf(link) && u.pathname === '/api/proxy') return u.searchParams.get('url') || link
   } catch {}
   return link
 }
@@ -263,25 +356,27 @@ export function directUrl(link) {
 export function fixProxiedUrl(url, playlistUrl) {
   try {
     const u = new URL(url)
+    // Le Worker qui a servi la playlist : le principal, ou un secours.
+    const base = workerBaseOf(playlistUrl) ?? API_URL
     // Sous-playlists de direct (Luminous, playlist.ttvnw.net) laissées en
     // direct par le Worker : leurs jetons sont liés à l'adresse IP du Worker,
     // le navigateur s'y faisait refuser (403) et « Auto » ne démarrait pas.
     if (/(^|\.)playlist\.ttvnw\.net$|(^|\.)luminous\.dev$/.test(u.hostname)) {
-      return `${API_URL}/api/proxy?url=${encodeURIComponent(url)}&isVod=false`
+      return `${base}/api/proxy?url=${encodeURIComponent(url)}&isVod=false`
     }
-    if (u.origin !== API_URL || u.pathname === '/api/proxy') return url
+    if (u.origin !== base || u.pathname === '/api/proxy') return url
     const source = new URL(playlistUrl).searchParams.get('url')
     if (!source) return url
     const name = u.pathname.replace(/^\/api\//, '').replace(/^\//, '')
     const target = new URL(name + u.search, source).href
-    return `${API_URL}/api/proxy?url=${encodeURIComponent(target)}&isVod=true`
+    return `${base}/api/proxy?url=${encodeURIComponent(target)}&isVod=true`
   } catch {
     return url
   }
 }
 
 export function getChannelVideos(login) {
-  return json(`${API_URL}/api/get-channel-videos?name=${encodeURIComponent(login)}`)
+  return workerJson(`/api/get-channel-videos?name=${encodeURIComponent(login)}`)
 }
 
 // La sauvegarde exige le jeton Twitch de son propriétaire : le Worker le fait

@@ -23,3 +23,12 @@ head_sampling_rate = 1
 binding = "DB"
 database_name = "twitchunblock"
 database_id = "b586defd-3216-425b-9c13-e75abd8dbd13"
+
+# Worker de secours, sur un AUTRE compte Cloudflare : le quota gratuit
+# (100 000 requêtes par jour) est par compte. Déployé sous le nom
+# « test2-fallback » avec `npx wrangler deploy --env fallback`.
+# Sans base D1 — un environnement n'hérite pas des liaisons — : il ne sert que
+# ce qui n'en dépend pas (lives, VODs, relais vidéo, Moobot). Voir README,
+# « Fallback Worker ».
+[env.fallback]
+workers_dev = true

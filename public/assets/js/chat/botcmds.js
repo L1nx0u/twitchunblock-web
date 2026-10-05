@@ -5,7 +5,7 @@
 //  Moobot les refuse (CORS) : il passe par le Worker.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { API_URL } from '../api.js'
+import { workerJson } from '../api.js'
 
 const ICONS = {
   Moobot: 'https://static-cdn.jtvnw.net/jtv_user_pictures/663db70b-80e7-424b-a54f-ed88f7ac9355-profile_image-50x50.png',
@@ -48,8 +48,11 @@ async function fossabot(ch) {
   return list.filter((c) => c.name && c.enabled_online !== false).map((c) => ({ name: bang(c.name), response: String(c.response ?? '') }))
 }
 
+// Par le Worker, ou son secours quand le quota du jour est atteint.
 async function moobot(ch) {
-  return (await json(`${API_URL}/api/bot-commands/moobot?channel=${ch}`))?.commands ?? null
+  try {
+    return (await workerJson(`/api/bot-commands/moobot?channel=${ch}`, { timeout: 10_000 }))?.commands ?? null
+  } catch { return null }
 }
 
 const cache = new Map()   // chaîne → { at, sets }

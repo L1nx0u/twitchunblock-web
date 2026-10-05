@@ -9,7 +9,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { t } from './i18n.js'
-import { API_URL, fixProxiedUrl } from './api.js'
+import { API_URL, WORKER_BASES, fixProxiedUrl, workerBaseOf } from './api.js'
 import { $, esc, formatClock, icon, isIOS } from './util.js'
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
@@ -40,7 +40,7 @@ function enableSegmentProxy() {
 function isDirectSegment(u) {
   try {
     const h = new URL(u).hostname
-    return h !== new URL(API_URL).hostname && /(^|\.)(ttvnw\.net|twitchcdn\.net)$/.test(h) && !/(^|\.)playlist\.ttvnw\.net$/.test(h)
+    return !WORKER_BASES.some((b) => new URL(b).hostname === h) && /(^|\.)(ttvnw\.net|twitchcdn\.net)$/.test(h) && !/(^|\.)playlist\.ttvnw\.net$/.test(h)
   } catch { return false }
 }
 
@@ -218,6 +218,7 @@ export class Player {
     prog.addEventListener('pointerdown', (e) => {
       e.stopPropagation()
       this.dragging = true
+      this.root.classList.add('scrubbing')
       prog.setPointerCapture(e.pointerId)
       this.scrubTo(e)
     })
@@ -229,6 +230,7 @@ export class Player {
     const end = (e) => {
       if (!this.dragging) return
       this.dragging = false
+      this.root.classList.remove('scrubbing')
       this.el.tip.hidden = true
       const target = this.positionFrom(e)
       if (target !== null) this.video.currentTime = target
@@ -318,6 +320,9 @@ export class Player {
     if (token !== this.attachToken) return
 
     if (Hls?.isSupported()) {
+      // Le relais du Worker qui a servi ces liens : le principal, ou un
+      // secours si le quota du principal est atteint.
+      const relay = workerBaseOf(url) ?? API_URL
       const hls = new Hls({
         // Rouvrir la requête avec l'adresse corrigée : c'est le point
         // d'accroche que hls.js offre pour réécrire une URL avant envoi.
@@ -325,7 +330,7 @@ export class Player {
           let fixed = fixProxiedUrl(reqUrl, url)
           // Secours : segments par le relais quand le direct n'aboutit pas.
           if (segmentProxyOn() && isDirectSegment(fixed)) {
-            fixed = `${API_URL}/api/proxy?url=${encodeURIComponent(fixed)}&isVod=false`
+            fixed = `${relay}/api/proxy?url=${encodeURIComponent(fixed)}&isVod=false`
           }
           if (fixed !== reqUrl) xhr.open('GET', fixed, true)
         },
@@ -355,6 +360,14 @@ export class Player {
           if (data.fatal) { hls.startLoad(); return }
         }
         if (!data.fatal) return
+        // Worker hors service en pleine lecture (quota du jour atteint) : ses
+        // requêtes n'aboutissent plus du tout — code 0, la page d'erreur de
+        // Cloudflare n'ayant pas d'en-tête CORS. Plutôt que de relancer sans
+        // fin le même Worker, main.js redemande les liens à un autre.
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !data.response?.code) {
+          const down = workerBaseOf(data.frag?.url || data.context?.url || data.url || '')
+          if (down && this.o.onWorkerDown?.(down)) return
+        }
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad()
         else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError()
         else this.o.onError?.()
@@ -398,6 +411,16 @@ export class Player {
     this.video.load()
     this.closeMenu()
     if (document.pictureInPictureElement === this.video) document.exitPictureInPicture().catch(() => {})
+  }
+
+  /** Mêmes vidéos, servies par un autre Worker (quota du premier atteint) :
+   *  on garde la qualité, la position et les chapitres — `load` repartait
+   *  de zéro. */
+  swapLinks(links) {
+    this.links = links
+    if (!links[this.quality]) this.quality = sortQualities(Object.keys(links))[0]
+    this.updateQualityLabel()
+    this.attach(links[this.quality], this.kind === 'vod' ? this.video.currentTime : 0)
   }
 
   setQuality(key) {
@@ -509,10 +532,15 @@ export class Player {
     const cur = v.currentTime
     if (this.kind === 'vod') {
       const d = v.duration
-      if (Number.isFinite(d) && d > 0) {
-        this.el.time.textContent = `${formatClock(cur)} / ${formatClock(d)}`
-        if (!this.dragging) this.drawPosition(cur / d)
-      } else this.el.time.textContent = formatClock(cur)
+      // Pendant un glissement, la barre et le compteur suivent le doigt
+      // (scrubTo) : les réécrire ici avec la position courante effaçait
+      // aussitôt l'instant visé.
+      if (!this.dragging) {
+        if (Number.isFinite(d) && d > 0) {
+          this.el.time.textContent = `${formatClock(cur)} / ${formatClock(d)}`
+          this.drawPosition(cur / d)
+        } else this.el.time.textContent = formatClock(cur)
+      }
     } else {
       // Direct : à quelle distance du bord est-on ?
       let behind = 0
@@ -552,10 +580,14 @@ export class Player {
     return r * d
   }
 
+  /** Glissement sur la barre : curseur, infobulle ET compteur suivent le
+   *  doigt. Avant, le compteur gardait la position courante : sur téléphone,
+   *  où le pouce cache l'infobulle, on visait à l'aveugle. */
   scrubTo(e) {
     const target = this.positionFrom(e)
     if (target === null) return
     this.drawPosition(target / this.video.duration)
+    this.el.time.textContent = `${formatClock(target)} / ${formatClock(this.video.duration)}`
     this.hoverTip(e)
   }
 
@@ -589,11 +621,15 @@ export class Player {
     const target = this.positionFrom(e)
     if (target === null) return
     const rect = this.el.progress.getBoundingClientRect()
-    const x = Math.max(24, Math.min(rect.width - 24, e.clientX - rect.left))
     const chap = this.chapters?.length > 1 ? this.chapters.findLast((c) => c.start <= target) : null
     this.el.tip.textContent = chap ? `${formatClock(target)} · ${chap.title}` : formatClock(target)
-    this.el.tip.style.left = `${x}px`
     this.el.tip.hidden = false
+    // Bornée par sa propre largeur, mesurée une fois le texte posé : avec un
+    // nom de chapitre, l'infobulle centrée sur le curseur sortait du lecteur
+    // près des bords.
+    const half = Math.min(this.el.tip.offsetWidth / 2, rect.width / 2)
+    const x = Math.max(half, Math.min(rect.width - half, e.clientX - rect.left))
+    this.el.tip.style.left = `${x}px`
   }
 
   // ── Commandes visibles / masquées ──────────────────────────────────────
