@@ -280,10 +280,9 @@ async function handleGetM3U8(url, workerOrigin) {
     
     // --- 2. Plan de Secours ---
     try {
-        const data = await twitchGQL(`query($id: ID!) { video(id: $id) { seekPreviewsURL animatedPreviewURL previewThumbnailURL(width: 320, height: 180) } }`, { id: vodId });
-        const root = vodCdnRoot(data.data?.video);
-        if (root) {
-            const rawLinks = await storyboardHack(root, vodId);
+        const data = await twitchGQL(`query($id: ID!) { video(id: $id) { seekPreviewsURL } }`, { id: vodId }); const seekUrl = data.data?.video?.seekPreviewsURL;
+        if (seekUrl) {
+            const rawLinks = await storyboardHack(seekUrl, vodId);
             if (Object.keys(rawLinks).length > 0) {
                 let finalLinks = {}; 
                 // « Auto » = la meilleure qualité trouvée (l'ordre des réponses était aléatoire).
@@ -404,35 +403,18 @@ async function getAccessToken(id, isLive) {
     return isLive ? data.data?.streamPlaybackAccessToken : data.data?.videoPlaybackAccessToken;
 }
 
-// Dossier CDN d'une VOD (« https://<distribution>.cloudfront.net/<empreinte>_<chaîne>_<id>_<date> »),
-// celui qui contient ses playlists. Avant, il n'était lu que dans
-// seekPreviewsURL : une VOD réservée aux abonnés, ou masquée mais toujours
-// listée, peut ne plus l'avoir alors que ses autres aperçus pointent encore
-// vers le même dossier. On prend donc le premier qui répond :
-//  - seekPreviewsURL / animatedPreviewURL : https://<cdn>/<dossier>/storyboards/…
-//  - previewThumbnailURL : https://static-cdn.jtvnw.net/cf_vods/<distribution>/<dossier>//thumb/…
-// Une VOD encore en traitement a une miniature « _404/404_processing » : null.
-function vodCdnRoot(video) {
-    for (const raw of [video?.seekPreviewsURL, video?.animatedPreviewURL]) {
-        if (!raw) continue;
-        try {
-            const u = new URL(raw);
-            const parts = u.pathname.split('/');
-            const i = parts.indexOf('storyboards');
-            if (i > 1) return `https://${u.host}/${parts[i - 1]}`;
-        } catch (e) {}
-    }
-    const m = /^https:\/\/static-cdn\.jtvnw\.net\/cf_vods\/([a-z0-9]+)\/([0-9a-f]{20}_[^/]+)\//.exec(video?.previewThumbnailURL || '');
-    return m ? `https://${m[1]}.cloudfront.net/${m[2]}` : null;
-}
-
 // Une archive a sa playlist dans `<qualité>/index-dvr.m3u8` ; un highlight
 // (les vidéos des playlists de chaîne) dans `<qualité>/highlight-<id>.m3u8`.
 // Seul le premier nom était essayé : le secours échouait toujours sur les
-// highlights, et la VOD tombait en « introuvable ». Reçoit directement le
-// dossier CDN (voir vodCdnRoot) au lieu de l'adresse des storyboards.
-async function storyboardHack(root, vodId) {
+// highlights, et la VOD tombait en « introuvable ».
+async function storyboardHack(seekUrl, vodId) {
     try {
+        const parts = seekUrl.split('/');
+        const storyIndex = parts.indexOf('storyboards');
+        if (storyIndex === -1) return {};
+        const hash = parts[storyIndex - 1]; 
+        const root = `https://${new URL(seekUrl).host}/${hash}`;
+
         let found = {};
         const names = ['index-dvr.m3u8', ...(VOD_ID_RE.test(vodId || '') ? [`highlight-${vodId}.m3u8`] : [])];
         await Promise.all(QUALITY_ORDER.map(async q => {
