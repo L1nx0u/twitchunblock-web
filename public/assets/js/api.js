@@ -20,7 +20,7 @@ export const API_URL = CFG.apiUrl === 'same-origin' ? location.origin : (CFG.api
 // comptage et annonces restent sur le principal : leurs données y sont.
 // Une instance avec sa propre adresse (config.js) n'hérite pas des secours
 // officiels : elle donne les siens dans `fallbackApiUrls`, ou aucun.
-const DEFAULT_FALLBACK_URLS = []
+const DEFAULT_FALLBACK_URLS = ['https://test2-fallback.vxcraftmanpetit.workers.dev']
 const FALLBACK_URLS = CFG.fallbackApiUrls ?? (CFG.apiUrl ? [] : DEFAULT_FALLBACK_URLS)
 const originOf = (u) => { try { return new URL(u).origin } catch { return null } }
 /** Le principal d'abord, puis les secours, dans l'ordre. */
