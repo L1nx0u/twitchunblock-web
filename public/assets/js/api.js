@@ -222,11 +222,60 @@ export async function getFollowedLogins(userId) {
 const CAT_FIELDS = 'id name displayName boxArtURL(width: 188, height: 250) viewersCount'
 const catFrom = (n) => ({ id: n.id, name: n.displayName || n.name, box: n.boxArtURL || '', viewers: n.viewersCount ?? null })
 
+// Pagination. En GQL public, Twitch exige un jeton d'intégrité dès la 2e page
+// (« failed integrity check », requête persistée comprise) : « Charger plus »
+// ne ramenait rien. On prend donc d'un coup les 100 premiers (le maximum
+// accepté), servis par tranches ; au-delà, seul Helix sait continuer, avec
+// le compte Twitch. Le « curseur » est un objet opaque :
+//   { rest: à servir, seen: déjà vus, more: Twitch en a d'autres, after: curseur Helix }
+function servePage(c, step) {
+  const items = c.rest.slice(0, step)
+  const rest = c.rest.slice(step)
+  const helixNext = c.more && Boolean(store.token)
+  return { items, cursor: rest.length || helixNext ? { ...c, rest } : null }
+}
+
+/** Page Helix suivante, sans ce qui est déjà affiché (Helix repart du début :
+ *  ses 100 premiers recouvrent ceux de GQL). Jusqu'à 3 pages pour trouver du
+ *  neuf ; une erreur clôt la liste au lieu de la vider. */
+async function helixMore(c, path, convert, keyOf, step) {
+  let after = c.after
+  const fresh = []
+  try {
+    for (let i = 0; i < 3 && fresh.length < step; i++) {
+      const data = await helix(`${path}${path.includes('?') ? '&' : '?'}first=100${after ? `&after=${encodeURIComponent(after)}` : ''}`)
+      after = data?.pagination?.cursor ?? null
+      for (const x of (data?.data ?? []).map(convert)) {
+        const k = keyOf(x)
+        if (k && !c.seen.has(k)) { c.seen.add(k); fresh.push(x) }
+      }
+      if (!after) break
+    }
+  } catch {
+    after = null
+  }
+  return servePage({ ...c, rest: fresh, more: Boolean(after), after }, step)
+}
+
+const catFromHelix = (g) => ({ id: g.id, name: g.name, box: String(g.box_art_url ?? '').replace('{width}', '188').replace('{height}', '250'), viewers: null })
+
 /** Catégories les plus regardées. { items, cursor } */
 export async function getTopCategories(cursor = null) {
-  const data = await gql(`query($c: Cursor) { games(first: 40, after: $c) { edges { cursor node { ${CAT_FIELDS} } } pageInfo { hasNextPage } } }`, { c: cursor })
-  const edges = data?.games?.edges ?? []
-  return { items: edges.map((e) => catFrom(e.node)), cursor: data?.games?.pageInfo?.hasNextPage ? edges.at(-1)?.cursor ?? null : null }
+  let page
+  if (cursor?.rest?.length) page = servePage(cursor, 40)
+  else if (cursor) page = await helixMore(cursor, 'games/top', catFromHelix, (x) => x.id, 40)
+  else {
+    const data = await gql(`query { games(first: 100) { edges { node { ${CAT_FIELDS} } } pageInfo { hasNextPage } } }`)
+    const items = (data?.games?.edges ?? []).map((e) => catFrom(e.node))
+    page = servePage({ rest: items, seen: new Set(items.map((x) => x.id)), more: Boolean(data?.games?.pageInfo?.hasNextPage), after: null }, 40)
+  }
+  // Helix ne donne pas l'audience : complétée par GQL, en une requête.
+  const missing = page.items.filter((x) => x.viewers == null).map((x) => x.id)
+  if (missing.length) {
+    const byId = Object.fromEntries((await getCategoriesByIds(missing).catch(() => [])).map((x) => [x.id, x]))
+    page.items = page.items.map((x) => byId[x.id] ?? x)
+  }
+  return page
 }
 
 export async function searchCategories(q) {
@@ -245,13 +294,25 @@ export async function getCategoriesByIds(ids) {
   return ids.map((_, i) => data?.[`g${i}`]).filter(Boolean).map(catFrom)
 }
 
-/** Lives d'une catégorie. { items, cursor } */
+/** Lives d'une catégorie, par tranches de 30. { items, cursor } (voir servePage) */
 export async function getCategoryStreams(id, cursor = null) {
-  const data = await gql(`query($id: ID!, $c: Cursor) { game(id: $id) { streams(first: 30, after: $c) {
-    edges { cursor node { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { displayName }
-      broadcaster { login displayName profileImageURL(width: 50) } } } pageInfo { hasNextPage } } } }`, { id, c: cursor })
-  const edges = data?.game?.streams?.edges ?? []
-  return { items: edges.map((e) => streamFromGQL(e.node)).filter((s) => s.login), cursor: data?.game?.streams?.pageInfo?.hasNextPage ? edges.at(-1)?.cursor ?? null : null }
+  let page
+  if (cursor?.rest?.length) page = servePage(cursor, 30)
+  else if (cursor) page = await helixMore(cursor, `streams?game_id=${encodeURIComponent(id)}`, streamFromHelix, (s) => s.login, 30)
+  else {
+    const data = await gql(`query($id: ID!) { game(id: $id) { streams(first: 100) {
+      edges { node { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { displayName }
+        broadcaster { login displayName profileImageURL(width: 50) } } } pageInfo { hasNextPage } } } }`, { id })
+    const items = (data?.game?.streams?.edges ?? []).map((e) => streamFromGQL(e.node)).filter((s) => s.login)
+    page = servePage({ rest: items, seen: new Set(items.map((s) => s.login)), more: Boolean(data?.game?.streams?.pageInfo?.hasNextPage), after: null }, 30)
+  }
+  // Helix ne donne pas les photos de profil : complétées en une requête.
+  const missing = page.items.filter((s) => !s.avatar).map((s) => s.login)
+  if (missing.length) {
+    const avatars = await getAvatars(missing)
+    for (const s of page.items) if (!s.avatar) s.avatar = avatars[s.login] ?? ''
+  }
+  return page
 }
 
 /** Lesquelles de ces chaînes sont en live (suivis sans compte), par GQL public. */

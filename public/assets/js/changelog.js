@@ -6,6 +6,26 @@
 
 export const CHANGELOG = [
   {
+    version: '2026.10.07',
+    items: {
+      fr: [
+        'Page d’une chaîne : plus d’onglet « Supprimées » — les VODs supprimées ou masquées apparaissent directement parmi les VODs, à leur date, marquées « VOD non listée ».',
+        'Catégories : « Charger plus » fonctionne à nouveau (jusqu’à 100 catégories et 100 lives par catégorie sans compte, sans limite une fois connecté).',
+        'Chat synchronisé : les messages ne sont plus retenus que de ton retard sur le direct. Sur les chaînes qui diffusent avec un délai, ils arrivaient jusqu’à 10 s trop tard, ou plus.',
+      ],
+      en: [
+        'Channel page: no more “Deleted” tab — deleted or hidden VODs now appear right among the VODs, at their date, marked “Unlisted VOD”.',
+        'Categories: “Load more” works again (up to 100 categories and 100 streams per category without an account, unlimited once logged in).',
+        'Chat sync: messages are now held back only by how far behind live you are. On channels that stream with a delay, they showed up 10 s late or more.',
+      ],
+      es: [
+        'Página de un canal: ya no hay pestaña «Eliminados»: los VODs borrados u ocultos aparecen directamente entre los VODs, en su fecha, marcados «VOD no listado».',
+        'Categorías: «Cargar más» vuelve a funcionar (hasta 100 categorías y 100 directos por categoría sin cuenta, sin límite al iniciar sesión).',
+        'Chat sincronizado: los mensajes solo se retrasan según tu retraso respecto al directo. En los canales que emiten con retraso, llegaban 10 s tarde o más.',
+      ],
+    },
+  },
+  {
     version: '2026.10.06b',
     items: {
       fr: [

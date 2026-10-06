@@ -337,7 +337,10 @@ export class Player {
         backBufferLength: 90,
         maxBufferLength: 30,
         liveSyncDurationCount: 3,
-        startPosition: this.kind === 'vod' && startAt > 1 ? startAt : -1,
+        // Une VOD part du début (ou de la reprise) même si sa playlist n'a
+        // pas de fin déclarée : sinon hls.js la prend pour un direct et part
+        // du bord (VOD reconstruite encore en cours d'écriture, par exemple).
+        startPosition: this.kind === 'vod' ? (startAt > 1 ? startAt : 0) : -1,
       })
       this.hls = hls
       hls.loadSource(url)
@@ -479,6 +482,23 @@ export class Player {
     let delay = playing ? (Date.now() - playing) / 1000 : this.hls?.latency
     if (!Number.isFinite(delay) || delay < 0) return 0
     return Math.min(delay, 90)
+  }
+
+  /**
+   * Retard à appliquer au chat : notre distance au bord du direct. Les
+   * messages viennent de spectateurs qui regardent eux-mêmes près de ce
+   * bord. La latence totale (liveDelay) compte en plus leur propre retard
+   * et, surtout, le délai que certaines chaînes ajoutent à leur diffusion —
+   * que ces spectateurs subissent aussi : le chat arrivait alors 10 s trop
+   * tard, ou plus.
+   */
+  chatDelay() {
+    if (this.kind !== 'live') return 0
+    const v = this.video
+    let behind = this.hls ? this.hls.latency : NaN
+    if (!(behind > 0) && v.seekable.length) behind = v.seekable.end(v.seekable.length - 1) - v.currentTime
+    if (!Number.isFinite(behind) || behind < 0) return 0
+    return Math.min(behind, 60)
   }
 
   goLive() {

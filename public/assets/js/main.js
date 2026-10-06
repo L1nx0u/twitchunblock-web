@@ -1082,16 +1082,14 @@ async function searchChannel(raw) {
   renderChannel(keyword)
 }
 
-// Onglets de la page streamer, comme sur Twitch. « Supprimées » juste après
-// les VODs : ce sont des VODs aussi, celles que Twitch a effacées.
-const CHANNEL_TABS = [['vods', 'vods'], ['recover', 'recover_tab'], ['highlights', 'highlights'], ['playlists', 'playlists'], ['clips', 'clips']]
+// Onglets de la page streamer, comme sur Twitch.
+const CHANNEL_TABS = [['vods', 'vods'], ['highlights', 'highlights'], ['playlists', 'playlists'], ['clips', 'clips']]
 
 /** Charge le contenu de l'onglet à sa première ouverture. */
 function loadChannelTab(tab) {
   if (tab === 'highlights') loadChannelHighlights()
   if (tab === 'playlists') loadChannelPlaylists()
   if (tab === 'clips') loadChannelClips()
-  if (tab === 'recover') loadChannelRecover()
 }
 
 function setChannelTab(tab) {
@@ -1117,45 +1115,95 @@ async function loadChannelHighlights() {
   $('#channel-highlights').innerHTML = list?.length ? list.map((v) => vodCard(v, name)).join('') : emptyState(t('no_highlights'), 'film')
 }
 
-// ── Onglet « Supprimées » (récupération de VODs effacées) ───────────────────
-async function loadChannelRecover() {
-  const login = state.channel?.login
-  const box = $('#channel-recover')
-  if (!login || !box) return
+// ── VODs non listées (supprimées ou masquées) ──────────────────────────────
+// Une source externe connaît chaque diffusion récente : celles sans VOD dans
+// la liste de Twitch ont une VOD supprimée ou masquée. Elles sont rangées à
+// leur date parmi les VODs, marquées « VOD non listée », et reconstruites au
+// clic. Leur liste arrive après les VODs : la grille ne l'attend pas.
+const SAME_STREAM = 15 * 60_000
+
+async function loadUnlisted(login) {
   state.recoverCache ??= new Map()
-  let data = state.recoverCache.get(login)
-  if (!data) {
-    box.innerHTML = `<p class="muted small" style="padding:0 2px">${esc(t('loading'))}</p>`
-    data = await api.getRecoverableStreams(login).catch(() => null)
-    if (data) state.recoverCache.set(login, data)
+  if (!state.recoverCache.has(login)) {
+    const data = await api.getRecoverableStreams(login).catch(() => null)
+    if (!data) return
+    state.recoverCache.set(login, data)
   }
-  if (state.channel?.login !== login || !$('#channel-recover')) return
-  const streams = data?.streams || []
-  $('#channel-recover').innerHTML = streams.length
-    ? `<div class="recover-list">${streams.map(recoverRow).join('')}</div>`
-    : emptyState(t('recover_empty'), 'trash')
+  if (state.channel?.login === login) renderVodGrid()
 }
 
-function recoverRow(s) {
-  const date = new Date(s.epoch * 1000).toLocaleString(lang(), { dateStyle: 'medium', timeStyle: 'short' })
-  const meta = [esc(date), s.game ? esc(s.game) : '',
-    s.maxViews ? `${s.maxViews.toLocaleString(lang())} ${esc(t('recover_views'))}` : '']
-    .filter(Boolean).join(' · ')
-  return `<div class="recover-row">
-    <div class="recover-info">
-      <strong>${esc(s.title || s.login)}</strong>
-      <span class="muted small">${meta}</span>
-    </div>
-    <button class="btn sm" type="button" data-recover data-login="${esc(s.login)}" data-stream="${esc(s.streamID)}" data-epoch="${s.epoch}" data-title="${esc(s.title || '')}">${icon('download', 16)}<span>${esc(t('recover_play'))}</span></button>
-  </div>`
+/** Diffusions sans VOD listée. Une VOD les couvre si sa vignette porte leur
+ *  id de diffusion, ou si elle commence à la même heure (vignette « en cours
+ *  de traitement »). Le Worker renvoie 100 VODs au plus : une diffusion plus
+ *  ancienne que la dernière reste de côté, sa VOD est peut-être au-delà. */
+function unlistedStreams() {
+  const ch = state.channel
+  const streams = state.recoverCache?.get(ch?.login)?.streams ?? []
+  if (!streams.length) return []
+  const dated = ch.videos.map((v) => ({ v, t: Date.parse(v.publishedAt) })).filter((x) => Number.isFinite(x.t))
+  const oldest = ch.videos.length >= 100 && dated.length ? Math.min(...dated.map((x) => x.t)) : -Infinity
+  // Le direct en cours a sa propre page : pas une VOD perdue.
+  const liveStart = Date.parse(ch.info?.stream?.createdAt)
+  return streams.filter((s) => {
+    const start = s.epoch * 1000
+    if (dated.some(({ v, t }) => String(v.previewThumbnailURL ?? '').includes(`_${s.streamID}_`) || Math.abs(t - start) < SAME_STREAM)) return false
+    if (Number.isFinite(liveStart) && Math.abs(liveStart - start) < SAME_STREAM) return false
+    return start >= oldest - SAME_STREAM
+  })
 }
 
-async function recoverAndPlay(btn) {
-  const { login, stream, epoch, title } = btn.dataset
-  const label = btn.querySelector('span')
-  const prev = label ? label.textContent : ''
-  btn.disabled = true
-  if (label) label.textContent = t('recover_resolving')
+function unlistedCard(s) {
+  const dateStr = new Date(s.epoch * 1000).toLocaleDateString(lang(), { day: 'numeric', month: 'short', year: 'numeric' })
+  return `
+    <article class="card vod-card unlisted" tabindex="0" data-recover data-login="${esc(s.login)}" data-stream="${esc(s.streamID)}" data-epoch="${esc(s.epoch)}" data-title="${esc(s.title || '')}">
+      <div class="thumb">
+        <span class="unlisted-ic">${icon('eyeOff', 26)}</span>
+        <span class="pill unlisted-pill">${esc(t('unlisted_vod'))}</span>
+        ${s.duration ? `<span class="pill duration">${esc(formatDuration(s.duration))}</span>` : ''}
+      </div>
+      <div class="card-body">
+        <div class="card-text">
+          <h3 title="${esc(s.title || '')}">${esc(s.title || s.login)}</h3>
+          <p class="meta">${esc([dateStr, s.game].filter(Boolean).join(' · '))}</p>
+        </div>
+      </div>
+    </article>`
+}
+
+/** Grille des VODs, non listées comprises, filtrée par le mot-clé (titre ou
+ *  date). Refaite à la frappe et à l'arrivée des non listées. */
+function renderVodGrid() {
+  const ch = state.channel
+  const grid = $('#channel-vods')
+  if (!grid || !ch) return
+  const keyword = ($('#vod-filter')?.value ?? '').trim().toLowerCase()
+  const name = ch.info?.displayName || ch.login
+  const unlisted = unlistedStreams()
+  const match = (title, ms) => !keyword || String(title ?? '').toLowerCase().includes(keyword)
+    || new Date(ms).toLocaleDateString(lang()).includes(keyword)
+  const items = [
+    ...ch.videos.map((v) => ({ t: Date.parse(v.publishedAt) || 0, title: v.title, html: () => vodCard(v, name) })),
+    ...unlisted.map((s) => ({ t: s.epoch * 1000, title: s.title, html: () => unlistedCard(s) })),
+  ].filter((x) => match(x.title, x.t)).sort((a, b) => b.t - a.t)
+  grid.innerHTML = items.length ? items.map((x) => x.html()).join('') : (keyword ? '' : emptyState(t('no_vod'), 'film'))
+  const count = $('#vod-filter-count')
+  if (count) {
+    count.hidden = !keyword
+    count.textContent = keyword ? (items.length ? t('filter_count', { n: items.length, k: keyword }) : t('filter_none', { k: keyword })) : ''
+  }
+  const hint = $('#unlisted-hint')
+  if (hint) hint.hidden = !unlisted.length
+}
+
+/** Reconstruit une VOD non listée puis la lit. Si le CDN ne la sert plus,
+ *  sa carte le dit ; un nouveau clic retente. */
+async function recoverAndPlay(card) {
+  if (card.classList.contains('busy')) return
+  const { login, stream, epoch, title } = card.dataset
+  const pill = card.querySelector('.unlisted-pill')
+  card.classList.add('busy')
+  card.classList.remove('gone')
+  if (pill) pill.textContent = t('recover_resolving')
   try {
     const r = await api.resolveRecovery(login, stream, Number(epoch))
     if (!r?.links || !Object.keys(r.links).length) throw new Error('none')
@@ -1171,10 +1219,11 @@ async function recoverAndPlay(btn) {
     $('#mini-title').textContent = title || login
     setWatchChannel(login)
   } catch (e) {
+    card.classList.add('gone')
     toast(t('recover_failed'), 'error')
   } finally {
-    btn.disabled = false
-    if (label) label.textContent = prev
+    card.classList.remove('busy')
+    if (pill) pill.textContent = t(card.classList.contains('gone') ? 'unlisted_gone' : 'unlisted_vod')
   }
 }
 
@@ -1212,11 +1261,6 @@ function renderChannel(keyword = '') {
       </div>`
   }
 
-  const filtered = keyword ? videos.filter((v) => {
-    const d = new Date(v.publishedAt).toLocaleDateString(lang())
-    return v.title.toLowerCase().includes(keyword) || d.includes(keyword)
-  }) : videos
-
   $('#channel-result').innerHTML = `
     <section class="channel-hero${live ? ' is-live' : ''}">
       <div class="hero-id">
@@ -1234,12 +1278,9 @@ function renderChannel(keyword = '') {
         <h2>${icon('film', 18)}<span>${esc(t('vods'))}</span></h2>
         <label class="filter">${icon('search', 16)}<input id="vod-filter" type="search" value="${esc(keyword)}" placeholder="${esc(t('search'))}…"></label>
       </div>
-      ${keyword ? `<p class="muted filter-count">${esc(filtered.length ? t('filter_count', { n: filtered.length, k: keyword }) : t('filter_none', { k: keyword }))}</p>` : ''}
-      <div class="grid vods">${filtered.length ? filtered.map((v) => vodCard(v, name)).join('') : (keyword ? '' : emptyState(t('no_vod'), 'film'))}</div>
-    </section>
-    <section class="block" data-cpanel="recover" ${tab === 'recover' ? '' : 'hidden'}>
-      <p class="muted small recover-hint">${esc(t('recover_hint'))}</p>
-      <div id="channel-recover"></div>
+      <p class="muted filter-count" id="vod-filter-count" hidden></p>
+      <p class="muted small unlisted-hint" id="unlisted-hint" hidden>${icon('eyeOff', 14)}<span>${esc(t('unlisted_hint'))}</span></p>
+      <div class="grid vods" id="channel-vods"></div>
     </section>
     <section class="block" data-cpanel="highlights" ${tab === 'highlights' ? '' : 'hidden'}>
       <div class="grid vods" id="channel-highlights"></div>
@@ -1255,15 +1296,11 @@ function renderChannel(keyword = '') {
       <div class="grid vods" id="channel-clips"></div>
     </section>`
   loadChannelTab(tab)
+  renderVodGrid()
+  loadUnlisted(login)
 
-  const filter = $('#vod-filter')
-  filter.addEventListener('input', debounce(() => {
-    const pos = filter.selectionStart
-    renderChannel(filter.value.trim().toLowerCase())
-    const again = $('#vod-filter')
-    again.focus()
-    again.setSelectionRange(pos, pos)
-  }, 200))
+  // Seule la grille est refaite à la frappe : le champ garde son focus.
+  $('#vod-filter').addEventListener('input', debounce(renderVodGrid, 200))
 }
 
 /**
@@ -1348,7 +1385,7 @@ function setupPlayer() {
   chat = new ChatView($('#chat'), {
     prefs: store.prefs,
     // Retard de l'image à compenser dans le chat, si le réglage est actif.
-    getDelay: () => (store.prefs.chatSync ? player.liveDelay() : 0),
+    getDelay: () => (store.prefs.chatSync ? player.chatDelay() : 0),
     onOpenChannel: (login) => openLive(login),
     onOpenClip: (slug) => openClip(slug),
     onPrefsChange: () => store.savePrefs(),

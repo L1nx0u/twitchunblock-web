@@ -354,11 +354,14 @@ async function handleRecoverList(url) {
         const sid = typeof m.StreamID === 'string' ? m.StreamID : (m.StreamID != null ? String(m.StreamID) : '');
         const start = Date.parse(m.StartTime);
         if (!VOD_ID_RE.test(sid) || !Number.isFinite(start)) return null;
+        // { Float64, Valid } ; Valid à false tant que la diffusion est en cours.
+        const hls = m.HlsDurationSeconds || {};
         return {
             streamID: sid, login: String(m.StreamerLoginAtStart || channel).toLowerCase(),
             epoch: Math.floor(start / 1000), start: m.StartTime,
             title: String(m.TitleAtStart || ''), game: String(m.GameNameAtStart || ''),
             maxViews: Number(m.MaxViews) || 0,
+            duration: hls.Valid ? Math.round(Number(hls.Float64) || 0) : 0,
         };
     }).filter(Boolean);
     return jsonResponse({ streams });
@@ -466,7 +469,11 @@ async function handleProxy(url, request) {
                 // pistes audio EXT-X-MEDIA…).
                 return line.replace(/URI="([^"]+)"/g, (_m, u) => `URI="${proxify(u, tagIsPlaylist)}"`);
             }
-            const out = proxify(line, nextIsPlaylist);
+            // Passages coupés pour droits d'auteur : les playlists du CDN des
+            // VODs les listent en « N-unmuted.ts », que le CDN refuse (403) —
+            // la lecture bloquait dès le premier. Seul « N-muted.ts » (son
+            // coupé) se lit.
+            const out = proxify(line.replace(/-unmuted\.ts(?=$|\?)/, '-muted.ts'), nextIsPlaylist);
             nextIsPlaylist = false;
             return out;
         }).join('\n');
