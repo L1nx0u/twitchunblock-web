@@ -478,6 +478,19 @@ async function handlePing(request, env) {
         return jsonResponse({ ok: true, ignored: true });
     }
 
+    // L'app officielle joint un jeton de build (en-tête X-TU-Key) qu'un fork
+    // réutilisant ce backend ne possède pas : lui compté gonflerait la base et
+    // le quota pour des utilisateurs qui ne sont pas les nôtres. Le site, lui,
+    // est déjà filtré par son origine ; le retrait (forget) passe toujours.
+    // Inactif tant que PING_KEY n'est pas défini sur le Worker : rien ne change
+    // d'ici là, et aucune installation officielle existante n'est perdue avant
+    // qu'elle n'embarque le jeton.
+    const fromOfficialSite = origin && USAGE_ORIGINS.includes(origin);
+    if (env.PING_KEY && !fromOfficialSite && body.forget !== true
+        && request.headers.get('X-TU-Key') !== env.PING_KEY) {
+        return jsonResponse({ ok: true, ignored: true });
+    }
+
     // Uniquement des UUID : pas question de laisser écrire des clés libres.
     const id = String(body.id || '');
     if (!/^[0-9a-fA-F-]{36}$/.test(id)) return jsonError('ID invalide', 400);
