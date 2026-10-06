@@ -896,6 +896,14 @@ input[type='search']::-webkit-search-cancel-button { filter: invert(1) opacity(0
 .p-chap { position: absolute; top: 50%; width: 2px; height: 8px; margin-left: -1px; transform: translateY(-50%); background: rgba(255, 255, 255, 0.85); border-radius: 1px; pointer-events: none; z-index: 1; }
 .p-tip { white-space: nowrap; max-width: 70vw; overflow: hidden; text-overflow: ellipsis; }
 
+/* Onglet « Supprimées » : liste des diffusions récupérables */
+.recover-hint { margin: 0 2px 12px; }
+.recover-list { display: flex; flex-direction: column; gap: 8px; }
+.recover-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r-control); background: var(--surface); }
+.recover-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.recover-info strong { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recover-row .btn { flex: none; }
+
 /* Pied de page toujours en bas : la page fait au moins la hauteur de
    l'écran, et le pied est repoussé sous le contenu. */
 .app { display: flex; flex-direction: column; min-height: 100dvh; }

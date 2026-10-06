@@ -269,6 +269,8 @@ function bindGlobal() {
     if (ctab) return setChannelTab(ctab.dataset.ctab)
     const period = e.target.closest('[data-clip-period]')
     if (period) return loadChannelClips(period.dataset.clipPeriod)
+    const rec = e.target.closest('[data-recover]')
+    if (rec) return recoverAndPlay(rec)
     const chan = e.target.closest('[data-channel]')
     if (chan) {
       // Depuis le lecteur (pseudo) : réduit en mini-lecteur pour voir la page.
@@ -889,13 +891,14 @@ async function searchChannel(raw) {
 }
 
 // Onglets de la page streamer, comme sur Twitch.
-const CHANNEL_TABS = [['vods', 'vods'], ['highlights', 'highlights'], ['playlists', 'playlists'], ['clips', 'clips']]
+const CHANNEL_TABS = [['vods', 'vods'], ['highlights', 'highlights'], ['playlists', 'playlists'], ['clips', 'clips'], ['recover', 'recover_tab']]
 
 /** Charge le contenu de l'onglet à sa première ouverture. */
 function loadChannelTab(tab) {
   if (tab === 'highlights') loadChannelHighlights()
   if (tab === 'playlists') loadChannelPlaylists()
   if (tab === 'clips') loadChannelClips()
+  if (tab === 'recover') loadChannelRecover()
 }
 
 function setChannelTab(tab) {
@@ -919,6 +922,67 @@ async function loadChannelHighlights() {
   if (state.channel?.login !== login || !$('#channel-highlights')) return
   const name = state.channel.info?.displayName || login
   $('#channel-highlights').innerHTML = list?.length ? list.map((v) => vodCard(v, name)).join('') : emptyState(t('no_highlights'), 'film')
+}
+
+// ── Onglet « Supprimées » (récupération de VODs effacées) ───────────────────
+async function loadChannelRecover() {
+  const login = state.channel?.login
+  const box = $('#channel-recover')
+  if (!login || !box) return
+  state.recoverCache ??= new Map()
+  let data = state.recoverCache.get(login)
+  if (!data) {
+    box.innerHTML = `<p class="muted small" style="padding:0 2px">${esc(t('loading'))}</p>`
+    data = await api.getRecoverableStreams(login).catch(() => null)
+    if (data) state.recoverCache.set(login, data)
+  }
+  if (state.channel?.login !== login || !$('#channel-recover')) return
+  const streams = data?.streams || []
+  $('#channel-recover').innerHTML = streams.length
+    ? `<div class="recover-list">${streams.map(recoverRow).join('')}</div>`
+    : emptyState(t('recover_empty'), 'trash')
+}
+
+function recoverRow(s) {
+  const date = new Date(s.epoch * 1000).toLocaleString(lang(), { dateStyle: 'medium', timeStyle: 'short' })
+  const meta = [esc(date), s.game ? esc(s.game) : '',
+    s.maxViews ? `${s.maxViews.toLocaleString(lang())} ${esc(t('recover_views'))}` : '']
+    .filter(Boolean).join(' · ')
+  return `<div class="recover-row">
+    <div class="recover-info">
+      <strong>${esc(s.title || s.login)}</strong>
+      <span class="muted small">${meta}</span>
+    </div>
+    <button class="btn sm" type="button" data-recover data-login="${esc(s.login)}" data-stream="${esc(s.streamID)}" data-epoch="${s.epoch}" data-title="${esc(s.title || '')}">${icon('download', 16)}<span>${esc(t('recover_play'))}</span></button>
+  </div>`
+}
+
+async function recoverAndPlay(btn) {
+  const { login, stream, epoch, title } = btn.dataset
+  const label = btn.querySelector('span')
+  const prev = label ? label.textContent : ''
+  btn.disabled = true
+  if (label) label.textContent = t('recover_resolving')
+  try {
+    const r = await api.resolveRecovery(login, stream, Number(epoch))
+    if (!r?.links || !Object.keys(r.links).length) throw new Error('none')
+    stopPlayback()
+    state.watch = { kind: 'vod', id: `recovered-${stream}`, info: null, links: r.links, recovered: true }
+    const tok = state.watch
+    showWatch('vod', title || login)
+    setUrl({})   // une VOD reconstruite n'a pas d'URL partageable
+    if (state.watch !== tok) return
+    $('#watch-loading').hidden = true
+    player.load({ links: r.links, kind: 'vod', startAt: 0 })
+    $('#watch-title').textContent = title || login
+    $('#mini-title').textContent = title || login
+    setWatchChannel(login)
+  } catch (e) {
+    toast(t('recover_failed'), 'error')
+  } finally {
+    btn.disabled = false
+    if (label) label.textContent = prev
+  }
 }
 
 function renderChannel(keyword = '') {
@@ -992,6 +1056,10 @@ function renderChannel(keyword = '') {
         </div>
       </div>
       <div class="grid vods" id="channel-clips"></div>
+    </section>
+    <section class="block" data-cpanel="recover" ${tab === 'recover' ? '' : 'hidden'}>
+      <p class="muted small recover-hint">${esc(t('recover_hint'))}</p>
+      <div id="channel-recover"></div>
     </section>`
   loadChannelTab(tab)
 

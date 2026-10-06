@@ -39,6 +39,11 @@ export default {
                 case '/api/get-channel-videos': return await handleGetVideos(url);
                 case '/api/get-m3u8': return await handleGetM3U8(url, workerOrigin);
                 case '/api/proxy': return await handleProxy(url, request);
+
+                // Récupération de VODs supprimées (le navigateur ne peut joindre
+                // ni la source externe ni le CDN de Twitch : CORS). Voir plus bas.
+                case '/api/recover-list': return await handleRecoverList(url);
+                case '/api/recover-resolve': return await handleRecoverResolve(url, workerOrigin);
                 
                 // Routes Sync (Sauvegarde Cloud)
                 case '/api/sync/get': return await handleSyncGet(url, request, env);
@@ -303,6 +308,102 @@ async function handleGetM3U8(url, workerOrigin) {
         } else console.warn(`get-m3u8 ${vodId} : pas d'aperçu (VOD supprimée ?)`);
     } catch (e) { console.warn(`get-m3u8 ${vodId} : secours`, e.message); }
     return jsonError("VOD introuvable", 404);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Récupération de VODs supprimées (pour le site : l'app iOS fait tout en natif).
+//
+//  Le navigateur ne peut appeler ni la source de métadonnées (CORS) ni le CDN
+//  de Twitch : tout passe par ici. On relit l'id de diffusion + l'heure de
+//  début chez la source externe (seul le nom public de la chaîne est transmis),
+//  on reconstruit le dossier CDN — SHA1("login_streamID_epoch")[:20]_… — et on
+//  cherche sa playlist parmi les hôtes connus. Les segments d'une VOD supprimée
+//  ne restent qu'un temps : au-delà, 404.
+// ═══════════════════════════════════════════════════════════════════════════
+const RECOVER_HOSTS = [
+    'd3vd9lfkzbru3h.cloudfront.net', 'd2nvs31859zcd8.cloudfront.net',
+    'd3stzm2eumvgb4.cloudfront.net', 'd1m7jfoe9zdc1j.cloudfront.net',
+    'd2vi6trrdongqn.cloudfront.net', 'd3fi1amfgojobc.cloudfront.net',
+    'dgeft87wbj63p.cloudfront.net', 'ddacn6pr5v0tl.cloudfront.net',
+    'd2e2de1etea730.cloudfront.net', 'dqrpb9wgowsf5.cloudfront.net',
+    'ds0h3roq6wcgc.cloudfront.net', 'd2aba1wr3818hz.cloudfront.net',
+    'd3c27h4odz752x.cloudfront.net', 'd1ymi26ma8va5x.cloudfront.net',
+    'd1mhjrowxxagfy.cloudfront.net', 'd36nr0u3xmc4mm.cloudfront.net',
+    'd1oca24q5dwo6d.cloudfront.net', 'd2um2qdswy1tb0.cloudfront.net',
+    'vod-secure.twitch.tv', 'vod-metro.twitch.tv', 'vod-pop-secure.twitch.tv',
+];
+
+async function sha1hex(s) {
+    const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(s));
+    return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// GET /api/recover-list?channel= — diffusions passées récupérables (source externe).
+async function handleRecoverList(url) {
+    const channel = (url.searchParams.get('channel') || '').toLowerCase();
+    if (!LOGIN_RE.test(channel)) return jsonError('Chaîne invalide', 400);
+    let arr;
+    try {
+        const r = await fetch(`https://api.vodvod.top/channels/@${channel}`,
+            { headers: { 'User-Agent': REQUEST_HEADERS['User-Agent'], Accept: 'application/json' } });
+        if (!r.ok) return jsonResponse({ streams: [] });
+        arr = await r.json();
+    } catch (e) { return jsonResponse({ streams: [] }); }
+    const streams = (Array.isArray(arr) ? arr : []).map((it) => {
+        const m = it.Metadata || {};
+        const sid = typeof m.StreamID === 'string' ? m.StreamID : (m.StreamID != null ? String(m.StreamID) : '');
+        const start = Date.parse(m.StartTime);
+        if (!VOD_ID_RE.test(sid) || !Number.isFinite(start)) return null;
+        return {
+            streamID: sid, login: String(m.StreamerLoginAtStart || channel).toLowerCase(),
+            epoch: Math.floor(start / 1000), start: m.StartTime,
+            title: String(m.TitleAtStart || ''), game: String(m.GameNameAtStart || ''),
+            maxViews: Number(m.MaxViews) || 0,
+        };
+    }).filter(Boolean);
+    return jsonResponse({ streams });
+}
+
+// Premier hôte servant la playlist, sondé en parallèle (borné par la taille de la liste).
+async function firstRecoverHost(folder, hosts) {
+    const checks = await Promise.all(hosts.map(async (h) => {
+        try {
+            const r = await fetch(`https://${h}/${folder}/chunked/index-dvr.m3u8`,
+                { method: 'HEAD', headers: REQUEST_HEADERS });
+            return r.status === 200 ? h : null;
+        } catch (e) { return null; }
+    }));
+    return checks.find(Boolean) || null;
+}
+
+// GET /api/recover-resolve?login=&streamID=&epoch= — reconstruit la playlist.
+// Sondes plafonnées (décalage 0 sur tous les hôtes, puis ±1 sur les plus
+// courants) pour tenir sous la limite de sous-requêtes du plan gratuit.
+async function handleRecoverResolve(url, workerOrigin) {
+    const login = (url.searchParams.get('login') || '').toLowerCase();
+    const streamID = url.searchParams.get('streamID') || '';
+    const epoch = parseInt(url.searchParams.get('epoch') || '', 10);
+    if (!LOGIN_RE.test(login) || !VOD_ID_RE.test(streamID) || !Number.isFinite(epoch)) {
+        return jsonError('Paramètres invalides', 400);
+    }
+    const useProxy = url.searchParams.get('proxy') !== 'false';
+    const plans = [
+        { offsets: [0], hosts: RECOVER_HOSTS },
+        { offsets: [-1, 1], hosts: RECOVER_HOSTS.slice(0, 8) },
+    ];
+    for (const plan of plans) {
+        for (const off of plan.offsets) {
+            const key = `${login}_${streamID}_${epoch + off}`;
+            const folder = (await sha1hex(key)).slice(0, 20) + `_${key}`;
+            const host = await firstRecoverHost(folder, plan.hosts);
+            if (host) {
+                const media = `https://${host}/${folder}/chunked/index-dvr.m3u8`;
+                const link = useProxy ? `${workerOrigin}/api/proxy?url=${encodeURIComponent(media)}&isVod=true` : media;
+                return jsonResponse({ links: { Source: link }, best: link, info: 'Recovered' });
+            }
+        }
+    }
+    return jsonError('VOD introuvable', 404);
 }
 
 // --- LE PROXY ---

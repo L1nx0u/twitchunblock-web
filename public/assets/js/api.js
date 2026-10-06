@@ -379,6 +379,17 @@ export function getChannelVideos(login) {
   return workerJson(`/api/get-channel-videos?name=${encodeURIComponent(login)}`)
 }
 
+// ── Récupération de VODs supprimées ──────────────────────────────────────────
+// Tout passe par le Worker : le navigateur ne peut joindre ni la source de
+// métadonnées ni le CDN de Twitch (CORS).
+export function getRecoverableStreams(channel) {
+  return workerJson(`/api/recover-list?channel=${encodeURIComponent(channel)}`)
+}
+/** Liens d'une diffusion supprimée, ou lève (404) si le CDN ne la sert plus. */
+export function resolveRecovery(login, streamID, epoch) {
+  return workerJson(`/api/recover-resolve?login=${encodeURIComponent(login)}&streamID=${encodeURIComponent(streamID)}&epoch=${encodeURIComponent(epoch)}`)
+}
+
 // La sauvegarde exige le jeton Twitch de son propriétaire : le Worker le fait
 // confirmer par Twitch et vérifie qu'il correspond à l'identifiant.
 const authHeader = () => (store.token ? { Authorization: `Bearer ${store.token}` } : {})

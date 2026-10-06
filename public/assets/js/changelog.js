@@ -6,6 +6,20 @@
 
 export const CHANGELOG = [
   {
+    version: '2026.10.06',
+    items: {
+      fr: [
+        'Nouvel onglet « Supprimées » sur la page d’une chaîne : récupère les VODs récemment supprimées, tant que Twitch sert encore leurs segments.',
+      ],
+      en: [
+        'New “Deleted” tab on a channel page: recover recently deleted VODs, while Twitch still serves their segments.',
+      ],
+      es: [
+        'Nueva pestaña «Eliminados» en la página de un canal: recupera VODs borrados recientemente, mientras Twitch siga sirviendo sus segmentos.',
+      ],
+    },
+  },
+  {
     version: '2026.10.05c',
     items: {
       fr: [
