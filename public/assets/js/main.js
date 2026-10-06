@@ -341,8 +341,9 @@ const actions = {
     b.classList.toggle('on', on)
     b.innerHTML = `${icon('heart', 15)}<span>${esc(t(on ? 'following' : 'follow'))}</span>`
   },
-  'whats-new': () => showWhatsNew(CHANGELOG.slice(0, 3)),
-  'replay-tutorial': () => showWelcome(0),
+  'whats-new': () => showWhatsNew(CHANGELOG, 'changelog'),
+  'replay-tutorial': () => startTour(),
+  'home-offline': () => setHomeTab('offline'),
   'toggle-layout': () => { store.prefs.homeList = !store.prefs.homeList; store.savePrefs(); applyLayout() },
   'follow-local': (e) => {
     const b = e.target.closest('[data-follow]')
@@ -506,21 +507,22 @@ async function loadFollowed({ silent = false } = {}) {
       </div>`
     if (!local.length) { grid.innerHTML = loginCard(false); renderOffline([]); return }
     // Sans compte : les chaînes suivies sur cet appareil, par la requête publique.
-    if (!silent) grid.innerHTML = skeleton(Math.min(4, local.length))
+    if (!silent) { grid.innerHTML = skeleton(Math.min(4, local.length)); offlinePending() }
     try {
       const channels = await api.getChannelsByLogins(local)
       if (session.token) return
       const live = channels.filter((c) => c.stream).map((c) => c.stream).sort((a, b) => b.viewers - a.viewers)
-      grid.innerHTML = (live.length ? live.map(streamCard).join('') : emptyState(t('no_live_followed'), 'heart')) + loginCard(true)
-      renderOffline(channels.filter((c) => !c.stream))
+      const offline = channels.filter((c) => !c.stream)
+      grid.innerHTML = (live.length ? live.map(streamCard).join('') : noLiveFollowed(offline.length)) + loginCard(true)
+      renderOffline(offline, live.length > 0)
     } catch {
-      if (!silent) grid.innerHTML = emptyState(t('err_loading'), 'refresh')
+      if (!silent) { grid.innerHTML = emptyState(t('err_loading'), 'refresh'); offlineFailed() }
     }
     return
   }
   head.classList.remove('logged-out')
   if (!session.userId) return
-  if (!silent) grid.innerHTML = skeleton(4)
+  if (!silent) { grid.innerHTML = skeleton(4); offlinePending() }
   const token = session.token
   try {
     // Lives du compte (Helix), plus toutes les chaînes suivies (compte +
@@ -538,38 +540,69 @@ async function loadFollowed({ silent = false } = {}) {
     const extra = (channels ?? []).filter((c) => c.stream && !known.has(c.login.toLowerCase())).map((c) => c.stream)
     // Mêlés et triés par audience, comme sur Twitch (pas relégués en bas).
     const live = [...streams, ...extra].sort((a, b) => b.viewers - a.viewers)
-    grid.innerHTML = live.length ? live.map(streamCard).join('') : emptyState(t('no_live_followed'), 'heart')
-    if (channels) renderOffline(channels.filter((c) => !c.stream))
+    const offline = channels ? channels.filter((c) => !c.stream) : null
+    grid.innerHTML = live.length ? live.map(streamCard).join('') : noLiveFollowed(offline?.length ?? 0)
+    if (offline) renderOffline(offline, live.length > 0)
+    else if (!silent) offlineFailed()
   } catch (err) {
     if (session.token !== token) return
     // Une seule nouvelle tentative : un jeton valide mais refusé par Helix
     // (autre application, droit manquant) relançait la boucle sans fin.
     if (err.status === 401 && !followedRetried) { followedRetried = true; await adoptToken(session.token); return }
     // En rafraîchissement silencieux, une panne passagère garde l'existant.
-    if (!silent) grid.innerHTML = emptyState(t('err_loading'), 'refresh')
+    if (!silent) { grid.innerHTML = emptyState(t('err_loading'), 'refresh'); offlineFailed() }
   }
 }
 
-/** Chaînes suivies hors ligne : accès direct à leur page sans chercher. */
-function renderOffline(list) {
+/** Onglet « Hors ligne » pendant le chargement, ou s'il a échoué : une
+ *  liste déjà affichée reste en place. */
+function offlinePending() {
+  const box = $('#followed-offline')
+  if (box && !box.querySelector('.offline-list')) box.innerHTML = `<p class="muted small">${esc(t('loading'))}</p>`
+}
+function offlineFailed() {
+  const box = $('#followed-offline')
+  if (box && !box.querySelector('.offline-list')) box.innerHTML = emptyState(t('err_loading'), 'refresh')
+}
+
+/** Aucune chaîne suivie en live : et, s'il y en a hors ligne, un pas vers
+ *  leur onglet. */
+function noLiveFollowed(offlineCount) {
+  return `<div class="empty">${icon('heart', 28)}<p>${esc(t('no_live_followed'))}</p>${offlineCount
+    ? `<button class="btn ghost sm" type="button" data-action="home-offline">${icon('clock', 16)}<span>${esc(t('see_offline', { n: offlineCount }))}</span></button>`
+    : ''}</div>`
+}
+
+/** Onglet « Hors ligne » : les chaînes suivies hors ligne, pour ouvrir leur
+ *  page (VODs, clips, diffusions supprimées) sans chercher. */
+function renderOffline(list, anyLive = false) {
   const box = $('#followed-offline')
   if (!box) return
   list = list.slice().sort((a, b) => a.name.localeCompare(b.name, lang()))
+  $('#offline-count').textContent = list.length ? String(list.length) : ''
   box.innerHTML = list.length ? `
-    <h3 class="sub-head">${icon('clock', 16)}<span>${esc(t('offline_channels'))}</span><small class="muted">${list.length}</small></h3>
     <div class="offline-list">${list.map((c) => `
       <button type="button" class="offline-row" data-channel="${esc(c.login)}">
         ${c.avatar ? `<img class="avatar sm" src="${esc(c.avatar)}" alt="" loading="lazy">` : `<span class="avatar sm placeholder">${esc((c.name || '?')[0])}</span>`}
         <span class="offline-text"><span>${esc(c.name)}</span>${c.lastEnd ? `<small class="muted">${esc(offlineFor(null, 0, c.lastEnd))} · ${esc(offlineDate(null, 0, c.lastEnd))}</small>` : ''}</span>
-      </button>`).join('')}</div>` : ''
+      </button>`).join('')}</div>`
+    : emptyState(t(anyLive ? 'offline_all_live' : 'offline_none'), anyLive ? 'radio' : 'heart')
 }
 
-// ── Sous-onglets de l'accueil : Suivies | Top ───────────────────────────
+// ── Sous-onglets de l'accueil : Suivies | Top | Hors ligne ───────────────
+const HOME_TABS = ['followed', 'top', 'offline']
 function applyHomeTab() {
-  const tab = store.prefs.homeTab === 'top' ? 'top' : 'followed'
+  const tab = HOME_TABS.includes(store.prefs.homeTab) ? store.prefs.homeTab : 'followed'
   for (const b of $$('#home-seg [data-home]')) b.classList.toggle('active', b.dataset.home === tab)
   $('#followed-block').hidden = tab !== 'followed'
   $('#top-block').hidden = tab !== 'top'
+  $('#offline-block').hidden = tab !== 'offline'
+}
+
+function setHomeTab(tab) {
+  store.prefs.homeTab = tab
+  store.savePrefs()
+  applyHomeTab()
 }
 
 // ── Catégories ─────────────────────────────────────────────────────────
@@ -671,10 +704,7 @@ function setupCategories() {
   $('#cat-search').addEventListener('input', debounce((e) => { cat.q = e.target.value.trim(); loadCategories() }, 350))
   $('#home-seg').addEventListener('click', (e) => {
     const b = e.target.closest('[data-home]')
-    if (!b) return
-    store.prefs.homeTab = b.dataset.home
-    store.savePrefs()
-    applyHomeTab()
+    if (b) setHomeTab(b.dataset.home)
   })
 }
 
@@ -711,8 +741,8 @@ function startLiveTicker() {
   }, 1000)
 }
 
-// ── Tutoriel du premier passage et nouveautés ──────────────────────────
-// Première visite : un court tutoriel. Ensuite, à chaque nouvelle version du
+// ── Visite guidée du premier passage et nouveautés ─────────────────────
+// Première visite : la visite guidée. Ensuite, à chaque nouvelle version du
 // site (SITE_VERSION), les nouveautés pas encore vues.
 const SEEN_VERSION = 'tu_seen_version'
 // Lu au chargement, avant que le site n'écrive quoi que ce soit : une trace
@@ -729,49 +759,211 @@ function welcomeOrWhatsNew() {
     seen = localStorage.getItem(SEEN_VERSION)
     localStorage.setItem(SEEN_VERSION, usage.SITE_VERSION)
   } catch { return }
-  if (!seen && !returning) return showWelcome(0)
+  if (!seen && !returning) return startTour()
   const unseen = seen ? CHANGELOG.filter((e) => e.version > seen) : CHANGELOG.slice(0, 1)
   if (unseen.length) showWhatsNew(unseen)
 }
 
-function showWhatsNew(entries) {
+/** Nouveautés : celles pas encore vues (au chargement), ou tout le journal
+ *  (Réglages → Journal des modifications). */
+function showWhatsNew(entries, titleKey = 'whats_new') {
   const l = lang()
   openSheet(`
-    <div class="sheet-head"><h2>${icon('sparkles', 20)} ${esc(t('whats_new'))}</h2><button class="icon-btn" type="button" data-sheet-close>${icon('x', 20)}</button></div>
+    <div class="sheet-head"><h2>${icon('sparkles', 20)} ${esc(t(titleKey))}</h2><button class="icon-btn" type="button" data-sheet-close>${icon('x', 20)}</button></div>
     ${entries.map((e) => `<div class="sheet-section whats-new">
-      <h3>${esc(e.version)}</h3>
+      <h3>${esc(versionDate(e.version))}<small>${esc(e.version)}</small></h3>
       <ul>${(e.items[l] ?? e.items.en).map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
     </div>`).join('')}
     <div class="sheet-section"><button class="btn primary" type="button" data-sheet-close style="width:100%">${esc(t('got_it'))}</button></div>`)
   $('#sheet').onclick = (e) => { if (e.target.closest('[data-sheet-close]')) closeSheet() }
 }
 
-const WELCOME = [
-  ['play', 'wl_1_title', 'wl_1_text'],
-  ['search', 'wl_2_title', 'wl_2_text'],
-  ['heart', 'wl_3_title', 'wl_3_text'],
-  ['chat', 'wl_4_title', 'wl_4_text'],
+/** « 2026.10.05c » → « 5 octobre 2026 », dans la langue du site. */
+function versionDate(version) {
+  const m = /^(\d{4})\.(\d{2})\.(\d{2})/.exec(version)
+  if (!m) return version
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]))
+    .toLocaleDateString(lang(), { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+}
+
+// ── Visite guidée ────────────────────────────────────────────────────────
+// Plutôt que des pages d'explication détachées du site, la visite se pose
+// sur les vrais écrans : un voile sombre percé autour de l'élément montré,
+// et une bulle qui l'explique. Elle ouvre les onglets d'elle-même et, aux
+// étapes « appuie dessus », c'est le vrai bouton qui fait avancer.
+const TOUR = [
+  { card: 'welcome', tab: 'discover' },
+  { sel: '#home-seg', tab: 'discover', icon: 'radio', title: 'tour_home_title', text: 'tour_home_text' },
+  { sel: '[data-tab="channel"]', tab: 'discover', icon: 'user', title: 'nav_channel', text: 'tour_channel_tab_text', tap: true },
+  { sel: '#channel-form', tab: 'channel', icon: 'search', title: 'tour_channel_title', text: 'tour_channel_text' },
+  { sel: '[data-tab="link"]', tab: 'channel', icon: 'link', title: 'nav_link', text: 'tour_link_text', tap: true },
+  { sel: '[data-tab="categories"]', tab: 'link', icon: 'layers', title: 'nav_categories', text: 'tour_cat_text', tap: true },
+  { sel: '.topbar-actions', tab: 'categories', icon: 'settings', title: 'tour_settings_title', text: 'tour_settings_text' },
+  { card: 'player', tab: 'discover' },
 ]
-function showWelcome(step) {
-  const [ic, title, text] = WELCOME[step]
-  const last = step === WELCOME.length - 1
-  openSheet(`
-    <div class="welcome">
-      <button class="icon-btn welcome-skip" type="button" data-sheet-close title="${esc(t('close'))}">${icon('x', 20)}</button>
-      <div class="welcome-ic">${icon(ic, 40)}</div>
-      <h2>${esc(t(title))}</h2>
-      <p>${esc(t(text))}</p>
-      <div class="welcome-dots">${WELCOME.map((_, i) => `<i class="${i === step ? 'on' : ''}"></i>`).join('')}</div>
-      <div class="welcome-actions">
-        ${step > 0 ? `<button class="btn ghost" type="button" data-step="${step - 1}">${esc(t('back'))}</button>` : ''}
-        <button class="btn primary" type="button" ${last ? 'data-sheet-close' : `data-step="${step + 1}"`}>${esc(t(last ? 'wl_start' : 'next'))}</button>
-      </div>
-    </div>`)
-  $('#sheet').onclick = (e) => {
-    if (e.target.closest('[data-sheet-close]')) return closeSheet()
-    const s = e.target.closest('[data-step]')?.dataset.step
-    if (s != null) showWelcome(Number(s))
+const TOUR_TIPS = [['play', 'tour_tip_keys'], ['clock', 'tour_tip_seek'], ['chevronDown', 'tour_tip_mini'], ['sparkles', 'tour_tip_app']]
+const tour = { step: -1, el: null }
+
+function startTour() {
+  closeSheet()
+  if (!$('#watch').hidden) minimizeWatch()
+  let root = $('#tour')
+  if (!root) {
+    root = document.createElement('div')
+    root.id = 'tour'
+    root.className = 'tour'
+    root.innerHTML = '<div class="tour-hole"></div><div class="tour-pop" role="dialog" aria-modal="true"></div>'
+    root.addEventListener('click', onTourClick)
+    document.body.append(root)
   }
+  document.documentElement.classList.add('touring')
+  window.addEventListener('resize', placeTour)
+  document.addEventListener('keydown', onTourKey, true)
+  goTour(0)
+}
+
+function endTour() {
+  $('#tour')?.remove()
+  document.documentElement.classList.remove('touring')
+  window.removeEventListener('resize', placeTour)
+  document.removeEventListener('keydown', onTourKey, true)
+  tour.step = -1
+  tour.el = null
+  setTab('discover')
+}
+
+function goTour(i) {
+  if (i < 0) return
+  if (i >= TOUR.length) return endTour()
+  tour.step = i
+  if (state.tab !== TOUR[i].tab) setTab(TOUR[i].tab)
+  renderTour()
+}
+
+/** Suivant : aux étapes « appuie dessus », c'est le vrai bouton qui agit. */
+function nextTour() {
+  const s = TOUR[tour.step]
+  if (s?.tap && tour.el) tour.el.click()
+  goTour(tour.step + 1)
+}
+
+/** L'exemplaire affiché d'un élément : les onglets existent en haut
+ *  (ordinateur) et dans la barre du bas (téléphone). */
+function visibleEl(sel) {
+  return [...document.querySelectorAll(sel)].find((el) => el.getClientRects().length > 0) ?? null
+}
+
+function renderTour() {
+  const s = TOUR[tour.step]
+  const pop = $('#tour .tour-pop')
+  if (!pop) return
+  if (s.card === 'welcome') {
+    pop.innerHTML = `
+      <div class="tour-badge">${icon('twitch', 34)}</div>
+      <h2>${esc(t('tour_welcome_title'))}</h2>
+      <p>${esc(t('tour_welcome_text'))}</p>
+      <div class="segmented full tour-langs">
+        <button type="button" data-tour-lang="auto" class="${store.prefs.lang ? '' : 'active'}">${esc(t('lang_auto'))}</button>
+        ${LANGS.map((l) => `<button type="button" data-tour-lang="${l.id}" class="${store.prefs.lang === l.id ? 'active' : ''}">${esc(l.label)}</button>`).join('')}
+      </div>
+      <button class="btn primary full" type="button" data-tour="next">${esc(t('tour_start'))}</button>
+      <button class="link-btn" type="button" data-tour="skip">${esc(t('tour_skip'))}</button>`
+  } else if (s.card === 'player') {
+    pop.innerHTML = `
+      <div class="tour-badge">${icon('play', 34)}</div>
+      <h2>${esc(t('tour_player_title'))}</h2>
+      <ul class="tour-tips">${TOUR_TIPS.map(([ic, k]) => `<li>${icon(ic, 18)}<span>${esc(t(k))}</span></li>`).join('')}</ul>
+      <button class="btn primary full" type="button" data-tour="next">${esc(t('tour_done'))}</button>`
+  } else {
+    pop.innerHTML = `
+      <div class="tour-head"><span class="tour-ic">${icon(s.icon, 16)}</span><strong>${esc(t(s.title))}</strong><small class="muted">${tour.step}/${TOUR.length - 2}</small></div>
+      <p>${esc(t(s.text))}</p>
+      ${s.tap ? `<p class="tour-tap">${icon('chevronRight', 14)}<span>${esc(t('tour_tap'))}</span></p>` : ''}
+      <div class="tour-actions">
+        <button class="link-btn" type="button" data-tour="skip">${esc(t('tour_skip'))}</button>
+        <button class="icon-btn sm" type="button" data-tour="back" title="${esc(t('back'))}" aria-label="${esc(t('back'))}">${icon('chevronLeft', 18)}</button>
+        <button class="btn primary sm" type="button" data-tour="next">${esc(t('next'))}</button>
+      </div>`
+  }
+  pop.classList.toggle('card', Boolean(s.card))
+  placeTour()
+  pop.querySelector('[data-tour="next"]')?.focus({ preventScroll: true })
+}
+
+/** Perce le voile autour de l'élément montré et cale la bulle dessous (ou
+ *  dessus, s'il est en bas de l'écran). Refait à chaque redimensionnement. */
+function placeTour() {
+  const root = $('#tour')
+  if (!root || tour.step < 0) return
+  const s = TOUR[tour.step]
+  const hole = root.querySelector('.tour-hole')
+  const pop = root.querySelector('.tour-pop')
+  const el = s.sel ? visibleEl(s.sel) : null
+  tour.el = el
+  root.classList.toggle('tap', Boolean(el && s.tap))
+  if (!el) {
+    // Carte centrée (accueil, astuces), ou élément introuvable.
+    root.classList.add('no-hole')
+    Object.assign(hole.style, { top: '50%', left: '50%', width: '0px', height: '0px' })
+    pop.style.transition = 'none'
+    Object.assign(pop.style, { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' })
+    void pop.offsetWidth
+    pop.style.transition = ''
+    return
+  }
+  // En quittant une carte centrée, la bulle apparaît à sa place au lieu de
+  // glisser depuis le centre (seul le trou s'anime, depuis le centre).
+  const fromCard = root.classList.contains('no-hole')
+  root.classList.remove('no-hole')
+  if (fromCard) pop.style.transition = 'none'
+  el.scrollIntoView({ block: 'nearest' })
+  const r = el.getBoundingClientRect()
+  const pad = 6
+  Object.assign(hole.style, { top: `${r.top - pad}px`, left: `${r.left - pad}px`, width: `${r.width + pad * 2}px`, height: `${r.height + pad * 2}px` })
+  const vw = document.documentElement.clientWidth
+  const vh = window.innerHeight
+  const pw = pop.offsetWidth
+  const ph = pop.offsetHeight
+  const below = r.top + r.height / 2 < vh / 2
+  const top = below ? r.bottom + pad + 12 : r.top - pad - 12 - ph
+  const left = Math.min(Math.max(12, r.left + r.width / 2 - pw / 2), vw - pw - 12)
+  Object.assign(pop.style, { top: `${Math.max(12, Math.min(top, vh - ph - 12))}px`, left: `${left}px`, transform: 'none' })
+  if (fromCard) { void pop.offsetWidth; pop.style.transition = '' }
+}
+
+function onTourClick(e) {
+  // Les clics de la visite ne concernent pas le reste du site.
+  e.stopPropagation()
+  const l = e.target.closest('[data-tour-lang]')?.dataset.tourLang
+  if (l) return setTourLang(l)
+  const act = e.target.closest('[data-tour]')?.dataset.tour
+  if (act === 'skip') return endTour()
+  if (act === 'back') return goTour(tour.step - 1)
+  if (act === 'next') return nextTour()
+  // Clic dans le trou d'une étape « appuie dessus » : le vrai bouton.
+  const s = TOUR[tour.step]
+  if (!s?.tap || !tour.el || e.target.closest('.tour-pop')) return
+  const r = tour.el.getBoundingClientRect()
+  if (e.clientX >= r.left - 6 && e.clientX <= r.right + 6 && e.clientY >= r.top - 6 && e.clientY <= r.bottom + 6) nextTour()
+}
+
+function onTourKey(e) {
+  const go = { Escape: endTour, ArrowRight: nextTour, ArrowLeft: () => goTour(tour.step - 1) }[e.key]
+  if (!go) return
+  e.preventDefault()
+  e.stopPropagation()
+  go()
+}
+
+/** La langue d'abord : toute la visite, et le site derrière, la suivent. */
+function setTourLang(l) {
+  store.prefs.lang = l === 'auto' ? null : l
+  setLang(l === 'auto' ? deviceLang() : l)
+  store.savePrefs()
+  applyStatic()
+  renderAccount()
+  refreshTexts()
+  renderTour()
 }
 
 function creditsHtml() {
@@ -890,8 +1082,9 @@ async function searchChannel(raw) {
   renderChannel(keyword)
 }
 
-// Onglets de la page streamer, comme sur Twitch.
-const CHANNEL_TABS = [['vods', 'vods'], ['highlights', 'highlights'], ['playlists', 'playlists'], ['clips', 'clips'], ['recover', 'recover_tab']]
+// Onglets de la page streamer, comme sur Twitch. « Supprimées » juste après
+// les VODs : ce sont des VODs aussi, celles que Twitch a effacées.
+const CHANNEL_TABS = [['vods', 'vods'], ['recover', 'recover_tab'], ['highlights', 'highlights'], ['playlists', 'playlists'], ['clips', 'clips']]
 
 /** Charge le contenu de l'onglet à sa première ouverture. */
 function loadChannelTab(tab) {
@@ -1044,6 +1237,10 @@ function renderChannel(keyword = '') {
       ${keyword ? `<p class="muted filter-count">${esc(filtered.length ? t('filter_count', { n: filtered.length, k: keyword }) : t('filter_none', { k: keyword }))}</p>` : ''}
       <div class="grid vods">${filtered.length ? filtered.map((v) => vodCard(v, name)).join('') : (keyword ? '' : emptyState(t('no_vod'), 'film'))}</div>
     </section>
+    <section class="block" data-cpanel="recover" ${tab === 'recover' ? '' : 'hidden'}>
+      <p class="muted small recover-hint">${esc(t('recover_hint'))}</p>
+      <div id="channel-recover"></div>
+    </section>
     <section class="block" data-cpanel="highlights" ${tab === 'highlights' ? '' : 'hidden'}>
       <div class="grid vods" id="channel-highlights"></div>
     </section>
@@ -1056,10 +1253,6 @@ function renderChannel(keyword = '') {
         </div>
       </div>
       <div class="grid vods" id="channel-clips"></div>
-    </section>
-    <section class="block" data-cpanel="recover" ${tab === 'recover' ? '' : 'hidden'}>
-      <p class="muted small recover-hint">${esc(t('recover_hint'))}</p>
-      <div id="channel-recover"></div>
     </section>`
   loadChannelTab(tab)
 
@@ -1777,7 +1970,7 @@ function openSettings() {
         <a class="sheet-row" href="${api.GITHUB_URL}" target="_blank" rel="noopener">${icon('github', 18)}<span>${esc(t('source_site'))}</span>${icon('external', 16)}</a>
         <a class="sheet-row" href="${api.APP_GITHUB_URL}" target="_blank" rel="noopener">${icon('github', 18)}<span>${esc(t('source_app'))}</span>${icon('external', 16)}</a>
         <a class="sheet-row" href="${api.DISCORD_URL}" target="_blank" rel="noopener">${icon('discord', 18)}<span>${esc(t('discord_join'))}</span>${icon('external', 16)}</a>
-        <button class="sheet-row" type="button" data-action="whats-new">${icon('sparkles', 18)}<span>${esc(t('whats_new'))}</span></button>
+        <button class="sheet-row" type="button" data-action="whats-new">${icon('sparkles', 18)}<span>${esc(t('changelog'))}</span></button>
         <button class="sheet-row" type="button" data-action="replay-tutorial">${icon('play', 18)}<span>${esc(t('replay_tutorial'))}</span></button>
       </div>
       ${creditsHtml()}

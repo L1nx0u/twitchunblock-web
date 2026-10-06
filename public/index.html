@@ -80,8 +80,9 @@
         </section>
 
         <div class="segmented home-tabs" id="home-seg">
-          <button type="button" data-home="followed" data-i18n="followed"></button>
+          <button type="button" data-home="followed" data-i18n="home_followed"></button>
           <button type="button" data-home="top" data-i18n="top"></button>
+          <button type="button" data-home="offline" data-i18n="offline_channels"></button>
         </div>
 
         <section class="block" id="followed-block">
@@ -93,6 +94,17 @@
             </span>
           </div>
           <div class="grid" id="followed-grid"></div>
+        </section>
+
+        <!-- Chaînes suivies hors ligne : leur propre onglet, pour que
+             « Suivies » ne montre que ce qui est en direct. -->
+        <section class="block" id="offline-block" hidden>
+          <div class="block-head">
+            <h2><span data-icon="clock" data-size="18"></span><span data-i18n="offline_channels"></span><small class="muted" id="offline-count"></small></h2>
+            <span class="block-tools">
+              <button class="icon-btn sm" type="button" data-action="refresh-discover" data-i18n-title="refresh" data-icon="refresh" data-size="18"></button>
+            </span>
+          </div>
           <div id="followed-offline"></div>
         </section>
 

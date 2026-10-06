@@ -6,6 +6,29 @@
 
 export const CHANGELOG = [
   {
+    version: '2026.10.06b',
+    items: {
+      fr: [
+        'Accueil : nouvel onglet « Hors ligne » pour tes chaînes suivies hors ligne ; « Suivies » ne montre plus que les lives.',
+        'Page d’une chaîne : l’onglet « Supprimées » passe juste après les VODs.',
+        'Nouvelle visite guidée interactive, qui montre les vrais boutons du site (Réglages > Revoir le tutoriel).',
+        'Réglages : le « Journal des modifications » affiche toutes les nouveautés depuis le début.',
+      ],
+      en: [
+        'Home: new “Offline” tab for your offline followed channels; “Following” now only shows who is live.',
+        'Channel page: the “Deleted” tab now comes right after VODs.',
+        'New interactive guided tour that points at the real buttons of the site (Settings > Replay the tutorial).',
+        'Settings: the “Changelog” lists every update since the beginning.',
+      ],
+      es: [
+        'Inicio: nueva pestaña «Desconectados» para tus canales seguidos sin directo; «Seguidos» ya solo muestra los directos.',
+        'Página de un canal: la pestaña «Eliminados» va justo después de los VODs.',
+        'Nueva visita guiada interactiva, que señala los botones reales del sitio (Ajustes > Ver el tutorial otra vez).',
+        'Ajustes: el «Registro de cambios» muestra todas las novedades desde el principio.',
+      ],
+    },
+  },
+  {
     version: '2026.10.06',
     items: {
       fr: [
