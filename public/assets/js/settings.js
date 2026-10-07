@@ -10,9 +10,8 @@ import { refs, session, state } from './state.js'
 import { closeSheet, openSheet } from './ui.js'
 import * as api from './api.js'
 import { store } from './store.js'
-import * as usage from './usage.js'
 import { LANGS, applyStatic, deviceLang, lang, setLang, t } from './i18n.js'
-import { $, esc, formatViewers, icon, isMobile, toast } from './util.js'
+import { $, esc, icon, isMobile, toast, uid } from './util.js'
 import { CHANGELOG } from './changelog.js'
 import { deviceTopLang, topLangName, TOP_LANGS } from './home.js'
 import { qualityLabel } from './player.js'
@@ -132,12 +131,6 @@ export function openSettings() {
       <input type="file" id="import-file" accept="application/json,.json" hidden>
     </div>
     <div class="sheet-section">
-      <h3>${esc(t('usage'))}</h3>
-      <div class="usage-stats" id="usage-stats"><p class="muted small">${esc(t('loading'))}</p></div>
-      <a class="sheet-row" href="/stats" target="_blank" rel="noopener">${icon('trending', 18)}<span>${esc(t('usage_details'))}</span>${icon('external', 16)}</a>
-      ${toggle('set-usage', t('share_usage'), p.shareUsage, t('share_usage_sub'))}
-    </div>
-    <div class="sheet-section">
       <h3>${esc(t('about'))}</h3>
       <p class="muted small">${esc(t('about_text'))}</p>
       <div class="sheet-group">
@@ -149,7 +142,6 @@ export function openSettings() {
       ${creditsHtml()}
     </div>`)
   renderSettingsAccount()
-  renderUsageStats()
 
   const sheet = $('#sheet')
   sheet.onclick = (e) => {
@@ -195,11 +187,6 @@ export function openSettings() {
       renderTopLocal()
       loadTop('local')
       return
-    }
-    if (id === 'set-usage') {
-      p.shareUsage = e.target.checked
-      if (p.shareUsage) usage.ping(true)
-      else usage.forget()
     }
     store.savePrefs()
     refs.chat.applyPrefs()
@@ -287,13 +274,31 @@ async function importData(file) {
 }
 
 // ── Annonce du développeur ─────────────────────────────────────────────
-// Même annonce que dans l'app (publiée depuis /stats), en haut de l'accueil.
-// Relue à l'ouverture et au retour sur l'onglet (au plus toutes les 5 min) ;
-// une annonce fermée ne revient pas (une nouvelle, si).
+// Même annonce que dans l'app. Relue à l'ouverture et au retour sur
+// l'onglet (au plus toutes les 5 min) ; une annonce fermée ne revient pas
+// (une nouvelle, si).
 const ANN_DISMISSED = 'tu_ann_dismissed'
 // Réactions : une par appareil, la même toucher deux fois la retire.
 const ANN_REACTIONS = ['👍', '❤️', '🔥', '😂', '👎']
 const ANN_REACTED = 'tu_ann_reacted'
+// Identifiant stable de cet appareil pour les réactions aux annonces : gardé
+// ici uniquement, jamais croisé avec quoi que ce soit d'autre.
+function deviceInstallId() {
+  try {
+    let id = localStorage.getItem('tu_install_id')
+    if (!/^[0-9a-f-]{36}$/i.test(id || '')) {
+      id = uid()
+      if (!/^[0-9a-f-]{36}$/i.test(id)) {
+        id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0
+          return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
+        })
+      }
+      localStorage.setItem('tu_install_id', id)
+    }
+    return id
+  } catch { return uid() }
+}
 function annReactions() { try { return JSON.parse(localStorage.getItem(ANN_REACTED) || '{}') } catch { return {} } }
 function annReaction(id) { return annReactions()[id] ?? null }
 async function reactToAnnouncement(a, emoji) {
@@ -312,7 +317,7 @@ async function reactToAnnouncement(a, emoji) {
   try {
     const res = await fetch(`${api.API_URL}/api/announcement/react`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ announcementId: a.id, id: usage.installId(), emoji: next }),
+      body: JSON.stringify({ announcementId: a.id, id: deviceInstallId(), emoji: next }),
     })
     if (!res.ok) throw new Error(String(res.status))
   } catch { save(prev); toast(t('react_failed')) }
@@ -356,27 +361,6 @@ export function renderAnnouncement() {
     try { localStorage.setItem(ANN_DISMISSED, JSON.stringify([...dismissed, a.id].slice(-20))) } catch {}
     box.hidden = true
   }
-}
-
-/** Combien de gens utilisent le site et l'app : aujourd'hui, 7 et 30 jours. */
-async function renderUsageStats() {
-  const box = $('#usage-stats')
-  if (!box) return
-  let s = null
-  try { s = await usage.fetchStats() } catch {}
-  if (!$('#usage-stats')) return
-  if (!s) { box.innerHTML = `<p class="muted small">${esc(t('usage_unavailable'))}</p>`; return }
-  const web = s.platforms?.web ?? { today: 0, week: 0, month: 0 }
-  const ios = s.platforms?.ios ?? { today: s.today, week: s.week, month: s.month }
-  const row = (label, k) => `
-    <div class="usage-cell">
-      <span class="usage-label">${esc(label)}</span>
-      <strong>${esc(formatViewers(s[k] ?? 0))}</strong>
-      <span class="usage-split">${icon('globe', 12)} ${esc(formatViewers(web[k] ?? 0))} · iOS ${esc(formatViewers(ios[k] ?? 0))}</span>
-    </div>`
-  box.innerHTML = `
-    <div class="usage-grid">${row(t('usage_today'), 'today')}${row(t('usage_week'), 'week')}${row(t('usage_month'), 'month')}</div>
-    <p class="muted small">${esc(t('usage_note'))}</p>`
 }
 
 export function renderSettingsAccount() {

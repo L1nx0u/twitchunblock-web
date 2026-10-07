@@ -65,13 +65,8 @@ export default {
                 case '/api/sync/post': return await handleSyncPost(request, env);
 
                 // Comptage d'utilisation (app iOS et site)
-                case '/api/ping': return await handlePing(request, env);
-                case '/api/stats': return await cachedStats(request, env, ctx);
 
                 // Outils d'administration (compte du propriétaire uniquement)
-                case '/api/admin/me': return await handleAdminMe(request);
-                case '/api/admin/usage': return await handleAdminUsage(request, env);
-                case '/api/admin/usage/delete': return await handleAdminUsageDelete(request, env);
                 case '/api/admin/sync/delete': return await handleAdminSyncDelete(request, env);
 
                 // Annonces affichées dans l'app (lecture publique, écriture admin)
@@ -578,120 +573,13 @@ function getRequestHeaders(login) {
     return { ...REQUEST_HEADERS, 'Referer': `https://www.twitch.tv/${login}` };
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Comptage d'utilisation — app iOS et site.
-//
-//  Une clé par installation (app) ou par navigateur (site) : `usage_<uuid>`,
-//  valeur vide, tout dans les métadonnées. Stocké : un identifiant tiré au
-//  hasard, des dates (sans l'heure), une version, la plateforme. Pas
-//  d'adresse IP, pas d'en-tête, rien du compte Twitch. Les clés expirent
-//  seules au bout de 35 jours. Préfixe `usage_` : aucune collision avec la
-//  sauvegarde (`user_`).
-// ═══════════════════════════════════════════════════════════════════════════
-const USAGE_PREFIX = 'usage_';
-const USAGE_ACCOUNT_PREFIX = 'usage_a_';
 /** Comptes Twitch administrateurs (ID numérique : le pseudo peut changer).
  *  Vide par défaut : personne n'est admin tant que la variable
  *  d'environnement ADMIN_TWITCH_IDS n'est pas renseignée. Refus par défaut —
  *  un fork ne doit pas hériter de l'admin de l'instance d'origine. */
 let ADMIN_IDS = [];
-const USAGE_RETENTION_DAYS = 35;
-const PLATFORMS = ['ios', 'web'];
-// Origines du site dont les pings « web » sont comptés (variable
-// d'environnement SITE_ORIGINS). Vide = toutes acceptées : un ping « web »
-// venu d'ailleurs (copie locale, tests, préversions) n'est écarté que sur une
-// instance qui renseigne la liste. L'app iOS n'envoie pas d'en-tête Origin et
-// n'est pas concernée.
-let USAGE_ORIGINS = [];
 // Navigateurs automatisés et robots qui exécutent le JavaScript.
 const BOT_UA = /headless|bot\b|crawler|spider|slurp|playwright|puppeteer|selenium|phantomjs|lighthouse|preview/i;
-
-// POST /api/ping — { id, version, platform } enregistre ; { id, forget: true } efface.
-async function handlePing(request, env) {
-    if (request.method !== 'POST') return jsonError('Method Not Allowed', 405);
-    if (!env.DB) return jsonError("Base D1 'DB' non liée au Worker.", 500);
-    let body;
-    try { body = await request.json(); } catch (e) { return jsonError('JSON invalide', 400); }
-
-    // Chaque ping est une écriture D1 (100 000 par jour en gratuit) : une même
-    // adresse ne peut pas en enchaîner des centaines. Compté en mémoire
-    // seulement, jamais stocké.
-    if (rateLimited('ping', request, 10, HOUR)) return jsonError('Trop de requêtes', 429);
-
-    // Bruit écarté sans erreur (le client n'a rien à corriger) : robots et
-    // navigateurs automatisés, et pings « web » hors du site officiel.
-    const origin = request.headers.get('Origin');
-    const ua = request.headers.get('User-Agent') || '';
-    // Liste vide = aucune restriction d'origine (auto-hébergement) ;
-    // renseignée = seuls ces sites comptent (écarte copies et tests).
-    if (BOT_UA.test(ua) || (origin && USAGE_ORIGINS.length && !USAGE_ORIGINS.includes(origin))) {
-        return jsonResponse({ ok: true, ignored: true });
-    }
-
-    // L'app officielle joint un jeton de build (en-tête X-TU-Key) qu'un fork
-    // réutilisant ce backend ne possède pas : lui compté gonflerait la base et
-    // le quota pour des utilisateurs qui ne sont pas les nôtres. Le site, lui,
-    // est déjà filtré par son origine ; le retrait (forget) passe toujours.
-    // Inactif tant que PING_KEY n'est pas défini sur le Worker : rien ne change
-    // d'ici là, et aucune installation officielle existante n'est perdue avant
-    // qu'elle n'embarque le jeton.
-    const fromOfficialSite = origin && USAGE_ORIGINS.includes(origin);
-    if (env.PING_KEY && !fromOfficialSite && body.forget !== true
-        && request.headers.get('X-TU-Key') !== env.PING_KEY) {
-        return jsonResponse({ ok: true, ignored: true });
-    }
-
-    // Uniquement des UUID : pas question de laisser écrire des clés libres.
-    const id = String(body.id || '');
-    if (!/^[0-9a-fA-F-]{36}$/.test(id)) return jsonError('ID invalide', 400);
-
-    // Connecté à Twitch : on compte le COMPTE (un seul, quel que soit le
-    // nombre d'appareils ou de navigateurs), clé `usage_a_<id Twitch>`.
-    // Sinon l'identifiant aléatoire de l'appareil, clé `usage_<uuid>`.
-    const who = request.headers.get('Authorization') ? await tokenIdentity(request) : null;
-    const anonKey = USAGE_PREFIX + id;
-    const key = who ? USAGE_ACCOUNT_PREFIX + who.userId : anonKey;
-
-    if (body.forget === true) {
-        await store(env).delete(anonKey);
-        if (who) await store(env).delete(key);
-        return jsonResponse({ ok: true, forgotten: true });
-    }
-
-    const day = new Date().toISOString().slice(0, 10);
-    const platform = PLATFORMS.includes(body.platform) ? body.platform : 'ios';
-    const version = String(body.version || '?').slice(0, 16);
-    let prev = {};
-    try { prev = (await store(env).getWithMetadata(key)).metadata || {}; } catch (e) {}
-
-    // Première connexion sur cet appareil : l'historique anonyme est repris
-    // par le compte, puis effacé (sinon la même personne compterait deux fois).
-    if (who) {
-        let anon = null;
-        try { anon = (await store(env).getWithMetadata(anonKey)).metadata; } catch (e) {}
-        if (anon) {
-            if (!prev.first || (anon.first && anon.first < prev.first)) prev.first = anon.first;
-            prev.days = Math.max(prev.days || 0, anon.days || 0);
-            if (anon.last && (!prev.last || anon.last > prev.last)) prev.last = anon.last;
-            // Les plateformes vues anonymement restent acquises au compte.
-            const seen = new Set([...(prev.ps ? String(prev.ps).split(',') : (prev.p ? [prev.p] : [])), ...(anon.ps ? String(anon.ps).split(',') : (anon.p ? [anon.p] : []))]);
-            prev.ps = [...seen].filter((x) => PLATFORMS.includes(x)).sort().join(',');
-            await store(env).delete(anonKey);
-        }
-    }
-
-    const platforms = [...new Set([...(prev.ps ? String(prev.ps).split(',') : (prev.p ? [prev.p] : [])), platform])].filter((x) => PLATFORMS.includes(x)).sort().join(',');
-    const days = prev.last === day ? (prev.days || 1) : (prev.days || 0) + 1;
-    const meta = { first: prev.first || day, last: day, days, v: version, p: platform, ps: platforms };
-    if (who) { meta.k = 'a'; meta.l = who.login.slice(0, 25); }
-
-    // Rien de neuf aujourd'hui : pas d'écriture.
-    if (prev.last === day && prev.v === version && prev.ps === platforms && (!who || prev.l === meta.l)) {
-        return jsonResponse({ ok: true, days, unchanged: true });
-    }
-    await store(env).put(key, '', { expirationTtl: 60 * 60 * 24 * USAGE_RETENTION_DAYS, metadata: meta });
-    return jsonResponse({ ok: true, days, account: Boolean(who) });
-}
 
 // ── Limitation par adresse ─────────────────────────────────────────────────
 // Mémoire de l'instance (chaque instance du Worker a la sienne : un abus
@@ -718,82 +606,6 @@ export function rateLimited(name, request, max, windowMs) {
     return ++hit.n > max;
 }
 
-// Les statistiques parcourent toutes les entrées de comptage (lectures D1 :
-// 5 millions par jour en gratuit). Mises en cache une minute, pour qu'une
-// page rechargée en boucle ne vide pas le quota.
-// (Cache API inopérant sur workers.dev : cache en mémoire de l'instance.)
-let statsCache = null;   // { body, until }
-async function cachedStats(request, env, ctx) {
-    if (statsCache && statsCache.until > Date.now()) {
-        return new Response(statsCache.body, { headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
-    }
-    const res = await handleStats(env);
-    if (res.ok) statsCache = { body: await res.clone().text(), until: Date.now() + 60 * 1000 };
-    return res;
-}
-
-// GET /api/stats — compteurs agrégés, au total et par plateforme.
-async function handleStats(env) {
-    if (!env.DB) return jsonError("Base D1 'DB' non liée au Worker.", 500);
-    const todayMs = Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
-    const blank = () => ({ today: 0, week: 0, month: 0, known: 0, returning: 0 });
-    const total = blank();
-    const kinds = { accounts: blank(), anonymous: blank() };
-    const platforms = Object.fromEntries(PLATFORMS.map((p) => [p, blank()]));
-    const versions = {};
-    const loyalty = { once: 0, few: 0, regular: 0, daily: 0 };
-    let returning = 0, totalDays = 0, oldestFirst = null, cursor;
-    // Série des 30 derniers jours : nouveaux (premier jour vu) et vus pour la
-    // dernière fois ce jour-là, par plateforme.
-    const dayKey = (offset) => new Date(todayMs - offset * 86400000).toISOString().slice(0, 10);
-    const daily = {};
-    for (let i = 29; i >= 0; i--) daily[dayKey(i)] = { date: dayKey(i), newIos: 0, newWeb: 0, lastIos: 0, lastWeb: 0 };
-
-    // list() renvoie les métadonnées sans lecture par clé ; 1000 clés par page.
-    do {
-        const page = await store(env).list({ prefix: USAGE_PREFIX, limit: 1000, cursor });
-        for (const key of page.keys) {
-            const meta = key.metadata || {};
-            const then = Date.parse((meta.last || '') + 'T00:00:00Z');
-            const age = Number.isNaN(then) ? Infinity : Math.floor((todayMs - then) / 86400000);
-            // Une seule plateforme par identifiant : utilisé sur l'app ET le
-            // site, il compte comme iOS (l'app est le vrai signe d'adoption).
-            const plats = meta.ps ? String(meta.ps).split(',') : [meta.p || 'ios'];
-            const plat = plats.includes('ios') || !plats.includes('web') ? 'ios' : 'web';
-            const buckets = [platforms[plat]];
-            const kind = meta.k === 'a' ? kinds.accounts : kinds.anonymous;
-            for (const c of [total, kind, ...buckets]) {
-                c.known++;
-                if (age === 0) c.today++;
-                if (age <= 7) c.week++;
-                if (age <= 30) c.month++;
-            }
-            if (age <= 30) { const v = `${meta.p || 'ios'} ${meta.v || '?'}`; versions[v] = (versions[v] || 0) + 1; }
-            const d = meta.days || 1;
-            totalDays += d;
-            if (d >= 2) { returning++; kind.returning++; for (const b of buckets) b.returning++; }
-            if (d === 1) loyalty.once++; else if (d < 7) loyalty.few++; else if (d < 30) loyalty.regular++; else loyalty.daily++;
-            if (meta.first && (!oldestFirst || meta.first < oldestFirst)) oldestFirst = meta.first;
-            const p = plat === 'web' ? 'Web' : 'Ios';
-            if (daily[meta.first]) daily[meta.first]['new' + p]++;
-            if (daily[meta.last]) daily[meta.last]['last' + p]++;
-        }
-        cursor = page.list_complete ? undefined : page.cursor;
-    } while (cursor);
-
-    const payload = {
-        ...total, platforms, accounts: kinds.accounts, anonymous: kinds.anonymous, returning, loyalty,
-        avgDays: total.known ? Math.round((totalDays / total.known) * 10) / 10 : 0,
-        oldestFirst,
-        versions: Object.entries(versions).map(([version, count]) => ({ version, count })).sort((a, b) => b.count - a.count),
-        daily: Object.values(daily),
-        generatedAt: new Date().toISOString()
-    };
-    // no-store : sinon « Actualiser » pourrait resservir les mêmes chiffres.
-    return new Response(JSON.stringify(payload), { headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
-}
-
-function jsonResponse(obj) { return new Response(JSON.stringify(obj), { headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json' } }); }
 function jsonError(msg, status) { return new Response(JSON.stringify({ error: msg }), { status, headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json' } }); }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -807,66 +619,6 @@ async function requireAdmin(request) {
 }
 
 // GET /api/admin/me — suis-je administrateur ?
-async function handleAdminMe(request) {
-    const who = await tokenIdentity(request);
-    return jsonResponse({ login: who?.login ?? null, admin: Boolean(who && ADMIN_IDS.includes(who.userId)) });
-}
-
-async function listUsage(env) {
-    const out = [];
-    let cursor;
-    do {
-        const page = await store(env).list({ prefix: USAGE_PREFIX, limit: 1000, cursor });
-        out.push(...page.keys);
-        cursor = page.list_complete ? undefined : page.cursor;
-    } while (cursor);
-    return out;
-}
-
-// GET /api/admin/usage — le détail : comptes (avec pseudo) et anonymes.
-async function handleAdminUsage(request, env) {
-    const { denied } = await requireAdmin(request);
-    if (denied) return denied;
-    const keys = await listUsage(env);
-    const entries = keys.map(({ name, metadata: m = {} }) => ({
-        key: name,
-        kind: m.k === 'a' ? 'account' : 'anonymous',
-        login: m.l || null,
-        platforms: m.ps || m.p || 'ios',
-        version: m.v || '?',
-        first: m.first || null,
-        last: m.last || null,
-        days: m.days || 1,
-    })).sort((a, b) => String(b.last).localeCompare(String(a.last)));
-    return new Response(JSON.stringify({ entries }), { headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
-}
-
-// POST /api/admin/usage/delete — { target: 'key'|'anon'|'anon-web'|'once'|'all', key? }
-async function handleAdminUsageDelete(request, env) {
-    if (request.method !== 'POST') return jsonError('Method Not Allowed', 405);
-    const { denied } = await requireAdmin(request);
-    if (denied) return denied;
-    let body;
-    try { body = await request.json(); } catch (e) { return jsonError('JSON invalide', 400); }
-    const target = String(body.target || '');
-    const keys = await listUsage(env);
-    const match = {
-        key: (k) => k.name === body.key,
-        anon: (k) => k.metadata?.k !== 'a',
-        'anon-web': (k) => k.metadata?.k !== 'a' && (k.metadata?.ps || k.metadata?.p) === 'web',
-        once: (k) => (k.metadata?.days || 1) <= 1,
-        all: () => true,
-    }[target];
-    if (!match) return jsonError('Cible inconnue', 400);
-    if (target === 'key' && !String(body.key || '').startsWith(USAGE_PREFIX)) return jsonError('Clé invalide', 400);
-    // Chaque suppression compte comme une écriture KV : plafonnée par appel.
-    const doomed = keys.filter(match).slice(0, 500);
-    for (const k of doomed) await store(env).delete(k.name);
-    statsCache = null;
-    return jsonResponse({ ok: true, deleted: doomed.length, remaining: keys.filter(match).length - doomed.length });
-}
-
-// POST /api/admin/sync/delete — { login } : efface la sauvegarde d'un compte.
 async function handleAdminSyncDelete(request, env) {
     if (request.method !== 'POST') return jsonError('Method Not Allowed', 405);
     const { denied } = await requireAdmin(request);
@@ -1039,7 +791,7 @@ async function handleMoobotCommands(url) {
 //
 //  Le KV gratuit n'offre que 1 000 écritures par jour ; D1 en offre 100 000.
 //  Pour ne rien changer à la logique éprouvée du Worker (fusion de la
-//  sauvegarde, comptage, stats, admin, annonces, réactions), D1 est exposé
+//  sauvegarde, admin, annonces, réactions), D1 est exposé
 //  avec les mêmes opérations que le KV : get, getWithMetadata, put (avec
 //  métadonnées et durée de vie), delete, list par préfixe.
 //
@@ -1047,10 +799,9 @@ async function handleMoobotCommands(url) {
 //  accède, par son binding. Toutes les requêtes sont préparées (valeurs
 //  passées par bind, jamais collées dans le SQL).
 //
-//  L'ancien KV (`TWITCH_DATA`) a été recopié dans D1 (bouton « Migrer
-//  KV → D1 » de /stats) puis délié : D1 est la seule source. Avant, une
-//  sauvegarde absente de D1 était encore relue dans le KV ; ce secours et
-//  la route /api/admin/migrate n'ont plus lieu d'être.
+//  L'ancien KV (`TWITCH_DATA`) a été recopié dans D1 puis délié : D1 est
+//  la seule source. Avant, une sauvegarde absente de D1 était encore relue
+//  dans le KV ; ce secours n'a plus lieu d'être.
 // ═══════════════════════════════════════════════════════════════════════════
 const SCHEMA = [
     `CREATE TABLE IF NOT EXISTS kv (
@@ -1125,15 +876,12 @@ function store(env) {
 // ── Réglages par variables d'environnement (auto-hébergement) ─────────────
 // ADMIN_TWITCH_IDS : identifiants Twitch admins, séparés par des virgules
 //   (absent : personne n'est admin — renseigner votre propre ID numérique).
-// SITE_ORIGINS     : origines du site dont les comptages « web » sont acceptés
-//   (absent : toutes les origines sont acceptées).
 let envApplied = false;
 function applyEnvConfig(env) {
     if (envApplied) return;
     envApplied = true;
     const list = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
     if (list(env?.ADMIN_TWITCH_IDS).length) ADMIN_IDS = list(env.ADMIN_TWITCH_IDS).filter((x) => /^\d{1,20}$/.test(x));
-    if (list(env?.SITE_ORIGINS).length) USAGE_ORIGINS = list(env.SITE_ORIGINS);
 }
 
 // ── Exports de test ────────────────────────────────────────────────────────

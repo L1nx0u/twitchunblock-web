@@ -1,10 +1,26 @@
 // ═══════════════════════════════════════════════════════════════════════════
 //  Nouveautés du site, de la plus récente à la plus ancienne. La clé suit
-//  SITE_VERSION (usage.js) : à chaque nouvelle version, ajouter une entrée
+//  SITE_VERSION (ci-dessous) : à chaque nouvelle version, ajouter une entrée
 //  en tête. Le site montre celles qu'on n'a pas encore vues.
 // ═══════════════════════════════════════════════════════════════════════════
 
+export const SITE_VERSION = '2026.10.07c'
+
 export const CHANGELOG = [
+  {
+    version: '2026.10.07c',
+    items: {
+      fr: [
+        'Fini le comptage d’utilisation : le site ne signale plus rien, et la page des statistiques disparaît.',
+      ],
+      en: [
+        'No more usage counting: the site reports nothing, and the statistics page is gone.',
+      ],
+      es: [
+        'Fin del conteo de uso: el sitio ya no informa de nada y la página de estadísticas desaparece.',
+      ],
+    },
+  },
   {
     version: '2026.10.07b',
     items: {

@@ -31,7 +31,6 @@ const DEFAULT_PREFS = {
   loadHistory: true,
   chatSize: 14,
   chatOpen: true,
-  shareUsage: true,
   chatSync: true,
   autoRaid: true,
   clickPause: true,  // un clic sur la vidéo met en pause (ordinateur)

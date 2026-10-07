@@ -16,7 +16,6 @@ node -e '
 set -- --config /app/wrangler.docker.toml --ip 0.0.0.0 --port "${PORT:-8787}" \
   --persist-to /data --show-interactive-dev-session=false --log-level "${LOG_LEVEL:-warn}"
 [ -n "$ADMIN_TWITCH_IDS" ] && set -- "$@" --var "ADMIN_TWITCH_IDS:$ADMIN_TWITCH_IDS"
-[ -n "$PUBLIC_URL" ] && set -- "$@" --var "SITE_ORIGINS:$(echo "$PUBLIC_URL" | sed 's#/*$##')"
 
 echo "TwitchUnblock : http://localhost:${PORT:-8787} (données dans /data)"
 exec wrangler dev "$@"

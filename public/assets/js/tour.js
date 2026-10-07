@@ -10,8 +10,7 @@ import { state } from './state.js'
 import { store } from './store.js'
 import { LANGS, applyStatic, deviceLang, lang, setLang, t } from './i18n.js'
 import { $, esc, icon } from './util.js'
-import * as usage from './usage.js'
-import { CHANGELOG } from './changelog.js'
+import { CHANGELOG, SITE_VERSION } from './changelog.js'
 
 // ── Visite guidée du premier passage et nouveautés ─────────────────────
 // Première visite : la visite guidée. Ensuite, à chaque nouvelle version du
@@ -29,7 +28,7 @@ export function welcomeOrWhatsNew() {
   const returning = RETURNING
   try {
     seen = localStorage.getItem(SEEN_VERSION)
-    localStorage.setItem(SEEN_VERSION, usage.SITE_VERSION)
+    localStorage.setItem(SEEN_VERSION, SITE_VERSION)
   } catch { return }
   if (!seen && !returning) return startTour()
   const unseen = seen ? CHANGELOG.filter((e) => e.version > seen) : CHANGELOG.slice(0, 1)

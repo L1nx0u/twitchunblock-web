@@ -15,7 +15,6 @@ import * as api from './api.js'
 import { store } from './store.js'
 import { applyStatic, initLang, t } from './i18n.js'
 import { loadHls } from './player.js'
-import * as usage from './usage.js'
 import { $, $$, esc, icon, isMobile, toast } from './util.js'
 import { refs, session, state } from './state.js'
 import { closeSheet, renderIcons } from './ui.js'
@@ -60,8 +59,6 @@ async function boot() {
   renderContinue()
   renderRecentChannels()
   startLiveTicker()
-  usage.ping(store.prefs.shareUsage)
-  setInterval(() => usage.ping(store.prefs.shareUsage), 15 * 60 * 1000)
   // Installable comme une app (et la coque s'ouvre hors ligne).
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     navigator.serviceWorker.register('/sw.js').catch(() => {})
@@ -101,7 +98,6 @@ export async function adoptToken(token, { silent = false } = {}) {
     api.getAvatars([session.login]).then((a) => { session.avatar = a[session.login] ?? null; renderAccount() })
   }
   if (session.userId) await pullSync()
-  if (!silent) usage.pingNow(store.prefs.shareUsage)
   state.loaded.followed = 0
   if (state.tab === 'discover') loadFollowed()
   refs.chat?.sessionChanged()
