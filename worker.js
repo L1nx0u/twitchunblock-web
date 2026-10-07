@@ -35,15 +35,15 @@ export default {
         try {
             switch (url.pathname) {
                 case '/': return new Response("Twitch Proxy - Anti 403 Ready", { headers: RESPONSE_HEADERS });
-                case '/api/get-live': return await handleGetLive(url, workerOrigin);
+                case '/api/get-live': return await handleGetLive(url, request, workerOrigin);
                 case '/api/get-channel-videos': return await handleGetVideos(url);
-                case '/api/get-m3u8': return await handleGetM3U8(url, workerOrigin);
+                case '/api/get-m3u8': return await handleGetM3U8(url, request, workerOrigin);
                 case '/api/proxy': return await handleProxy(url, request);
 
                 // Récupération de VODs supprimées (le navigateur ne peut joindre
                 // ni la source externe ni le CDN de Twitch : CORS). Voir plus bas.
-                case '/api/recover-list': return await handleRecoverList(url);
-                case '/api/recover-resolve': return await handleRecoverResolve(url, workerOrigin);
+                case '/api/recover-list': return await handleRecoverList(url, request);
+                case '/api/recover-resolve': return await handleRecoverResolve(url, request, workerOrigin);
                 
                 // Routes Sync (Sauvegarde Cloud)
                 case '/api/sync/get': return await handleSyncGet(url, request, env);
@@ -221,9 +221,11 @@ async function handleGetVideos(url) {
     } catch (e) { console.error(e); return jsonError("Twitch injoignable", 502); }
 }
 
-async function handleGetLive(url, workerOrigin) {
+async function handleGetLive(url, request, workerOrigin) {
     const login = (url.searchParams.get('name') || '').trim().toLowerCase();
     if (!LOGIN_RE.test(login)) return jsonError("Nom invalide", 400);
+    // Un appel = jusqu'à deux flux amont (Luminous puis Twitch) + GQL.
+    if (rateLimited('get-live', request, 30, MINUTE)) return jsonError("Trop de requêtes", 429);
     const useProxy = true; // On force toujours le proxy pour les Lives (CORS)
     
     let m3u8Content = "";
@@ -265,8 +267,10 @@ async function handleGetLive(url, workerOrigin) {
     }
 }
 
-async function handleGetM3U8(url, workerOrigin) {
+async function handleGetM3U8(url, request, workerOrigin) {
     const vodId = url.searchParams.get('id') || ''; if (!VOD_ID_RE.test(vodId)) return jsonError("ID invalide", 400);
+    // Le secours « storyboard » sonde jusqu'à ~20 adresses : on borne la route.
+    if (rateLimited('get-m3u8', request, 30, MINUTE)) return jsonError("Trop de requêtes", 429);
     const useProxy = url.searchParams.get('proxy') !== 'false';
     
     // --- 1. Tentative Normale ---
@@ -339,9 +343,10 @@ async function sha1hex(s) {
 }
 
 // GET /api/recover-list?channel= — diffusions passées récupérables (source externe).
-async function handleRecoverList(url) {
+async function handleRecoverList(url, request) {
     const channel = (url.searchParams.get('channel') || '').toLowerCase();
     if (!LOGIN_RE.test(channel)) return jsonError('Chaîne invalide', 400);
+    if (rateLimited('recover', request, 20, MINUTE)) return jsonError('Trop de requêtes', 429);
     let arr;
     try {
         const r = await fetch(`https://api.vodvod.top/channels/@${channel}`,
@@ -379,13 +384,15 @@ async function firstRecoverHost(folder, hosts) {
 // GET /api/recover-resolve?login=&streamID=&epoch= — reconstruit la playlist.
 // Sondes plafonnées (décalage 0 sur tous les hôtes, puis ±1 sur les plus
 // courants) pour tenir sous la limite de sous-requêtes du plan gratuit.
-async function handleRecoverResolve(url, workerOrigin) {
+async function handleRecoverResolve(url, request, workerOrigin) {
     const login = (url.searchParams.get('login') || '').toLowerCase();
     const streamID = url.searchParams.get('streamID') || '';
     const epoch = parseInt(url.searchParams.get('epoch') || '', 10);
     if (!LOGIN_RE.test(login) || !VOD_ID_RE.test(streamID) || !Number.isFinite(epoch)) {
         return jsonError('Paramètres invalides', 400);
     }
+    // La résolution sonde des dizaines d'hôtes en parallèle : on la borne.
+    if (rateLimited('recover', request, 20, MINUTE)) return jsonError('Trop de requêtes', 429);
     const useProxy = url.searchParams.get('proxy') !== 'false';
     const plans = [
         { offsets: [0], hosts: RECOVER_HOSTS },
@@ -423,9 +430,25 @@ function proxyAllowed(target) {
     } catch (e) { return false; }
 }
 
+// Playlist reconnue avant récupération : extension, ou hôtes qui n'en servent
+// que des playlists (Luminous, variantes Twitch sans « .m3u8 »).
+function isPlaylistTarget(target) {
+    if (target.includes('.m3u8')) return true;
+    try {
+        const h = new URL(target).hostname;
+        return h === 'luminous.dev' || h.endsWith('.luminous.dev') || h.endsWith('playlist.ttvnw.net');
+    } catch (e) { return false; }
+}
+
 async function handleProxy(url, request) {
     const target = url.searchParams.get('url'); if (!target) return new Response("URL manquante", { status: 400, headers: RESPONSE_HEADERS });
     if (!proxyAllowed(target)) return new Response("Hôte non autorisé", { status: 403, headers: RESPONSE_HEADERS });
+    // Seules les playlists sont bornées : les segments partent en continu (un
+    // direct en consomme un toutes les quelques secondes) et un plafond par
+    // adresse y casserait la lecture derrière un NAT partagé.
+    if (isPlaylistTarget(target) && rateLimited('proxy-pl', request, 120, MINUTE)) {
+        return new Response("Trop de requêtes", { status: 429, headers: RESPONSE_HEADERS });
+    }
     const isVod = url.searchParams.get('isVod') === 'true', workerOrigin = url.origin;
 
     let fetchHeaders = { ...REQUEST_HEADERS };
@@ -549,13 +572,19 @@ function getRequestHeaders(login) {
 // ═══════════════════════════════════════════════════════════════════════════
 const USAGE_PREFIX = 'usage_';
 const USAGE_ACCOUNT_PREFIX = 'usage_a_';
-/** Comptes Twitch administrateurs (ID numérique : le pseudo peut changer). mxfia19 */
-let ADMIN_IDS = ['839837720'];
+/** Comptes Twitch administrateurs (ID numérique : le pseudo peut changer).
+ *  Vide par défaut : personne n'est admin tant que la variable
+ *  d'environnement ADMIN_TWITCH_IDS n'est pas renseignée. Refus par défaut —
+ *  un fork ne doit pas hériter de l'admin de l'instance d'origine. */
+let ADMIN_IDS = [];
 const USAGE_RETENTION_DAYS = 35;
 const PLATFORMS = ['ios', 'web'];
-// Le site officiel : un ping « web » venu d'ailleurs (copie locale, tests,
-// préversions) n'est pas compté. L'app iOS n'envoie pas d'en-tête Origin.
-let USAGE_ORIGINS = ['https://test2-fawn-eta.vercel.app'];
+// Origines du site dont les pings « web » sont comptés (variable
+// d'environnement SITE_ORIGINS). Vide = toutes acceptées : un ping « web »
+// venu d'ailleurs (copie locale, tests, préversions) n'est écarté que sur une
+// instance qui renseigne la liste. L'app iOS n'envoie pas d'en-tête Origin et
+// n'est pas concernée.
+let USAGE_ORIGINS = [];
 // Navigateurs automatisés et robots qui exécutent le JavaScript.
 const BOT_UA = /headless|bot\b|crawler|spider|slurp|playwright|puppeteer|selenium|phantomjs|lighthouse|preview/i;
 
@@ -569,13 +598,15 @@ async function handlePing(request, env) {
     // Chaque ping est une écriture D1 (100 000 par jour en gratuit) : une même
     // adresse ne peut pas en enchaîner des centaines. Compté en mémoire
     // seulement, jamais stocké.
-    if (pingFlood(request.headers.get('CF-Connecting-IP') || '')) return jsonError('Trop de requêtes', 429);
+    if (rateLimited('ping', request, 10, HOUR)) return jsonError('Trop de requêtes', 429);
 
     // Bruit écarté sans erreur (le client n'a rien à corriger) : robots et
     // navigateurs automatisés, et pings « web » hors du site officiel.
     const origin = request.headers.get('Origin');
     const ua = request.headers.get('User-Agent') || '';
-    if (BOT_UA.test(ua) || (origin && !USAGE_ORIGINS.includes(origin))) {
+    // Liste vide = aucune restriction d'origine (auto-hébergement) ;
+    // renseignée = seuls ces sites comptent (écarte copies et tests).
+    if (BOT_UA.test(ua) || (origin && USAGE_ORIGINS.length && !USAGE_ORIGINS.includes(origin))) {
         return jsonResponse({ ok: true, ignored: true });
     }
 
@@ -644,16 +675,29 @@ async function handlePing(request, env) {
     return jsonResponse({ ok: true, days, account: Boolean(who) });
 }
 
-const pingHits = new Map();   // adresse → { n, until } (mémoire de l'instance)
-function pingFlood(ip) {
+// ── Limitation par adresse ─────────────────────────────────────────────────
+// Mémoire de l'instance (chaque instance du Worker a la sienne : un abus
+// réparti sur N instances passe N fois — acceptable sur le plan gratuit).
+// Sans CF-Connecting-IP (développement local, Docker), pas de limitation :
+// ce serait un compteur partagé par tous les utilisateurs locaux.
+const HOUR = 60 * 60 * 1000;
+const MINUTE = 60 * 1000;
+const rateBuckets = new Map();   // limite:adresse → { n, until }
+function clientIp(request) {
+    return request.headers.get('CF-Connecting-IP') || '';
+}
+function rateLimited(name, request, max, windowMs) {
+    const ip = clientIp(request);
+    if (!ip) return false;
     const now = Date.now();
-    const hit = pingHits.get(ip);
+    const key = `${name}\n${ip}`;
+    const hit = rateBuckets.get(key);
     if (!hit || hit.until < now) {
-        if (pingHits.size > 5000) pingHits.clear();
-        pingHits.set(ip, { n: 1, until: now + 60 * 60 * 1000 });
+        if (rateBuckets.size > 10000) rateBuckets.clear();
+        rateBuckets.set(key, { n: 1, until: now + windowMs });
         return false;
     }
-    return ++hit.n > 10;
+    return ++hit.n > max;
 }
 
 // Les statistiques parcourent toutes les entrées de comptage (lectures D1 :
@@ -901,21 +945,15 @@ async function handleAdminAnnouncement(request, env) {
 // lecture par clé. Les clés expirent une semaine après l'annonce.
 const REACTIONS = ['👍', '❤️', '🔥', '😂', '👎'];
 const REACTION_PREFIX = 'annr_';
-const reactHits = new Map();   // adresse → { n, until } (mémoire de l'instance)
 
 async function handleAnnouncementReact(request, env) {
     if (request.method !== 'POST') return jsonError('Method Not Allowed', 405);
     if (!env.DB) return jsonError("Base D1 'DB' non liée au Worker.", 500);
     const ua = request.headers.get('User-Agent') || '';
     if (BOT_UA.test(ua)) return jsonResponse({ ok: true, ignored: true });
-    // Chaque réaction est une écriture KV : 30 par heure et par adresse.
-    const ip = request.headers.get('CF-Connecting-IP') || '';
+    // Chaque réaction est une écriture D1 : 30 par heure et par adresse.
+    if (rateLimited('react', request, 30, HOUR)) return jsonError('Trop de requêtes', 429);
     const now = Date.now();
-    const hit = reactHits.get(ip);
-    if (!hit || hit.until < now) {
-        if (reactHits.size > 5000) reactHits.clear();
-        reactHits.set(ip, { n: 1, until: now + 60 * 60 * 1000 });
-    } else if (++hit.n > 30) return jsonError('Trop de requêtes', 429);
 
     let body;
     try { body = await request.json(); } catch (e) { return jsonError('JSON invalide', 400); }
@@ -1067,9 +1105,10 @@ function store(env) {
 }
 
 // ── Réglages par variables d'environnement (auto-hébergement) ─────────────
-// ADMIN_TWITCH_IDS : identifiants Twitch admins, séparés par des virgules.
-// SITE_ORIGINS     : origines du site dont les comptages sont acceptés.
-// Absentes : valeurs de l'instance officielle.
+// ADMIN_TWITCH_IDS : identifiants Twitch admins, séparés par des virgules
+//   (absent : personne n'est admin — renseigner votre propre ID numérique).
+// SITE_ORIGINS     : origines du site dont les comptages « web » sont acceptés
+//   (absent : toutes les origines sont acceptées).
 let envApplied = false;
 function applyEnvConfig(env) {
     if (envApplied) return;
