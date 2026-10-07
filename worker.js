@@ -240,6 +240,11 @@ async function handleGetLive(url, request, workerOrigin) {
     
     let m3u8Content = "";
     let masterUrl = "";
+    // Adresse stable à donner aux applis externes (VLC…) : celle de Luminous
+    // n'a ni jeton ni péremption, contrairement aux variantes Twitch dont
+    // les jetons sont liés à l'adresse IP qui les a demandés (la nôtre) et
+    // meurent en quelques minutes — un lien copié vers elles est mort-né.
+    let direct = null;
 
     try {
         // --- TENTATIVE 1 : Luminous API (Filtre Anti-Pub) ---
@@ -247,6 +252,7 @@ async function handleGetLive(url, request, workerOrigin) {
         if (resLuminous.ok) {
             m3u8Content = await resLuminous.text();
             masterUrl = resLuminous.url;
+            direct = masterUrl;
         } else {
             throw new Error("Luminous down");
         }
@@ -272,10 +278,10 @@ async function handleGetLive(url, request, workerOrigin) {
     try {
         const meta = await twitchGQL(`query($login: String!) { user(login: $login) { profileImageURL(width: 70) broadcastSettings { title game { displayName } } } }`, { login });
         const info = meta.data?.user?.broadcastSettings, avatar = meta.data?.user?.profileImageURL;
-        return jsonResponse({ links, best: links["Source"] || links["Auto"], title: info?.title || "Live", game: info?.game?.displayName || "", thumbnail: `https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-640x360.jpg`, avatar: avatar || "" });
+        return jsonResponse({ links, best: links["Source"] || links["Auto"], direct, title: info?.title || "Live", game: info?.game?.displayName || "", thumbnail: `https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-640x360.jpg`, avatar: avatar || "" });
     } catch(e) {
         // Si l'API GQL bug, on renvoie la vidéo quand même
-        return jsonResponse({ links, best: links["Source"] || links["Auto"], title: "Live", game: "", thumbnail: `https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-640x360.jpg`, avatar: "" });
+        return jsonResponse({ links, best: links["Source"] || links["Auto"], direct, title: "Live", game: "", thumbnail: `https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-640x360.jpg`, avatar: "" });
     }
 }
 
@@ -606,7 +612,8 @@ export function rateLimited(name, request, max, windowMs) {
     return ++hit.n > max;
 }
 
-function jsonError(msg, status) { return new Response(JSON.stringify({ error: msg }), { status, headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json' } }); }
+export function jsonResponse(obj) { return new Response(JSON.stringify(obj), { headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json' } }); }
+export function jsonError(msg, status) { return new Response(JSON.stringify({ error: msg }), { status, headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json' } }); }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Administration : réservé aux comptes de ADMIN_IDS (jeton Twitch vérifié).
@@ -619,6 +626,7 @@ async function requireAdmin(request) {
 }
 
 // GET /api/admin/me — suis-je administrateur ?
+// POST /api/admin/sync/delete — { login } : efface la sauvegarde d'un compte.
 async function handleAdminSyncDelete(request, env) {
     if (request.method !== 'POST') return jsonError('Method Not Allowed', 405);
     const { denied } = await requireAdmin(request);

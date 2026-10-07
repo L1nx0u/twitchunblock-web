@@ -17,6 +17,8 @@ import { deviceTopLang, topLangName, TOP_LANGS } from './home.js'
 import { qualityLabel } from './player.js'
 
 function currentStreamUrl() {
+  // Direct stable (Luminous) : ni jeton, ni péremption, ni Worker au milieu.
+  if (state.watch?.kind === 'live' && state.watch.direct) return state.watch.direct
   const links = state.watch?.links
   if (!links) return ''
   const link = links[refs.player.quality] ?? Object.values(links)[0] ?? ''

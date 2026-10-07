@@ -75,6 +75,7 @@ function switchWorker(base) {
     .then((links) => {
       if (state.watch !== w || !links?.links || !Object.keys(links.links).length) return
       w.links = links.links
+      w.direct = links.direct ?? null
       refs.player.swapLinks(links.links)
     })
     .catch(() => {})
@@ -141,6 +142,7 @@ export async function openLive(rawLogin) {
   }
   token.links = links.links
   token.info = info
+  token.direct = links.direct ?? null
   $('#watch-loading').hidden = true
   refs.player.load({ links: links.links, kind: 'live' })
   refs.chat.openLive({ channel: login, channelId: info?.id ?? null })

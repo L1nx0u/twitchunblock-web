@@ -12,6 +12,8 @@ import {
   parseAndProxyM3U8,
   cleanHistoryItem,
   rateLimited,
+  jsonResponse,
+  jsonError,
 } from '../worker.js'
 
 describe('validation des entrées', () => {
@@ -104,6 +106,21 @@ describe('cleanHistoryItem', () => {
       cleanHistoryItem({ term: 'x', type: 'channel', thumb: 'http://x/y.jpg' }),
       { term: 'x', type: 'channel', display: 'x' },
     )
+  })
+})
+
+describe('réponses JSON', () => {
+  it('jsonResponse : 200, JSON, CORS', async () => {
+    const r = jsonResponse({ ok: true })
+    assert.equal(r.status, 200)
+    assert.equal(r.headers.get('Content-Type'), 'application/json')
+    assert.equal(r.headers.get('Access-Control-Allow-Origin'), '*')
+    assert.deepEqual(await r.json(), { ok: true })
+  })
+  it('jsonError : statut et message', async () => {
+    const r = jsonError('Raté', 400)
+    assert.equal(r.status, 400)
+    assert.deepEqual(await r.json(), { error: 'Raté' })
   })
 })
 

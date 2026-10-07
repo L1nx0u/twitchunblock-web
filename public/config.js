@@ -5,10 +5,9 @@
 // (Workers de secours quand le quota du jour est atteint, README
 // « Fallback Worker »).
 //
-// Ce fork utilise sa propre application Twitch : la connexion revient sur
-// CE site, pas sur celui d'origine. La vidéo passe toujours par le Worker
-// officiel (apiUrl non renseigné) tant que le backend à soi n'est pas
-// déployé (README, « Your own backend »).
+// Ce fork a son Worker à lui (apiUrl) et sa propre application Twitch :
+// la vidéo comme la connexion passent par ses serveurs, pas ceux d'origine.
 window.TU_CONFIG = window.TU_CONFIG || {}
+window.TU_CONFIG.apiUrl = 'https://twitchunblock.ewaldruf11.workers.dev'
 window.TU_CONFIG.twitchClientId = 'fjzr1s7efdp43ra0om22g1taktj6ek'
 window.TU_CONFIG.redirectUri = 'https://twitchunblock-web.vercel.app/'

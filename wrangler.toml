@@ -1,4 +1,4 @@
-name = "test2"
+name = "twitchunblock"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
@@ -22,13 +22,15 @@ head_sampling_rate = 1
 [[d1_databases]]
 binding = "DB"
 database_name = "twitchunblock"
-database_id = "b586defd-3216-425b-9c13-e75abd8dbd13"
+database_id = "9c479a4a-5beb-4e14-b5bd-762737428339"
 
 # Worker de secours, sur un AUTRE compte Cloudflare : le quota gratuit
-# (100 000 requêtes par jour) est par compte. Déployé sous le nom
-# « test2-fallback » avec `npx wrangler deploy --env fallback`.
-# Sans base D1 — un environnement n'hérite pas des liaisons — : il ne sert que
-# ce qui n'en dépend pas (lives, VODs, relais vidéo, Moobot). Voir README,
-# « Fallback Worker ».
+# (100 000 requêtes par jour) est par compte. Déployé avec
+# `npx wrangler deploy --env fallback` (sans base D1 — un environnement
+# n'hérite pas des liaisons). Voir README, « Fallback Worker ».
 [env.fallback]
 workers_dev = true
+
+# La propriétaire est admin (sauvegardes d'autrui intouchables sans ce réglage).
+[vars]
+ADMIN_TWITCH_IDS = "790650657"
