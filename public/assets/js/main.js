@@ -928,16 +928,34 @@ const SEEN_VERSION = 'tu_seen_version'
 const RETURNING = (() => {
   try { return Boolean(localStorage.getItem('tu_prefs') || localStorage.getItem('twitch_token') || localStorage.getItem('twitch_vod_history')) } catch { return true }
 })()
+/** Visite guidée remise à plus tard : arrivé par un lien vers une page
+ *  précise, elle attend la prochaine ouverture de l'accueil. */
+const TOUR_PENDING = 'tu_tour_pending'
 function welcomeOrWhatsNew() {
-  // Ouvert sur un lien de lecture partagé : on ne coupe pas la vidéo.
-  if (state.watch || !$('#sheet')?.hidden) return
+  if (!$('#sheet')?.hidden) return
+  // Lien vers une page précise (/xqc/clips, /videos/…, lecture partagée) : la
+  // visite guidée, qui passe par l'accueil, l'aurait remplacée — c'est
+  // justement par un lien partagé qu'arrivent les nouveaux visiteurs.
+  const deepLink = Boolean(state.watch) || location.pathname !== '/'
   let seen = null
-  const returning = RETURNING
+  let pending = false
   try {
     seen = localStorage.getItem(SEEN_VERSION)
-    localStorage.setItem(SEEN_VERSION, usage.SITE_VERSION)
+    pending = localStorage.getItem(TOUR_PENDING) === '1'
   } catch { return }
-  if (!seen && !returning) return startTour()
+  if ((!seen && !RETURNING) || pending) {
+    try {
+      localStorage.setItem(SEEN_VERSION, usage.SITE_VERSION)
+      if (deepLink) localStorage.setItem(TOUR_PENDING, '1')
+      else localStorage.removeItem(TOUR_PENDING)
+    } catch {}
+    if (!deepLink) startTour()
+    return
+  }
+  // Une lecture partagée en cours : on ne la couvre pas, les nouveautés
+  // attendront la prochaine visite.
+  if (state.watch) return
+  try { localStorage.setItem(SEEN_VERSION, usage.SITE_VERSION) } catch {}
   const unseen = seen ? CHANGELOG.filter((e) => e.version > seen) : CHANGELOG.slice(0, 1)
   if (unseen.length) showWhatsNew(unseen)
 }
