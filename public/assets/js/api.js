@@ -25,6 +25,14 @@ const FALLBACK_URLS = CFG.fallbackApiUrls ?? (CFG.apiUrl ? [] : DEFAULT_FALLBACK
 const originOf = (u) => { try { return new URL(u).origin } catch { return null } }
 /** Le principal d'abord, puis les secours, dans l'ordre. */
 export const WORKER_BASES = [...new Set([API_URL, ...FALLBACK_URLS.map(originOf).filter(Boolean)])]
+/**
+ * Ordre pour tout ce qui ne dépend pas de D1 (lives, VODs, relais vidéo,
+ * Moobot) : les secours d'abord, le principal en dernier recours. Son quota
+ * reste ainsi pour ce que lui seul sait faire — /stats, sauvegardes,
+ * comptage, annonces, retours — qui tombaient avec lui quand la lecture
+ * l'avait épuisé.
+ */
+const LOOKUP_BASES = [...WORKER_BASES.slice(1), WORKER_BASES[0]]
 
 // ── Relais vidéo (serveur à soi) ───────────────────────────────────────────
 // La lecture fait presque tout le quota de requêtes du Worker : chaque
@@ -90,8 +98,10 @@ function moveLinks(links, from, to) {
 const viaRelay = (data) => (RELAY_BASE && !isDown(RELAY_BASE) && data?.links
   ? { ...data, links: moveLinks(data.links, (o) => WORKER_BASES.includes(o), RELAY_BASE) }
   : data)
-/** Relais en panne en pleine lecture : les mêmes liens, par le Worker. */
-export const withoutRelay = (links) => moveLinks(links, (o) => o === RELAY_BASE, API_URL)
+/** Relais en panne en pleine lecture : les mêmes liens, par un Worker —
+ *  un secours d'abord, pour ménager le principal. */
+export const withoutRelay = (links) => moveLinks(links, (o) => o === RELAY_BASE,
+  LOOKUP_BASES.find((b) => !isDown(b)) ?? LOOKUP_BASES[0])
 
 // Relais injoignable (VPS arrêté, mal configuré) : on le sait dès le
 // chargement de la page, plutôt qu'après les essais du lecteur.
@@ -112,9 +122,9 @@ if (RELAY_BASE && !isDown(RELAY_BASE)) {
  * pas une panne : un autre Worker dirait la même chose.
  */
 export async function workerJson(path, { timeout = 0 } = {}) {
-  const bases = WORKER_BASES.filter((b) => !isDown(b))
+  const bases = LOOKUP_BASES.filter((b) => !isDown(b))
   const failed = []
-  for (const base of [...bases, ...WORKER_BASES.filter((b) => !bases.includes(b))]) {
+  for (const base of [...bases, ...LOOKUP_BASES.filter((b) => !bases.includes(b))]) {
     const ctrl = timeout ? new AbortController() : null
     const timer = ctrl ? setTimeout(() => ctrl.abort(), timeout) : null
     let res
