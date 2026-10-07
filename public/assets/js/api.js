@@ -109,10 +109,9 @@ export async function workerJson(path, { timeout = 0 } = {}) {
  *  passe toujours par le proxy : le CDN des VODs n'accepte que twitch.tv. */
 export const EXTERNAL_LINKS_VIA_PROXY = true
 export const GITHUB_URL = 'https://github.com/L1nx0u/twitchunblock-web'
-// L'app iOS et le Discord sont ceux de l'auteur d'origine : il n'existe pas
-// de fork côté app, et les rapports de bugs y sont centralisés.
+// L'app iOS est celle de l'auteur d'origine : il n'existe pas
+// de fork côté app.
 export const APP_GITHUB_URL = 'https://github.com/MXFia19/TwitchUnblock'
-export const DISCORD_URL = 'https://discord.gg/cEsMRdxsVq'
 export const HELIX_CLIENT_ID = CFG.twitchClientId || 'uyvqdqrz614y5wx5l4kev6c4ln7u9a'
 export const GQL_CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko'
 /** Seule adresse de retour déclarée chez Twitch : elle ne doit pas changer. */

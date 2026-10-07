@@ -251,7 +251,7 @@ export function creditsHtml() {
   ]
   return `
     <p class="credits-title">${esc(t('credits'))}</p>
-    <p class="muted small credits">${esc(t('made_by'))} <a href="https://github.com/MXFia19" target="_blank" rel="noopener">MXFia19</a>.
+    <p class="muted small credits">${esc(t('forked_by'))} <a href="https://github.com/L1nx0u" target="_blank" rel="noopener">L1nx0u</a>, ${esc(t('based_on'))} <a href="https://github.com/MXFia19" target="_blank" rel="noopener">MXFia19</a>.
       ${esc(t('thanks'))} ${items.map(([n, u]) => `<a href="${u}" target="_blank" rel="noopener">${esc(n)}</a>`).join(', ')}.
       ${esc(t('not_affiliated'))}</p>`
 }
