@@ -11,4 +11,4 @@
 // déployé (README, « Your own backend »).
 window.TU_CONFIG = window.TU_CONFIG || {}
 window.TU_CONFIG.twitchClientId = 'fjzr1s7efdp43ra0om22g1taktj6ek'
-window.TU_CONFIG.redirectUri = 'https://twitchunblock-jut5e09bk-weshlynx.vercel.app/'
+window.TU_CONFIG.redirectUri = 'https://twitchunblock-web.vercel.app/'
