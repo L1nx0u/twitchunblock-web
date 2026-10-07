@@ -217,6 +217,21 @@ answers for any name under yours, like `relay.yourname.duckdns.org`).
          }
      }
      ```
+   - **That web server is itself a Docker container** (a Caddy from another
+     project, say): put the relay on that container's network with a
+     `docker-compose.override.yml` next to `docker-compose.yml`, then forward
+     to `twitchunblock-relay:8788` instead of `127.0.0.1:8788`
+     (`docker inspect <container>` shows its network):
+     ```yaml
+     services:
+       relay:
+         container_name: twitchunblock-relay
+         networks: [default, proxy]
+     networks:
+       proxy:
+         external: true
+         name: theirproject_default
+     ```
    - **Ports 80/443 are free**: `docker compose --profile caddy up -d` — the
      bundled Caddy gets and renews the HTTPS certificate by itself (open ports
      80 and 443, see below).

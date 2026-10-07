@@ -15,7 +15,8 @@
 //    node /app/relay.mjs        voir relay/docker-compose.yml et le README
 //
 //  Variables :
-//    PORT             port d'écoute (8788)
+//    RELAY_PORT       port d'écoute (8788). Pas PORT : l'image le fixe déjà
+//                     à 8787 pour le site, le relais s'y mettait.
 //    PUBLIC_ORIGIN    adresse publique (https://relais.exemple.fr), utilisée
 //                     dans les playlists réécrites
 //    ALLOWED_ORIGINS  sites autorisés, séparés par des virgules ; « * » dans
@@ -31,7 +32,7 @@ import { pipeline } from 'node:stream/promises'
 // comme un module (export default).
 import worker from './worker.mjs'
 
-const PORT = Number(process.env.PORT) || 8788
+const PORT = Number(process.env.RELAY_PORT) || 8788
 const PUBLIC_ORIGIN = (process.env.PUBLIC_ORIGIN || '').trim().replace(/\/+$/, '')
 const ALLOWED = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
