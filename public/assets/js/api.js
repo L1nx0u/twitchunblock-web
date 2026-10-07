@@ -153,8 +153,8 @@ export async function getChannelInfo(login) {
   const data = await gql(`query($l: String!) {
     user(login: $l) {
       id login displayName profileImageURL(width: 150) lastBroadcast { startedAt }
-      stream { id title viewersCount createdAt game { displayName name } previewImageURL(width: 640, height: 360) }
-      broadcastSettings { title game { displayName } }
+      stream { id title viewersCount createdAt game { id displayName name } previewImageURL(width: 640, height: 360) }
+      broadcastSettings { title game { id displayName } }
     }
   }`, { l: login })
   return data?.user ?? null
@@ -177,6 +177,7 @@ function streamFromGQL(n) {
     avatar: n?.broadcaster?.profileImageURL ?? '',
     title: n?.title ?? '',
     game: n?.game?.displayName ?? '',
+    gameId: n?.game?.id ?? '',
     viewers: n?.viewersCount ?? 0,
     thumb: n?.previewImageURL ?? '',
     startedAt: n?.createdAt ?? null,
@@ -191,7 +192,7 @@ export async function getChannelsByLogins(logins) {
     const data = await gql(`query($l: [String!]) { users(logins: $l) { login displayName profileImageURL(width: 70)
       lastBroadcast { startedAt }
       videos(first: 1, type: ARCHIVE, sort: TIME) { edges { node { publishedAt lengthSeconds } } }
-      stream { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { displayName } } } }`, { l: logins.slice(i, i + 100) })
+      stream { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { id displayName } } } }`, { l: logins.slice(i, i + 100) })
     for (const u of data?.users ?? []) {
       if (!u?.login) continue
       // Fin du dernier live : la dernière VOD (début + durée) ou, si plus
@@ -219,8 +220,14 @@ export async function getFollowedLogins(userId) {
 }
 
 // ── Catégories (GQL public) ────────────────────────────────────────────────
-const CAT_FIELDS = 'id name displayName boxArtURL(width: 188, height: 250) viewersCount'
-const catFrom = (n) => ({ id: n.id, name: n.displayName || n.name, box: n.boxArtURL || '', viewers: n.viewersCount ?? null })
+const CAT_FIELDS = 'id name displayName slug boxArtURL(width: 188, height: 250) viewersCount'
+const catFrom = (n) => ({ id: n.id, name: n.displayName || n.name, slug: n.slug || '', box: n.boxArtURL || '', viewers: n.viewersCount ?? null })
+
+/** Une catégorie par son nom d'adresse (« just-chatting », comme sur Twitch). */
+export async function getCategoryBySlug(slug) {
+  const data = await gql(`query($s: String!) { game(slug: $s) { ${CAT_FIELDS} } }`, { s: slug })
+  return data?.game ? catFrom(data.game) : null
+}
 
 // Pagination. En GQL public, Twitch exige un jeton d'intégrité dès la 2e page
 // (« failed integrity check », requête persistée comprise) : « Charger plus »
@@ -232,7 +239,8 @@ function servePage(c, step) {
   const items = c.rest.slice(0, step)
   const rest = c.rest.slice(step)
   const helixNext = c.more && Boolean(store.token)
-  return { items, cursor: rest.length || helixNext ? { ...c, rest } : null }
+  // `locked` : Twitch en a d'autres, mais il faut le compte pour les voir.
+  return { items, cursor: rest.length || helixNext ? { ...c, rest } : null, locked: !rest.length && c.more && !store.token }
 }
 
 /** Page Helix suivante, sans ce qui est déjà affiché (Helix repart du début :
@@ -301,7 +309,7 @@ export async function getCategoryStreams(id, cursor = null) {
   else if (cursor) page = await helixMore(cursor, `streams?game_id=${encodeURIComponent(id)}`, streamFromHelix, (s) => s.login, 30)
   else {
     const data = await gql(`query($id: ID!) { game(id: $id) { streams(first: 100) {
-      edges { node { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { displayName }
+      edges { node { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { id displayName }
         broadcaster { login displayName profileImageURL(width: 50) } } } pageInfo { hasNextPage } } } }`, { id })
     const items = (data?.game?.streams?.edges ?? []).map((e) => streamFromGQL(e.node)).filter((s) => s.login)
     page = servePage({ rest: items, seen: new Set(items.map((s) => s.login)), more: Boolean(data?.game?.streams?.pageInfo?.hasNextPage), after: null }, 30)
@@ -320,7 +328,7 @@ export async function getLiveByLogins(logins) {
   const out = []
   for (let i = 0; i < logins.length; i += 100) {
     const data = await gql(`query($l: [String!]) { users(logins: $l) { login displayName profileImageURL(width: 50)
-      stream { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { displayName } } } }`, { l: logins.slice(i, i + 100) })
+      stream { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { id displayName } } } }`, { l: logins.slice(i, i + 100) })
     for (const u of data?.users ?? []) {
       if (u?.stream) out.push(streamFromGQL({ ...u.stream, broadcaster: u }))
     }
@@ -335,6 +343,7 @@ export function streamFromHelix(s) {
     avatar: '',
     title: s.title ?? '',
     game: s.game_name ?? '',
+    gameId: s.game_id ?? '',
     viewers: s.viewer_count ?? 0,
     thumb: String(s.thumbnail_url ?? '').replace('{width}', '440').replace('{height}', '248'),
     startedAt: s.started_at ?? null,
@@ -349,7 +358,7 @@ export async function getTopStreams(language) {
       edges { node {
         title viewersCount createdAt previewImageURL(width: 440, height: 248)
         broadcaster { login displayName profileImageURL(width: 50) }
-        game { displayName }
+        game { id displayName }
       } }
     }
   }`, { n: 24, langs: language ? [language.toUpperCase()] : null })
@@ -375,7 +384,7 @@ export async function getVodMeta(id) {
       id title lengthSeconds createdAt
       previewThumbnailURL(width: 320, height: 180)
       owner { id login displayName profileImageURL(width: 70) }
-      game { displayName }
+      game { id displayName }
     }
   }`, { id })
   return data?.video ?? null
@@ -557,14 +566,52 @@ export async function getCollections(login) {
     .filter((c) => c.videos.length)
 }
 
-export async function getClips(login, period = 'LAST_WEEK') {
+const CLIP_PERIOD_DAYS = { LAST_DAY: 1, LAST_WEEK: 7, LAST_MONTH: 30 }
+const clipFromHelix = (c) => ({
+  slug: c.id, title: c.title ?? '', viewCount: c.view_count ?? 0, durationSeconds: c.duration ?? 0,
+  createdAt: c.created_at ?? null, thumbnailURL: c.thumbnail_url ?? '', curator: { displayName: c.creator_name ?? '' },
+})
+
+/** Clips les plus vus d'une chaîne sur la période, par tranches de 24.
+ *  { items, cursor } — même pagination que les catégories (servePage) :
+ *  Twitch refuse la page 2 en GQL public, on prend donc les 100 premiers ;
+ *  au-delà, Helix continue avec le compte (il lui faut l'id de la chaîne). */
+export async function getClips(login, period = 'LAST_WEEK', cursor = null, broadcasterId = null) {
+  if (cursor?.rest?.length) return servePage(cursor, 24)
+  if (cursor) {
+    if (!cursor.broadcasterId) return { items: [], cursor: null }
+    const days = CLIP_PERIOD_DAYS[period]
+    const now = new Date()
+    // Sans date de fin, Helix s'arrête une semaine après le début.
+    const range = days ? `&started_at=${new Date(now - days * 86_400_000).toISOString()}&ended_at=${now.toISOString()}` : ''
+    return helixMore(cursor, `clips?broadcaster_id=${encodeURIComponent(cursor.broadcasterId)}${range}`, clipFromHelix, (c) => c.slug, 24)
+  }
   const data = await gql(`query($l: String!, $p: ClipsPeriod) {
-    user(login: $l) { clips(first: 24, criteria: { period: $p, sort: VIEWS_DESC }) { edges { node {
+    user(login: $l) { clips(first: 100, criteria: { period: $p, sort: VIEWS_DESC }) { edges { node {
       slug title viewCount durationSeconds createdAt thumbnailURL(width: 480, height: 272)
       curator { displayName }
-    } } } }
+    } } pageInfo { hasNextPage } } }
   }`, { l: login, p: period })
-  return (data?.user?.clips?.edges ?? []).map((e) => e.node).filter((c) => c?.slug)
+  const items = (data?.user?.clips?.edges ?? []).map((e) => e.node).filter((c) => c?.slug)
+  return servePage({ rest: items, seen: new Set(items.map((c) => c.slug)), more: Boolean(data?.user?.clips?.pageInfo?.hasNextPage), after: null, broadcasterId }, 24)
+}
+
+/** Fiche « À propos » d'une chaîne : description, followers, réseaux et
+ *  panneaux (image, lien, texte), comme sous le lecteur de Twitch. */
+export async function getChannelAbout(login) {
+  const data = await gql(`query($l: String!) { user(login: $l) {
+    description followers { totalCount }
+    channel { socialMedias { name title url } }
+    panels { id type ... on DefaultPanel { title imageURL linkURL description } }
+  } }`, { l: login })
+  const u = data?.user
+  if (!u) return null
+  return {
+    description: u.description ?? '',
+    followers: u.followers?.totalCount ?? null,
+    socials: (u.channel?.socialMedias ?? []).filter((s) => /^https?:\/\//i.test(s?.url ?? '')),
+    panels: (u.panels ?? []).filter((p) => p?.type === 'DEFAULT' && (p.title || p.imageURL || p.description)),
+  }
 }
 
 /** Un clip prêt à lire : MP4 signé, et de quoi rejouer le chat de la VOD
@@ -573,7 +620,7 @@ export async function getClip(slug) {
   const data = await gql(`query($s: ID!) { clip(slug: $s) {
     slug title viewCount durationSeconds createdAt
     broadcaster { id login displayName profileImageURL(width: 70) }
-    game { displayName }
+    game { id displayName }
     video { id } videoOffsetSeconds
     playbackAccessToken(params: { platform: "web", playerType: "site", playerBackend: "mediaplayer" }) { signature value }
     videoQualities { quality frameRate sourceURL }

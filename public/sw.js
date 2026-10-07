@@ -17,6 +17,9 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return
   const url = new URL(req.url)
   if (url.origin !== self.location.origin) return
+  // L'API (même origine en Docker) : ni les segments vidéo ni les listes
+  // n'ont leur place dans ce cache.
+  if (url.pathname.startsWith('/api/')) return
   e.respondWith((async () => {
     try {
       const res = await fetch(req)

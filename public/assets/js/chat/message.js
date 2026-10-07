@@ -5,7 +5,7 @@
 
 import { resolveEmote, twitchEmote } from './emotes.js'
 import { ircText, parseEmoteRanges, prefixNick, unescapeTag } from './irc.js'
-import { uid } from '../util.js'
+import { esc, uid } from '../util.js'
 
 /**
  * Éclaircit une couleur de pseudo trop sombre pour rester lisible sur fond
@@ -43,6 +43,19 @@ function fallbackColor(name) {
 /** Lien sans « https:// » (« t.me/x », « discord.gg/abc ») : seulement les
  *  extensions courantes, pour ne pas transformer « lol.xd » en lien. */
 const BARE_LINK = /^[a-z0-9][a-z0-9-]*(\.[a-z0-9-]+)*\.(com|net|org|tv|gg|me|io|fr|be|ch|de|es|it|uk|co|app|dev|ly|link|to|ru|eu|xyz|shop|store)(\/\S*)?$/
+
+/** Texte libre en HTML sûr, liens cliquables (même détection que le chat) :
+ *  réponses des commandes de bots, description et panneaux d'une chaîne. */
+export function linkifyHtml(text) {
+  return String(text ?? '').split(/(\s+)/).map((word) => {
+    const lower = word.toLowerCase()
+    if (!/^(https?:\/\/|www\.)\S+\.\S+/.test(lower) && !BARE_LINK.test(lower)) return esc(word)
+    // Ponctuation finale (« voir discord.gg/abc. ») : hors du lien.
+    const [, link, tail] = /^(.*?)([.,!?;:)\]]*)$/.exec(word)
+    const href = /^https?:\/\//i.test(link) ? link : `https://${link}`
+    return `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(link)}</a>${esc(tail)}`
+  }).join('')
+}
 
 /** Découpe un segment de texte libre en liens, mentions, emotes tierces et mots. */
 export function tokenizeSegment(segment) {

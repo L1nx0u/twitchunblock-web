@@ -6,6 +6,38 @@
 
 export const CHANGELOG = [
   {
+    version: '2026.10.07b',
+    items: {
+      fr: [
+        'Adresses comme sur Twitch : remplace « twitch.tv » par l’adresse du site (/xqc, /videos/…?t=1h2m3s, /xqc/clips, /directory/category/just-chatting…). Les boutons précédent et suivant du navigateur passent d’une page à l’autre ; depuis le lecteur, « précédent » le réduit en mini-lecteur sans couper la lecture.',
+        'Page d’une chaîne : nouvel onglet « À propos » (description, followers, réseaux et panneaux du streamer).',
+        'Clips : « Charger plus » (100 clips sans compte, sans limite une fois connecté). Au-delà de 100 sans compte, le site le dit au lieu de s’arrêter sans rien afficher.',
+        'Cartes de live : le pseudo ouvre la chaîne et la catégorie ses lives, comme dans le lecteur.',
+        'Commandes des bots : les liens sont cliquables.',
+        'Réglages : option pour masquer les chaînes récentes.',
+        'Un lien Twitch collé dans la recherche ouvre ce qu’il désigne (chaîne, VOD, clip, catégorie) ; l’onglet Lien / ID accepte aussi les liens de clips.',
+      ],
+      en: [
+        'Twitch-style links: replace “twitch.tv” with the site’s address (/xqc, /videos/…?t=1h2m3s, /xqc/clips, /directory/category/just-chatting…). The browser’s back and forward buttons move between pages; from the player, “back” shrinks it to the mini player without stopping playback.',
+        'Channel page: new “About” tab (description, followers, social links and the streamer’s panels).',
+        'Clips: “Load more” (100 clips without an account, unlimited once logged in). Past 100 without an account, the site says so instead of silently stopping.',
+        'Stream cards: the username opens the channel and the category opens its streams, like in the player.',
+        'Bot commands: links are clickable.',
+        'Settings: option to hide recent channels.',
+        'A Twitch link pasted in the search opens what it points to (channel, VOD, clip, category); the Link / ID tab also takes clip links.',
+      ],
+      es: [
+        'Enlaces como en Twitch: cambia «twitch.tv» por la dirección del sitio (/xqc, /videos/…?t=1h2m3s, /xqc/clips, /directory/category/just-chatting…). Los botones atrás y adelante del navegador pasan de una página a otra; desde el reproductor, «atrás» lo reduce al minirreproductor sin cortar la reproducción.',
+        'Página de un canal: nueva pestaña «Acerca de» (descripción, seguidores, redes y paneles del streamer).',
+        'Clips: «Cargar más» (100 clips sin cuenta, sin límite al iniciar sesión). Pasados 100 sin cuenta, el sitio lo indica en lugar de pararse sin más.',
+        'Tarjetas de directo: el nombre abre el canal y la categoría sus directos, como en el reproductor.',
+        'Comandos de bots: los enlaces se pueden pulsar.',
+        'Ajustes: opción para ocultar los canales recientes.',
+        'Un enlace de Twitch pegado en la búsqueda abre lo que indica (canal, VOD, clip, categoría); la pestaña Enlace / ID también acepta enlaces de clips.',
+      ],
+    },
+  },
+  {
     version: '2026.10.07',
     items: {
       fr: [

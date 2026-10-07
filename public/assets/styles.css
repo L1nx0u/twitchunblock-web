@@ -213,6 +213,10 @@ input[type='search']::-webkit-search-cancel-button { filter: invert(1) opacity(0
 .card h3 { font-size: 14px; font-weight: 700; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .card .name { margin-top: 3px; font-size: 13px; font-weight: 600; color: var(--purple); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card .meta { margin-top: 2px; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Pseudo et catégorie d'une carte : ouvrent la chaîne ou la catégorie. */
+.card-link { cursor: pointer; }
+.card-link:hover { text-decoration: underline; text-underline-offset: 2px; color: var(--text); }
+.hero-game .card-link:hover { color: var(--purple); }
 
 .pill {
   display: inline-flex; align-items: center; gap: 4px;
@@ -647,6 +651,7 @@ input[type='search']::-webkit-search-cancel-button { filter: invert(1) opacity(0
 .bot-cmd code { color: var(--purple); font-weight: 700; font-size: 13px; }
 .bot-cmd span { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .bot-cmd.copied code::after { content: ' ✓'; color: var(--success, #4ade80); }
+.bot-cmd a { color: var(--purple); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .user-card {
   position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 6;
   display: flex; flex-direction: column; max-height: 72%;
@@ -895,6 +900,23 @@ input[type='search']::-webkit-search-cancel-button { filter: invert(1) opacity(0
 /* Chapitres de VOD */
 .p-chap { position: absolute; top: 50%; width: 2px; height: 8px; margin-left: -1px; transform: translateY(-50%); background: rgba(255, 255, 255, 0.85); border-radius: 1px; pointer-events: none; z-index: 1; }
 .p-tip { white-space: nowrap; max-width: 70vw; overflow: hidden; text-overflow: ellipsis; }
+
+/* Onglet « À propos » d'une chaîne : description, réseaux, panneaux. */
+.about-card { padding: 18px 20px; border-radius: var(--r-card); background: var(--card); border: 1px solid var(--line); }
+.about-card h3 { margin-bottom: 6px; font-size: 18px; font-weight: 800; }
+.about-followers { margin-bottom: 8px; color: var(--muted); font-size: 14px; }
+.about-followers b { color: var(--text); }
+.about-desc { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.about-desc a, .panel-text a { color: var(--purple); text-decoration: underline; text-underline-offset: 2px; }
+.about-socials { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.about-socials a { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 999px; background: var(--surface); font-size: 13px; font-weight: 600; }
+.about-socials a:hover { background: var(--surface-hi); }
+.panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; align-items: start; margin-top: 18px; }
+.panel { min-width: 0; }
+.panel img { display: block; width: 100%; height: auto; border-radius: 10px; }
+.panel h4 { margin: 8px 0 4px; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.panel-text { margin-top: 6px; color: var(--muted); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.panel-text .panel-h { color: var(--text); }
 
 /* VOD non listée (supprimée ou masquée) : rangée parmi les VODs, même
    carte, sans vignette (Twitch n'en sert plus). */

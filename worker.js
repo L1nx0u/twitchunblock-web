@@ -66,8 +66,15 @@ export default {
                 // Commandes Moobot pour le site (son API refuse les navigateurs)
                 case '/api/bot-commands/moobot': return await handleMoobotCommands(url);
                 case '/api/admin/announcement': return await handleAdminAnnouncement(request, env);
-                
-                default: return new Response("Not Found", { status: 404, headers: RESPONSE_HEADERS });
+
+                default:
+                    // Docker (site + Worker ensemble) : les adresses du site façon
+                    // Twitch (/xqc, /videos/123, /directory…) ne sont pas des
+                    // fichiers ; elles reçoivent la page, qui ouvre la bonne vue.
+                    if (env.ASSETS && request.method === 'GET' && !url.pathname.startsWith('/api/')) {
+                        return env.ASSETS.fetch(new Request(new URL('/', url).href, { headers: request.headers }));
+                    }
+                    return new Response("Not Found", { status: 404, headers: RESPONSE_HEADERS });
             }
         } catch (e) {
             // Pas de message interne renvoyé au client : seulement dans les logs.

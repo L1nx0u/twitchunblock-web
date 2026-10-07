@@ -7,6 +7,7 @@ import { store } from './store.js'
 import { LANGS, applyStatic, deviceLang, initLang, setLang, t, lang } from './i18n.js'
 import { Player, loadHls, qualityLabel } from './player.js'
 import { ChatView } from './chat/view.js'
+import { linkifyHtml } from './chat/message.js'
 import { Hermes } from './chat/hermes.js'
 import * as usage from './usage.js'
 import { CHANGELOG } from './changelog.js'
@@ -70,14 +71,144 @@ async function boot() {
   if (store.token) await adoptToken(store.token, { silent: true })
   else renderAccount()
 
-  const params = new URLSearchParams(location.search)
-  const vod = params.get('id') ?? params.get('vod')
-  const channel = api.cleanLogin(params.get('channel'))
-  const clip = params.get('clip')
-  if (clip && /^[A-Za-z0-9_-]{3,100}$/.test(clip)) openClip(clip)
-  else if (vod && /^\d{6,}$/.test(vod)) openVod(vod)
-  else if (channel) { setTab('channel'); searchChannel(channel); openLive(channel) }
-  setTab(state.tab)
+  // L'adresse ouvre la page voulue (/xqc, /videos/123, /directory…), et les
+  // boutons précédent / suivant du navigateur passent d'une page à l'autre.
+  window.addEventListener('popstate', () => applyRoute(routeFromLocation()))
+  applyRoute(routeFromLocation(), { initial: true })
+}
+
+// ── Adresses comme sur Twitch ──────────────────────────────────────────────
+// Remplacer « twitch.tv » par l'adresse du site suffit : /xqc (la chaîne, et
+// son direct s'il est en ligne), /xqc/videos, /xqc/clips, /xqc/about,
+// /videos/123, /xqc/clip/<clip>, /directory, /directory/category/just-chatting.
+// Les anciennes adresses (?channel=, ?id=, ?clip=) marchent toujours.
+
+/** Pendant qu'une adresse est appliquée (chargement, précédent / suivant),
+ *  les pages ouvertes remplacent l'entrée d'historique au lieu d'en ajouter. */
+let routing = false
+
+/** `watch` marque l'entrée d'un lecteur : « /xqc » est la page de la chaîne,
+ *  ou son direct quand on l'a lancé (précédent / suivant le rouvrent). */
+function go(path, { replace = false, watch = false } = {}) {
+  if (!path) return
+  if (location.pathname + location.search === path && Boolean(history.state?.watch) === watch) return
+  const entry = watch ? { watch: true } : null
+  try {
+    if (routing || replace) history.replaceState(entry, '', path)
+    else history.pushState(entry, '', path)
+  } catch {}
+}
+
+/** Adresse de ce que joue le lecteur (une VOD reconstruite n'en a pas). */
+function watchPath() {
+  const w = state.watch
+  if (w?.kind === 'live') return `/${w.login}`
+  if (w?.kind === 'vod' && !w.recovered) return `/videos/${w.id}`
+  if (w?.kind === 'clip') return w.login ? `/${w.login}/clip/${encodeURIComponent(w.id)}` : `/clip/${encodeURIComponent(w.id)}`
+  return null
+}
+
+const CHANNEL_SECTIONS = { vods: '', highlights: '/videos?filter=highlights', playlists: '/videos?filter=collections', clips: '/clips', about: '/about' }
+const channelPath = (login, tab = state.channelTab ?? 'vods') => `/${login}${CHANNEL_SECTIONS[tab] ?? ''}`
+const categoryPath = (c) => `/directory/category/${encodeURIComponent(c.slug || c.id)}`
+
+/** Adresse de la page affichée (sous le lecteur s'il est ouvert). */
+function pagePath(tab = state.tab) {
+  if (tab === 'categories') return cat.current ? categoryPath(cat.current) : '/directory'
+  if (tab === 'channel' && state.channel) return channelPath(state.channel.login)
+  return '/'
+}
+
+/** L'adresse courante, lue comme une page à ouvrir. */
+const routeFromLocation = () => routeFrom(location.pathname, location.search)
+
+/** Une adresse (d'ici ou de twitch.tv) lue comme une page à ouvrir. */
+function routeFrom(pathname, search = '') {
+  const q = new URLSearchParams(search)
+  const clip = q.get('clip')
+  const vod = q.get('id') ?? q.get('vod')
+  const channel = api.cleanLogin(q.get('channel'))
+  // « ?t=1h2m3s » : la VOD démarre à cet instant, comme sur Twitch.
+  const at = twitchTime(q.get('t'))
+  if (clip) return { clip }
+  if (vod) return { vod, at }
+  if (channel) return { channel, live: true }
+  const parts = pathname.split('/').filter(Boolean).map((p) => { try { return decodeURIComponent(p) } catch { return p } })
+  const [a = '', b = '', c = ''] = parts
+  const first = a.toLowerCase()
+  if (!first) return { tab: 'discover' }
+  if (first === 'videos') return /^\d{6,}$/.test(b) ? { vod: b, at } : { tab: 'discover' }
+  if (first === 'clip' && b) return { clip: b }
+  if (first === 'directory') {
+    if ((b === 'category' || b === 'game') && c) return { category: c }
+    return { tab: b === 'following' ? 'discover' : 'categories' }
+  }
+  if (['discover', 'discovery', 'following'].includes(first)) return { tab: 'discover' }
+  const login = api.cleanLogin(a)
+  if (!login) return { tab: 'discover' }
+  const section = b.toLowerCase()
+  if (section === 'clip' && c) return { clip: c }
+  if (section === 'videos' && /^\d{6,}$/.test(c)) return { vod: c, at }
+  const filter = q.get('filter')
+  const tab = section === 'clips' ? 'clips'
+    : section === 'about' ? 'about'
+    : section === 'videos' ? (filter === 'highlights' ? 'highlights' : filter === 'collections' ? 'playlists' : 'vods')
+    : null
+  return { channel: login, tab, live: !section }
+}
+
+/** « 1h2m3s », « 3723s » ou « 3723 » → secondes (null sinon). */
+function twitchTime(raw) {
+  const m = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$/i.exec(String(raw ?? '').trim())
+  const sec = m ? Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0) : 0
+  return sec > 0 ? sec : null
+}
+
+/** Ouvre la page d'une adresse. `initial` : premier chargement (le direct
+ *  d'une chaîne en ligne se lance, comme sur Twitch). */
+async function applyRoute(r, { initial = false } = {}) {
+  routing = true
+  try {
+    // « /xqc » : son direct au premier chargement (comme sur Twitch), ensuite
+    // seulement si cette entrée d'historique était celle du lecteur.
+    const live = r.channel && r.live && (initial || Boolean(history.state?.watch))
+    // L'entrée du lecteur déjà ouvert (suivant, ou précédent depuis une page
+    // ouverte à partir du lecteur) : il repasse en grand.
+    const w = state.watch
+    if (!initial && w && ((r.vod && w.kind === 'vod' && w.id === r.vod)
+      || (r.clip && w.kind === 'clip' && w.id === r.clip)
+      || (live && w.kind === 'live' && w.login === r.channel))) {
+      expandWatch({ url: false })
+      return
+    }
+    if (r.clip) {
+      if (/^[A-Za-z0-9_-]{3,100}$/.test(r.clip)) openClip(r.clip)
+      return
+    }
+    if (r.vod) {
+      if (/^\d{6,}$/.test(r.vod)) openVod(r.vod, undefined, { at: r.at })
+      return
+    }
+    // Retour à une page : le lecteur passe en mini-lecteur et continue,
+    // comme avec la flèche retour de l'app (la croix le ferme).
+    if (!initial) minimizeWatch({ url: false })
+    if (r.channel) {
+      setTab('channel', { url: false })
+      $('#channel-input').value = r.channel
+      if (state.channel?.login === r.channel) setChannelTab(r.tab ?? 'vods')
+      else await searchChannel(r.channel, { tab: r.tab ?? 'vods' })
+      if (live && state.channel?.login === r.channel && state.channel.info?.stream) openLive(r.channel)
+      return
+    }
+    if (r.category) {
+      await openCategoryBySlug(r.category)
+      return
+    }
+    if (r.tab === 'categories' && cat.current) closeCategory()
+    setTab(r.tab ?? 'discover', { url: false })
+  } finally {
+    routing = false
+  }
 }
 
 /** Remplit les emplacements d'icônes déclarés dans le HTML. */
@@ -228,8 +359,9 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) flush
 window.addEventListener('pagehide', () => flushSync({ force: true }))
 
 // ── Navigation ─────────────────────────────────────────────────────────────
-function setTab(tab) {
+function setTab(tab, { url = true } = {}) {
   state.tab = tab
+  if (url) go(pagePath(tab))
   for (const b of $$('[data-tab]')) b.classList.toggle('active', b.dataset.tab === tab)
   for (const v of $$('.view')) v.hidden = v.id !== `view-${tab}`
   if (tab === 'discover') {
@@ -257,6 +389,21 @@ function bindGlobal() {
       renderRecentChannels()
       return
     }
+    // Pseudo et catégorie d'une carte : avant la carte elle-même (le direct).
+    const catLink = e.target.closest('[data-category]')
+    if (catLink) {
+      if (catLink.closest('#watch')) minimizeWatch({ url: false })
+      return openCategoryById(catLink.dataset.category, catLink.dataset.categoryName)
+    }
+    const chanLink = e.target.closest('[data-channel]')
+    if (chanLink) {
+      // Depuis le lecteur (pseudo) : réduit en mini-lecteur pour voir la page.
+      if (chanLink.closest('#watch')) minimizeWatch({ url: false })
+      // L'adresse de la chaîne vient avec elle (searchChannel).
+      setTab('channel', { url: false })
+      $('#channel-input').value = chanLink.dataset.channel
+      return searchChannel(chanLink.dataset.channel)
+    }
     const live = e.target.closest('[data-live]')
     if (live) return openLive(live.dataset.live)
     const vod = e.target.closest('[data-vod]')
@@ -271,14 +418,6 @@ function bindGlobal() {
     if (period) return loadChannelClips(period.dataset.clipPeriod)
     const rec = e.target.closest('[data-recover]')
     if (rec) return recoverAndPlay(rec)
-    const chan = e.target.closest('[data-channel]')
-    if (chan) {
-      // Depuis le lecteur (pseudo) : réduit en mini-lecteur pour voir la page.
-      if (chan.closest('#watch')) minimizeWatch()
-      setTab('channel')
-      $('#channel-input').value = chan.dataset.channel
-      return searchChannel(chan.dataset.channel)
-    }
     const act = e.target.closest('[data-action]')?.dataset.action
     if (act) actions[act]?.(e)
   })
@@ -309,10 +448,12 @@ function bindGlobal() {
   // Lien / ID
   $('#link-form').addEventListener('submit', (e) => {
     e.preventDefault()
-    const raw = $('#link-input').value
+    const raw = $('#link-input').value.trim()
+    const slug = api.clipSlugFrom(raw)
+    if (slug) return openClip(slug)
     const id = (raw.match(/videos\/(\d+)/) ?? raw.match(/\b(\d{6,})\b/) ?? [])[1]
     if (!id) return toast(t('invalid_id'), 'error')
-    openVod(id)
+    openVod(id, undefined, { at: twitchTime(/[?&]t=([^&#\s]+)/.exec(raw)?.[1]) })
   })
 
   // Feuilles (réglages, ouvrir dans…)
@@ -330,6 +471,7 @@ const actions = {
   'cat-more': () => loadCategories({ more: true }),
   'cat-streams-more': () => cat.current && openCategory(cat.current, { more: true }),
   'cat-back': () => closeCategory(),
+  'clips-more': () => loadChannelClips(state.clipPeriod, { more: true }),
   'cat-follow': (e) => {
     const c = cat.current
     if (!c) return
@@ -370,8 +512,8 @@ const actions = {
   'see-vods': () => {
     const login = state.watch?.login ?? state.watch?.info?.owner?.login
     if (!login) return
-    minimizeWatch()
-    setTab('channel')
+    minimizeWatch({ url: false })
+    setTab('channel', { url: false })
     $('#channel-input').value = login
     searchChannel(login)
   },
@@ -389,6 +531,12 @@ function followLocalInner(on) {
 }
 
 // ── Cartes ─────────────────────────────────────────────────────────────────
+/** Nom de catégorie cliquable (ouvre ses lives), comme sur Twitch ; texte
+ *  simple si son identifiant est inconnu. */
+function gameLink(id, name) {
+  return id ? `<span class="card-link" data-category="${esc(id)}" data-category-name="${esc(name)}">${esc(name)}</span>` : esc(name)
+}
+
 function streamCard(s) {
   return `
     <article class="card stream-card" data-live="${esc(s.login)}" tabindex="0">
@@ -402,8 +550,8 @@ function streamCard(s) {
         ${s.avatar ? `<img class="avatar sm" src="${esc(s.avatar)}" alt="" loading="lazy">` : `<span class="avatar sm placeholder">${esc((s.name || '?')[0])}</span>`}
         <div class="card-text">
           <h3 title="${esc(s.title)}">${esc(s.title)}</h3>
-          <p class="name">${esc(s.name)}</p>
-          ${s.game ? `<p class="meta">${esc(s.game)}</p>` : ''}
+          <p class="name"><span class="card-link" data-channel="${esc(s.login)}">${esc(s.name)}</span></p>
+          ${s.game ? `<p class="meta">${gameLink(s.gameId, s.game)}</p>` : ''}
         </div>
       </div>
     </article>`
@@ -606,12 +754,12 @@ function setHomeTab(tab) {
 }
 
 // ── Catégories ─────────────────────────────────────────────────────────
-const cat = { tab: 'all', items: [], cursor: null, q: '', loaded: 0, current: null, streamsCursor: null }
+const cat = { tab: 'all', items: [], cursor: null, q: '', loaded: 0, current: null, streamsCursor: null, locked: false }
 const followedCats = () => store.prefs.followedCategories ?? []
 const isCatFollowed = (id) => followedCats().some((c) => c.id === id)
 
 function catCard(c) {
-  return `<article class="cat-card" data-cat="${esc(c.id)}" data-cat-name="${esc(c.name)}" data-cat-box="${esc(c.box)}" tabindex="0">
+  return `<article class="cat-card" data-cat="${esc(c.id)}" data-cat-name="${esc(c.name)}" data-cat-slug="${esc(c.slug ?? '')}" data-cat-box="${esc(c.box)}" tabindex="0">
     <div class="cat-box"><img src="${esc(c.box)}" alt="" loading="lazy" decoding="async"></div>
     <h3 title="${esc(c.name)}">${esc(c.name)}</h3>
     ${c.viewers != null ? `<p class="meta">${icon('eye', 12)} ${esc(formatViewers(c.viewers))}</p>` : ''}
@@ -644,13 +792,21 @@ async function loadCategories({ more = false } = {}) {
       const page = await api.getTopCategories(more ? cat.cursor : null)
       cat.items = more ? [...cat.items, ...page.items.filter((x) => !cat.items.some((y) => y.id === x.id))] : page.items
       cat.cursor = page.cursor
+      cat.locked = page.locked
     }
     cat.loaded = Date.now()
     grid.innerHTML = cat.items.length ? cat.items.map(catCard).join('') : emptyState(t('no_result'), 'search')
-    if (cat.cursor && !cat.q) $('#cat-more').innerHTML = `<button class="btn ghost" type="button" data-action="cat-more">${esc(t('load_more'))}</button>`
+    if (!cat.q) $('#cat-more').innerHTML = moreHtml({ cursor: cat.cursor, locked: cat.locked }, 'cat-more')
   } catch {
     grid.innerHTML = emptyState(t('err_loading'), 'refresh')
   }
+}
+
+/** « Charger plus », ou l'invitation à se connecter quand seul le compte
+ *  Twitch permet d'aller au-delà des 100 premiers (voir api.servePage). */
+function moreHtml(page, action) {
+  if (page?.cursor) return `<button class="btn ghost" type="button" data-action="${action}">${esc(t('load_more'))}</button>`
+  return page?.locked ? `<p class="muted small">${esc(t('more_needs_login'))}</p>` : ''
 }
 
 async function openCategory(c, { more = false } = {}) {
@@ -659,6 +815,7 @@ async function openCategory(c, { more = false } = {}) {
   const box = $('#cat-detail')
   box.hidden = false
   if (!more) {
+    go(categoryPath(c))
     const on = isCatFollowed(c.id)
     box.innerHTML = `
       <div class="cat-head">
@@ -679,7 +836,7 @@ async function openCategory(c, { more = false } = {}) {
     const html = page.items.map(streamCard).join('')
     if (more) grid.insertAdjacentHTML('beforeend', html)
     else grid.innerHTML = html || emptyState(t('no_live'))
-    $('#cat-streams-more').innerHTML = page.cursor ? `<button class="btn ghost" type="button" data-action="cat-streams-more">${esc(t('load_more'))}</button>` : ''
+    $('#cat-streams-more').innerHTML = moreHtml(page, 'cat-streams-more')
   } catch {
     if (!more) $('#cat-streams').innerHTML = emptyState(t('err_loading'), 'refresh')
   }
@@ -689,7 +846,26 @@ function closeCategory() {
   cat.current = null
   $('#cat-detail').hidden = true
   $('#cat-browser').hidden = false
+  go('/directory')
   if (cat.tab === 'followed') loadCategories()
+}
+
+/** Une catégorie par son adresse : « just-chatting » (comme sur Twitch) ou
+ *  un identifiant numérique. */
+async function openCategoryBySlug(slug) {
+  setTab('categories', { url: false })
+  const c = /^\d+$/.test(slug)
+    ? (await api.getCategoriesByIds([slug]).catch(() => []))[0]
+    : await api.getCategoryBySlug(slug).catch(() => null)
+  if (c) openCategory(c)
+}
+
+/** Une catégorie ouverte d'ailleurs (carte de live, lecteur) : on complète
+ *  jaquette et nom d'adresse avant d'afficher ses lives. */
+async function openCategoryById(id, name = '') {
+  setTab('categories', { url: false })
+  const [full] = await api.getCategoriesByIds([String(id)]).catch(() => [])
+  openCategory(full ?? { id: String(id), name, slug: '', box: '' })
 }
 
 function setupCategories() {
@@ -699,7 +875,7 @@ function setupCategories() {
   })
   $('#cat-grid').addEventListener('click', (e) => {
     const c = e.target.closest('[data-cat]')
-    if (c) openCategory({ id: c.dataset.cat, name: c.dataset.catName, box: c.dataset.catBox })
+    if (c) openCategory({ id: c.dataset.cat, name: c.dataset.catName, slug: c.dataset.catSlug, box: c.dataset.catBox })
   })
   $('#cat-search').addEventListener('input', debounce((e) => { cat.q = e.target.value.trim(); loadCategories() }, 350))
   $('#home-seg').addEventListener('click', (e) => {
@@ -806,7 +982,7 @@ const tour = { step: -1, el: null }
 
 function startTour() {
   closeSheet()
-  if (!$('#watch').hidden) minimizeWatch()
+  if (!$('#watch').hidden) minimizeWatch({ url: false })
   let root = $('#tour')
   if (!root) {
     root = document.createElement('div')
@@ -988,7 +1164,8 @@ function creditsHtml() {
 function renderRecentChannels() {
   const chans = store.history.filter((h) => h.type === 'channel').slice(0, 10)
   const box = $('#recent-channels')
-  box.hidden = chans.length === 0
+  // Masquables dans les réglages (« Chaînes récentes »).
+  box.hidden = chans.length === 0 || store.prefs.showRecent === false
   $('#recent-list').innerHTML = chans.map((h) => `
     <span class="chip" data-channel="${esc(h.term)}" tabindex="0">
       ${h.avatar ? `<img src="${esc(h.avatar)}" alt="">` : icon('user', 14)}
@@ -1056,9 +1233,22 @@ function pickSuggestion(login) {
 
 let searchSeq = 0
 let followedRetried = false
-async function searchChannel(raw) {
+async function searchChannel(raw, { tab } = {}) {
   const parts = String(raw || '').trim().split(/\s+/)
-  const login = api.cleanLogin(parts[0])
+  // Un lien Twitch collé (« twitch.tv/xqc », « https://www.twitch.tv/xqc/clips »,
+  // une VOD, un clip, une catégorie) : on ouvre ce qu'il désigne.
+  const slug = api.clipSlugFrom(parts[0] ?? '')
+  if (slug) return openClip(slug)
+  const link = /(?:^|\/\/|\.)twitch\.tv(\/[^\s#]*)/i.exec(parts[0] ?? '')
+  let route = null
+  if (link) {
+    try { const u = new URL(link[1], 'https://www.twitch.tv'); route = routeFrom(u.pathname, u.search) } catch {}
+    if (route?.vod) return openVod(route.vod, undefined, { at: route.at })
+    if (route?.category) return openCategoryBySlug(route.category)
+    if (!route?.channel) return route?.tab && setTab(route.tab)
+    tab ??= route.tab ?? undefined
+  }
+  const login = api.cleanLogin(route?.channel ?? parts[0])
   const keyword = parts.slice(1).join(' ').toLowerCase()
   const out = $('#channel-result')
   if (!login) { out.innerHTML = ''; return }
@@ -1074,26 +1264,109 @@ async function searchChannel(raw) {
     out.innerHTML = emptyState(t('not_found'), 'search')
     return
   }
-  if (state.channel?.login !== login) state.channelTab = 'vods'
+  if (tab) state.channelTab = tab
+  else if (state.channel?.login !== login) state.channelTab = 'vods'
   state.channel = { login, info, videos: videos?.videos ?? [] }
   store.addHistory(login, 'channel', info?.displayName || login, { avatar: info?.profileImageURL || videos?.avatar || '' })
   pushSync()
   renderRecentChannels()
+  if (state.tab === 'channel') go(channelPath(login))
   renderChannel(keyword)
 }
 
 // Onglets de la page streamer, comme sur Twitch.
-const CHANNEL_TABS = [['vods', 'vods'], ['highlights', 'highlights'], ['playlists', 'playlists'], ['clips', 'clips']]
+const CHANNEL_TABS = [['vods', 'vods'], ['highlights', 'highlights'], ['playlists', 'playlists'], ['clips', 'clips'], ['about', 'about']]
 
 /** Charge le contenu de l'onglet à sa première ouverture. */
 function loadChannelTab(tab) {
   if (tab === 'highlights') loadChannelHighlights()
   if (tab === 'playlists') loadChannelPlaylists()
   if (tab === 'clips') loadChannelClips()
+  if (tab === 'about') loadChannelAbout()
+}
+
+// ── Onglet « À propos » ──────────────────────────────────────────────────
+// Ce qu'on trouve sous le lecteur sur Twitch : description, followers,
+// réseaux, et les panneaux du streamer (image, lien, texte).
+async function loadChannelAbout() {
+  const login = state.channel?.login
+  if (!login || !$('#channel-about')) return
+  state.aboutCache ??= new Map()
+  let about = state.aboutCache.get(login)
+  if (!about) {
+    $('#channel-about').innerHTML = `<p class="muted small">${esc(t('loading'))}</p>`
+    about = await api.getChannelAbout(login).catch(() => null)
+    if (about) state.aboutCache.set(login, about)
+  }
+  const box = $('#channel-about')
+  if (state.channel?.login !== login || !box) return
+  if (!about) { box.innerHTML = emptyState(t('err_loading'), 'refresh'); return }
+  const name = state.channel.info?.displayName || login
+  box.innerHTML = `
+    <div class="about-card">
+      <h3>${esc(t('about_channel', { u: name }))}</h3>
+      ${about.followers != null ? `<p class="about-followers"><b>${esc(formatViewers(about.followers))}</b> ${esc(t('followers'))}</p>` : ''}
+      ${about.description ? `<p class="about-desc">${linkifyHtml(about.description)}</p>` : `<p class="muted small">${esc(t('about_empty'))}</p>`}
+      ${about.socials.length ? `<div class="about-socials">${about.socials.map((s) => `
+        <a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${icon(socialIcon(s.name), 15)}<span>${esc(s.title || s.name)}</span></a>`).join('')}</div>` : ''}
+    </div>
+    ${about.panels.length ? `<div class="panels">${about.panels.map(panelCard).join('')}</div>` : ''}`
+}
+
+/** Icône d'un réseau (celles du site, sinon un lien générique). */
+function socialIcon(name) {
+  const n = String(name).toLowerCase()
+  return n === 'discord' ? 'discord' : n === 'github' ? 'github' : n === 'twitch' ? 'twitch' : 'external'
+}
+
+function panelCard(p) {
+  const img = p.imageURL ? `<img src="${esc(p.imageURL)}" alt="${esc(p.title || '')}" loading="lazy" decoding="async">` : ''
+  const link = /^https?:\/\//i.test(p.linkURL ?? '') ? p.linkURL : ''
+  return `<article class="panel">
+    ${img ? (link ? `<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">${img}</a>` : img) : ''}
+    ${p.title ? `<h4>${esc(p.title)}</h4>` : ''}
+    ${p.description ? `<div class="panel-text">${panelMarkdown(p.description)}</div>` : ''}
+  </article>`
+}
+
+/** Le texte des panneaux est du Markdown simple (liens, gras, titres,
+ *  listes) : rendu après échappement, sans HTML étranger. */
+function panelMarkdown(text) {
+  // \u0000 sert de repère aux liens mis de côté (panelInline).
+  return String(text).replace(/\u0000/g, '').split('\n').map((line) => {
+    // Citation (« > ») : le chevron saute, le texte reste.
+    const plain = line.replace(/^\s*>\s?/, '')
+    const heading = /^#{1,6}\s+(.*)$/.exec(plain)
+    const item = /^\s*[-*+]\s+(.*)$/.exec(plain)
+    const html = panelInline(heading ? heading[1] : item ? item[1] : plain)
+    if (heading) return `<b class="panel-h">${html}</b>`
+    if (item) return `<span class="panel-li">• ${html}</span>`
+    return html
+  }).join('<br>')
+}
+
+/** Une ligne : liens [texte](https://…), liens nus et gras. Les liens sont mis
+ *  de côté pendant le gras, qui ne touche ainsi jamais une adresse. */
+function panelInline(body) {
+  const links = []
+  const keep = (a) => `\u0000${links.push(a) - 1}\u0000`
+  const bold = (html) => html.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/__(.+?)__/g, '<b>$1</b>')
+  const bare = (s) => linkifyHtml(s).replace(/<a [^>]*>.*?<\/a>/g, keep)
+  let html = ''
+  let last = 0
+  // Une image (![…](…)) devient un simple lien.
+  for (const m of body.matchAll(/!?\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/gi)) {
+    html += bare(body.slice(last, m.index))
+    html += keep(`<a href="${esc(m[2])}" target="_blank" rel="noopener noreferrer">${bold(esc(m[1] || m[2]))}</a>`)
+    last = m.index + m[0].length
+  }
+  html += bare(body.slice(last))
+  return bold(html).replace(/\u0000(\d+)\u0000/g, (_, i) => links[Number(i)])
 }
 
 function setChannelTab(tab) {
   state.channelTab = tab
+  if (state.channel) go(channelPath(state.channel.login, tab), { replace: true })
   for (const b of $$('#channel-tabs [data-ctab]')) b.classList.toggle('active', b.dataset.ctab === tab)
   for (const p of $$('[data-cpanel]')) p.hidden = p.dataset.cpanel !== tab
   loadChannelTab(tab)
@@ -1210,8 +1483,8 @@ async function recoverAndPlay(card) {
     stopPlayback()
     state.watch = { kind: 'vod', id: `recovered-${stream}`, info: null, links: r.links, recovered: true }
     const tok = state.watch
+    // Pas d'adresse à partager : une VOD reconstruite garde celle de la page.
     showWatch('vod', title || login)
-    setUrl({})   // une VOD reconstruite n'a pas d'URL partageable
     if (state.watch !== tok) return
     $('#watch-loading').hidden = true
     player.load({ links: r.links, kind: 'vod', startAt: 0 })
@@ -1244,7 +1517,7 @@ function renderChannel(keyword = '') {
           <span class="muted">${icon('clock', 14)} <span id="channel-uptime">${esc(uptimeSince(live.createdAt))}</span></span>
         </div>
         <p class="hero-title">${esc(live.title)}</p>
-        ${live.game ? `<p class="hero-game">${icon('gamepad', 14)} ${esc(live.game.displayName)}</p>` : ''}
+        ${live.game ? `<p class="hero-game">${icon('gamepad', 14)} ${gameLink(live.game.id, live.game.displayName)}</p>` : ''}
         <button class="btn primary" type="button" data-live="${esc(login)}">${icon('play', 16)}<span>${esc(t('watch_live'))}</span></button>
       </div>
       <img class="hero-thumb" src="${esc(live.previewImageURL)}" alt="" data-live="${esc(login)}">`
@@ -1294,6 +1567,10 @@ function renderChannel(keyword = '') {
         </div>
       </div>
       <div class="grid vods" id="channel-clips"></div>
+      <div class="load-more" id="channel-clips-more"></div>
+    </section>
+    <section class="block" data-cpanel="about" ${tab === 'about' ? '' : 'hidden'}>
+      <div id="channel-about"></div>
     </section>`
   loadChannelTab(tab)
   renderVodGrid()
@@ -1475,7 +1752,7 @@ async function openLive(rawLogin) {
   state.watch = { kind: 'live', login, info: null, links: null }
   const token = state.watch
   showWatch('live', login)
-  setUrl({ channel: login })
+  go(`/${login}`, { watch: true })
 
   const [links, info] = await Promise.all([
     api.getLive(login).catch((e) => ({ error: e?.status ? 'missing' : 'network' })),
@@ -1596,6 +1873,7 @@ function renderLiveInfo(info, links) {
   const s = info?.stream
   const title = s?.title || links?.title || ''
   const game = s?.game?.displayName || links?.game || ''
+  const gameId = s?.game?.displayName ? s.game.id : ''
   if (state.watch && s?.createdAt) state.watch.startedAt = s.createdAt
   $('#watch-title').textContent = name
   setWatchChannel(state.watch?.login)
@@ -1607,7 +1885,7 @@ function renderLiveInfo(info, links) {
   $('#watch-info').innerHTML = `
     <div class="wi-text">
       <h1 title="${esc(title)}">${esc(title)}</h1>
-      ${game ? `<p class="hero-game">${icon('gamepad', 14)} ${esc(game)}</p>` : ''}
+      ${game ? `<p class="hero-game">${icon('gamepad', 14)} ${gameLink(gameId, game)}</p>` : ''}
     </div>
     <div class="wi-actions">
       <button class="btn ghost sm" type="button" data-action="see-vods">${icon('film', 16)}<span>${esc(t('see_vods'))}</span></button>
@@ -1621,13 +1899,15 @@ async function openClip(slug) {
   state.watch = { kind: 'clip', id: slug, info: null, links: null, offset: null }
   const token = state.watch
   showWatch('vod', t('clip'))
-  setUrl({ clip: slug })
+  go(`/clip/${encodeURIComponent(slug)}`, { watch: true })
   const clip = await api.getClip(slug).catch(() => null)
   if (state.watch !== token) return
   if (!clip || !Object.keys(clip.links).length) return showWatchError(t('err_clip'))
   token.links = clip.links
   token.info = clip
   token.login = clip.broadcaster?.login ?? null
+  // Adresse complète, comme sur Twitch, une fois la chaîne connue.
+  if (token.login) go(`/${token.login}/clip/${encodeURIComponent(slug)}`, { replace: true, watch: true })
   $('#watch-loading').hidden = true
   player.load({ links: clip.links, kind: 'vod', startAt: 0 })
   // Chat de la VOD d'origine, si elle existe encore.
@@ -1644,7 +1924,7 @@ async function openClip(slug) {
   $('#watch-info').innerHTML = `
     <div class="wi-text">
       <h1 title="${esc(clip.title ?? '')}">${esc(clip.title ?? '')}</h1>
-      ${clip.game?.displayName ? `<p class="hero-game">${icon('gamepad', 14)} ${esc(clip.game.displayName)}</p>` : ''}
+      ${clip.game?.displayName ? `<p class="hero-game">${icon('gamepad', 14)} ${gameLink(clip.game.id, clip.game.displayName)}</p>` : ''}
     </div>
     <div class="wi-actions">
       ${token.login ? `<button class="btn ghost sm" type="button" data-action="see-vods">${icon('film', 16)}<span>${esc(t('see_vods'))}</span></button>` : ''}
@@ -1671,24 +1951,37 @@ function clipCard(c) {
     </article>`
 }
 
-/** Section Clips de la page chaîne, chargée à part (période au choix). */
-async function loadChannelClips(period = state.clipPeriod ?? 'LAST_WEEK') {
+/** Section Clips de la page chaîne, chargée à part (période au choix), avec
+ *  « Charger plus » (voir api.getClips : 100 d'un coup, puis Helix connecté). */
+async function loadChannelClips(period = state.clipPeriod ?? 'LAST_WEEK', { more = false } = {}) {
   const login = state.channel?.login
   const box = $('#channel-clips')
   if (!login || !box) return
   state.clipPeriod = period
   for (const b of document.querySelectorAll('[data-clip-period]')) b.classList.toggle('active', b.dataset.clipPeriod === period)
-  // Gardés en mémoire : la page est redessinée à chaque frappe du filtre.
+  // Gardés en mémoire : on revient sur une période sans tout recharger.
   const key = `${login}|${period}`
   state.clipCache ??= new Map()
-  let clips = state.clipCache.get(key)
-  if (!clips) {
-    box.innerHTML = skeleton(4, 'vod')
-    clips = await api.getClips(login, period).catch(() => null)
-    if (clips) state.clipCache.set(key, clips)
+  let entry = state.clipCache.get(key)
+  let added = null
+  if (!entry || more) {
+    if (more && !entry?.cursor) return
+    if (!more) box.innerHTML = skeleton(4, 'vod')
+    const moreBtn = $('#channel-clips-more button')
+    if (moreBtn) moreBtn.disabled = true
+    const page = await api.getClips(login, period, more ? entry.cursor : null, state.channel.info?.id).catch(() => null)
+    if (page) {
+      const known = new Set((more ? entry.items : []).map((c) => c.slug))
+      added = page.items.filter((c) => !known.has(c.slug))
+      entry = { items: more ? [...entry.items, ...added] : added, cursor: page.cursor, locked: page.locked }
+      state.clipCache.set(key, entry)
+    } else if (more) entry = { ...entry, cursor: null }
   }
   if (state.channel?.login !== login || state.clipPeriod !== period || !$('#channel-clips')) return
-  $('#channel-clips').innerHTML = clips?.length ? clips.map(clipCard).join('') : emptyState(t('no_clips'), 'film')
+  // « Charger plus » ajoute à la suite : la grille ne remonte pas en haut.
+  if (more && added) $('#channel-clips').insertAdjacentHTML('beforeend', added.map(clipCard).join(''))
+  else $('#channel-clips').innerHTML = entry?.items?.length ? entry.items.map(clipCard).join('') : emptyState(t('no_clips'), 'film')
+  $('#channel-clips-more').innerHTML = moreHtml(entry, 'clips-more')
 }
 
 /** Playlists de la chaîne : une rangée défilante par playlist, comme sur Twitch. */
@@ -1735,7 +2028,7 @@ function playNextInPlaylist() {
   else state.playlist = null
 }
 
-async function openVod(id, preset, { keepPlaylist = false } = {}) {
+async function openVod(id, preset, { keepPlaylist = false, at = null } = {}) {
   const vodId = String(id)
   if (!keepPlaylist && !state.playlist?.ids.includes(vodId)) state.playlist = null
   stopPlayback()
@@ -1743,7 +2036,7 @@ async function openVod(id, preset, { keepPlaylist = false } = {}) {
   state.watch = { kind: 'vod', id: vodId, info: null, links: null }
   const token = state.watch
   showWatch('vod', known.title || `VOD ${vodId}`)
-  setUrl({ id: vodId })
+  go(`/videos/${vodId}`, { watch: true })
 
   const [links, meta] = await Promise.all([
     api.getVodLinks(vodId).catch((e) => ({ error: e?.status ? 'missing' : 'network' })),
@@ -1759,7 +2052,8 @@ async function openVod(id, preset, { keepPlaylist = false } = {}) {
 
   const length = meta?.lengthSeconds ?? known.length ?? 0
   if (length) store.setLength(vodId, length)
-  let startAt = store.getProgress(vodId)
+  // L'instant d'un lien (« ?t= ») passe avant la reprise.
+  let startAt = at ?? store.getProgress(vodId)
   // Une VOD finie (ou presque) repart du début plutôt que de se terminer aussitôt.
   if (length && startAt > length - 30) startAt = 0
   if (startAt < 10) startAt = 0
@@ -1768,7 +2062,7 @@ async function openVod(id, preset, { keepPlaylist = false } = {}) {
   player.load({ links: links.links, kind: 'vod', startAt })
   api.getVodChapters(vodId).then((ch) => { if (state.watch === token) player.setChapters(ch) }).catch(() => {})
   chat.openVod({ videoId: vodId, channelId: meta?.owner?.id ?? null, channelLogin: meta?.owner?.login ?? null, startAt })
-  if (startAt) toast(t('resume_at', { t: formatClock(startAt) }))
+  if (startAt && !at) toast(t('resume_at', { t: formatClock(startAt) }))
 
   const title = meta?.title || known.title || `VOD ${vodId}`
   const streamer = meta?.owner?.displayName || known.streamer || ''
@@ -1785,7 +2079,7 @@ async function openVod(id, preset, { keepPlaylist = false } = {}) {
   $('#watch-info').innerHTML = `
     <div class="wi-text">
       <h1 title="${esc(title)}">${esc(title)}</h1>
-      ${meta?.game?.displayName ? `<p class="hero-game">${icon('gamepad', 14)} ${esc(meta.game.displayName)}</p>` : ''}
+      ${meta?.game?.displayName ? `<p class="hero-game">${icon('gamepad', 14)} ${gameLink(meta.game.id, meta.game.displayName)}</p>` : ''}
     </div>
     <div class="wi-actions">
       ${token.login ? `<button class="btn ghost sm" type="button" data-action="see-vods">${icon('film', 16)}<span>${esc(t('see_vods'))}</span></button>` : ''}
@@ -1832,20 +2126,26 @@ function setWatchChannel(login) {
   }
 }
 
-function minimizeWatch() {
+/** `url` : l'adresse suit (page dessous ↔ lecteur), pour que précédent /
+ *  suivant passent de l'un à l'autre. */
+function minimizeWatch({ url = true } = {}) {
   const watch = $('#watch')
-  if (watch.hidden) return
+  if (watch.hidden || watch.classList.contains('minimized')) return
   if (player.isFullscreen) document.exitFullscreen?.().catch(() => {})
   watch.classList.add('minimized')
   document.documentElement.classList.remove('watching')
+  if (url) go(pagePath())
 }
 
-function expandWatch() {
-  $('#watch').classList.remove('minimized')
+function expandWatch({ url = true } = {}) {
+  const watch = $('#watch')
+  if (!watch.classList.contains('minimized')) return
+  watch.classList.remove('minimized')
   document.documentElement.classList.add('watching')
+  if (url) go(watchPath(), { watch: true })
 }
 
-function closeWatch() {
+function closeWatch({ url = true } = {}) {
   const watch = $('#watch')
   if (player.isFullscreen) document.exitFullscreen?.().catch(() => {})
   stopPlayback()
@@ -1854,18 +2154,14 @@ function closeWatch() {
   watch.classList.remove('open')
   document.documentElement.classList.remove('watching')
   setTimeout(() => { if (!state.watch) { watch.hidden = true; watch.classList.remove('minimized') } }, 220)
-  setUrl({})
+  // L'adresse redevient celle de la page sous le lecteur.
+  if (url) go(pagePath(), { replace: true })
   renderContinue()
   if (state.channel) {
     // Les barres de progression des cartes ont pu changer.
     const kw = $('#vod-filter')?.value?.trim().toLowerCase() ?? ''
     if (state.tab === 'channel') renderChannel(kw)
   }
-}
-
-function setUrl(params) {
-  const q = new URLSearchParams(params).toString()
-  history.replaceState(null, '', q ? `${location.pathname}?${q}` : location.pathname)
 }
 
 // ── Feuilles : ouvrir dans…, réglages ─────────────────────────────────────
@@ -1954,6 +2250,7 @@ function openSettings() {
         </select>
       </label>
       ${toggle('set-homelist', t('home_list'), p.homeList, t('home_list_sub'))}
+      ${toggle('set-recent', t('show_recent'), p.showRecent !== false, t('show_recent_sub'))}
     </div>
     <div class="sheet-section">
       <h3>${esc(t('player_settings'))}</h3>
@@ -2052,6 +2349,7 @@ function openSettings() {
     if (id === 'import-file') { importData(e.target.files?.[0]); e.target.value = ''; return }
     if (id === 'set-clickpause') p.clickPause = e.target.checked
     if (id === 'set-homelist') { p.homeList = e.target.checked; store.savePrefs(); applyLayout(); return }
+    if (id === 'set-recent') { p.showRecent = e.target.checked; store.savePrefs(); renderRecentChannels(); return }
     if (id === 'set-toplang') {
       p.topLang = e.target.value === 'auto' ? null : e.target.value
       store.savePrefs()
