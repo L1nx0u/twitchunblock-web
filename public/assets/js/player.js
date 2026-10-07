@@ -9,7 +9,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { t } from './i18n.js'
-import { API_URL, WORKER_BASES, fixProxiedUrl, workerBaseOf } from './api.js'
+import { API_URL, RELAY_BASE, WORKER_BASES, fixProxiedUrl, proxyBaseOf } from './api.js'
 import { $, esc, formatClock, icon, isIOS } from './util.js'
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
@@ -320,9 +320,9 @@ export class Player {
     if (token !== this.attachToken) return
 
     if (Hls?.isSupported()) {
-      // Le relais du Worker qui a servi ces liens : le principal, ou un
-      // secours si le quota du principal est atteint.
-      const relay = workerBaseOf(url) ?? API_URL
+      // Le relais qui a servi ces liens : celui du VPS, le Worker principal,
+      // ou un secours si le quota du principal est atteint.
+      const relay = proxyBaseOf(url) ?? API_URL
       const hls = new Hls({
         // Rouvrir la requête avec l'adresse corrigée : c'est le point
         // d'accroche que hls.js offre pour réécrire une URL avant envoi.
@@ -367,9 +367,12 @@ export class Player {
         // requêtes n'aboutissent plus du tout — code 0, la page d'erreur de
         // Cloudflare n'ayant pas d'en-tête CORS. Plutôt que de relancer sans
         // fin le même Worker, main.js redemande les liens à un autre.
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !data.response?.code) {
-          const down = workerBaseOf(data.frag?.url || data.context?.url || data.url || '')
-          if (down && this.o.onWorkerDown?.(down)) return
+        // Relais du VPS : même une réponse d'erreur (Twitch peut limiter son
+        // adresse IP) renvoie au Worker.
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          const down = proxyBaseOf(data.frag?.url || data.context?.url || data.url || '')
+          const failed = !data.response?.code || (down === RELAY_BASE && data.response.code >= 400)
+          if (down && failed && this.o.onWorkerDown?.(down)) return
         }
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad()
         else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError()

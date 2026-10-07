@@ -1690,6 +1690,14 @@ let lastWorkerSwitch = 0
 function switchWorker(base) {
   const w = state.watch
   if (w?.kind !== 'live' && w?.kind !== 'vod') return false
+  // Relais vidéo du VPS en panne : les mêmes liens, par le Worker — sans
+  // redemander quoi que ce soit (une VOD reconstruite n'a rien à redemander).
+  if (base === api.RELAY_BASE && w.links && api.markWorkerDown(base)) {
+    console.info('[TwitchUnblock] Relais vidéo injoignable, retour au Worker :', base)
+    w.links = api.withoutRelay(w.links)
+    player.swapLinks(w.links)
+    return true
+  }
   if (Date.now() - lastWorkerSwitch < 60_000 || !api.markWorkerDown(base)) return false
   lastWorkerSwitch = Date.now()
   console.info('[TwitchUnblock] Worker injoignable, passage au secours :', base)

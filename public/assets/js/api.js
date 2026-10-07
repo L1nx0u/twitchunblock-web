@@ -26,6 +26,18 @@ const originOf = (u) => { try { return new URL(u).origin } catch { return null }
 /** Le principal d'abord, puis les secours, dans l'ordre. */
 export const WORKER_BASES = [...new Set([API_URL, ...FALLBACK_URLS.map(originOf).filter(Boolean)])]
 
+// ── Relais vidéo (serveur à soi) ───────────────────────────────────────────
+// La lecture fait presque tout le quota de requêtes du Worker : chaque
+// segment de VOD, la playlist d'un direct toutes les ~2 s. Un relais sur un
+// VPS (docker/relay.mjs, README « Video relay ») exécute le même proxy, sans
+// quota : les liens de lecture du Worker y sont redirigés, le Worker garde
+// tout le reste. Relais injoignable → retour au Worker, comme pour un Worker
+// de secours (écarté 30 min). Une instance avec sa propre adresse
+// (config.js) n'hérite pas du relais officiel : elle donne le sien dans
+// `relayUrl`, ou aucun.
+const DEFAULT_RELAY_URL = ''
+export const RELAY_BASE = originOf(CFG.relayUrl ?? (CFG.apiUrl ? '' : DEFAULT_RELAY_URL))
+
 // Worker mis de côté sur cet appareil, pour ne pas le retenter à chaque
 // requête. La page d'erreur de Cloudflare n'a pas d'en-tête CORS : le
 // navigateur ne voit qu'un échec réseau, jamais le code 1027. Un Worker qui
@@ -45,7 +57,8 @@ const isDown = (base) => Math.max(downStored()[base] || 0, downMem[base] || 0) >
 /** Écarte un Worker en panne. `false` s'il n'y a aucun autre Worker vers
  *  qui se tourner : l'appelant garde alors son comportement habituel. */
 export function markWorkerDown(base) {
-  if (WORKER_BASES.length < 2 || !WORKER_BASES.includes(base)) return false
+  // Le relais a toujours un recours : le Worker.
+  if (base !== RELAY_BASE && (WORKER_BASES.length < 2 || !WORKER_BASES.includes(base))) return false
   const until = Date.now() + DOWN_MS
   downMem[base] = until
   const m = downStored()
@@ -54,10 +67,41 @@ export function markWorkerDown(base) {
   return true
 }
 
-/** Worker (principal ou secours) qui a servi cette adresse, sinon null. */
-export function workerBaseOf(url) {
+/** Qui relaie cette adresse : le relais vidéo ou un Worker, sinon null. */
+export function proxyBaseOf(url) {
   const o = originOf(url)
-  return WORKER_BASES.includes(o) ? o : null
+  return o && (o === RELAY_BASE || WORKER_BASES.includes(o)) ? o : null
+}
+
+/** Liens de lecture d'un relais à l'autre (même route /api/proxy des deux
+ *  côtés) : vers le relais vidéo s'il répond, vers le Worker sinon. */
+function moveLinks(links, from, to) {
+  const out = {}
+  for (const [q, link] of Object.entries(links ?? {})) {
+    let moved = link
+    try {
+      const u = new URL(link)
+      if (from(u.origin) && u.pathname === '/api/proxy') moved = `${to}${u.pathname}${u.search}`
+    } catch {}
+    out[q] = moved
+  }
+  return out
+}
+const viaRelay = (data) => (RELAY_BASE && !isDown(RELAY_BASE) && data?.links
+  ? { ...data, links: moveLinks(data.links, (o) => WORKER_BASES.includes(o), RELAY_BASE) }
+  : data)
+/** Relais en panne en pleine lecture : les mêmes liens, par le Worker. */
+export const withoutRelay = (links) => moveLinks(links, (o) => o === RELAY_BASE, API_URL)
+
+// Relais injoignable (VPS arrêté, mal configuré) : on le sait dès le
+// chargement de la page, plutôt qu'après les essais du lecteur.
+if (RELAY_BASE && !isDown(RELAY_BASE)) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 4000)
+  fetch(`${RELAY_BASE}/health`, { cache: 'no-store', signal: ctrl.signal })
+    .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`) })
+    .catch(() => markWorkerDown(RELAY_BASE))
+    .finally(() => clearTimeout(timer))
 }
 
 /**
@@ -396,19 +440,19 @@ export async function getVodMeta(id) {
 // bloqué — chargement infini et « CORS error » dans la console. Le réglage
 // « proxy » ne concerne plus que les liens donnés aux applis externes
 // (VLC, Infuse…), voir `directUrl`.
-export function getLive(login) {
-  return workerJson(`/api/get-live?name=${encodeURIComponent(login)}&proxy=true`)
+export async function getLive(login) {
+  return viaRelay(await workerJson(`/api/get-live?name=${encodeURIComponent(login)}&proxy=true`))
 }
 
-export function getVodLinks(id) {
-  return workerJson(`/api/get-m3u8?id=${encodeURIComponent(id)}&proxy=true`)
+export async function getVodLinks(id) {
+  return viaRelay(await workerJson(`/api/get-m3u8?id=${encodeURIComponent(id)}&proxy=true`))
 }
 
 /** Adresse d'origine derrière un lien du proxy, pour les applis externes. */
 export function directUrl(link) {
   try {
     const u = new URL(link)
-    if (workerBaseOf(link) && u.pathname === '/api/proxy') return u.searchParams.get('url') || link
+    if (proxyBaseOf(link) && u.pathname === '/api/proxy') return u.searchParams.get('url') || link
   } catch {}
   return link
 }
@@ -426,8 +470,8 @@ export function directUrl(link) {
 export function fixProxiedUrl(url, playlistUrl) {
   try {
     const u = new URL(url)
-    // Le Worker qui a servi la playlist : le principal, ou un secours.
-    const base = workerBaseOf(playlistUrl) ?? API_URL
+    // Qui a servi la playlist : le relais vidéo, le Worker ou un secours.
+    const base = proxyBaseOf(playlistUrl) ?? API_URL
     // Sous-playlists de direct (Luminous, playlist.ttvnw.net) laissées en
     // direct par le Worker : leurs jetons sont liés à l'adresse IP du Worker,
     // le navigateur s'y faisait refuser (403) et « Auto » ne démarrait pas.
@@ -456,8 +500,8 @@ export function getRecoverableStreams(channel) {
   return workerJson(`/api/recover-list?channel=${encodeURIComponent(channel)}`)
 }
 /** Liens d'une diffusion supprimée, ou lève (404) si le CDN ne la sert plus. */
-export function resolveRecovery(login, streamID, epoch) {
-  return workerJson(`/api/recover-resolve?login=${encodeURIComponent(login)}&streamID=${encodeURIComponent(streamID)}&epoch=${encodeURIComponent(epoch)}`)
+export async function resolveRecovery(login, streamID, epoch) {
+  return viaRelay(await workerJson(`/api/recover-resolve?login=${encodeURIComponent(login)}&streamID=${encodeURIComponent(streamID)}&epoch=${encodeURIComponent(epoch)}`))
 }
 
 // La sauvegarde exige le jeton Twitch de son propriétaire : le Worker le fait

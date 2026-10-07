@@ -1,0 +1,44 @@
+# Relais vidéo de TwitchUnblock sur un VPS (README, « Video relay »).
+#
+# Dans un dossier, avec le Caddyfile à côté et un fichier .env :
+#   RELAY_DOMAIN=monrelais.duckdns.org     (nom qui pointe vers le VPS)
+# puis :
+#   docker compose up -d
+#   docker compose pull && docker compose up -d    pour mettre à jour
+#
+# Le relais tourne dans l'image du site (même worker.js) ; Caddy lui donne
+# l'HTTPS (certificat Let's Encrypt automatique) : ports 80 et 443 ouverts.
+services:
+  relay:
+    image: ghcr.io/mxfia19/twitchunblock-web:${TAG:-latest}
+    entrypoint: ["node", "/app/relay.mjs"]
+    restart: unless-stopped
+    environment:
+      PUBLIC_ORIGIN: "https://${RELAY_DOMAIN}"
+      # Sites qui peuvent s'en servir (les autres sont refusés) : le site
+      # officiel et ses aperçus de test sur Vercel.
+      ALLOWED_ORIGINS: "https://test2-fawn-eta.vercel.app,https://test2-*-mxfia19s-projects.vercel.app"
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [relay]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      RELAY_DOMAIN: "${RELAY_DOMAIN}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  caddy-data:
+  caddy-config:

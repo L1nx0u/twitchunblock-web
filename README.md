@@ -83,6 +83,8 @@ public/              The website, served as-is by Vercel (no build step)
       chat/          Chat: IRC, emotes, badges, pinned message, VOD replay
 worker.js            Backend: Cloudflare Worker
 wrangler.toml        Worker configuration
+docker/relay.mjs     Video relay for your own server (same proxy as the Worker)
+relay/               Its docker-compose.yml and Caddyfile (HTTPS)
 vercel.json          Website configuration on Vercel
 ```
 
@@ -102,7 +104,7 @@ Browser ──► Cloudflare Worker ──► Twitch (playlists, video segments)
     └──► BTTV / FFZ / 7TV / recent-messages   emotes and chat history
 ```
 
-Video always goes through the Worker: Twitch's VOD CDN only accepts requests coming from `twitch.tv`, so a direct link would be blocked by the browser. The Worker also stores history backups, the usage count and announcements (Cloudflare D1).
+Video always goes through the Worker — or through your own [video relay](#video-relay-on-your-own-server-vps): Twitch's VOD CDN only accepts requests coming from `twitch.tv`, so a direct link would be blocked by the browser. The Worker also stores history backups, the usage count and announcements (Cloudflare D1).
 
 The iOS app uses the same Worker.
 
@@ -139,6 +141,7 @@ Everything lives at the top of `public/assets/js/api.js`:
 |---|---|
 | `API_URL` | Worker address |
 | `DEFAULT_FALLBACK_URLS` | Fallback Workers used when the main one hits its daily limit (see [Fallback Worker](#fallback-worker-daily-limit)) |
+| `DEFAULT_RELAY_URL` | Video relay on your own server, used for playback instead of the Worker (see [Video relay](#video-relay-on-your-own-server-vps)). Empty: the Worker relays video |
 | `HELIX_CLIENT_ID` | Twitch application ID (login) |
 | `REDIRECT_URI` | Where Twitch sends you back after login — must be registered exactly as-is in the Twitch developer console |
 | `EXTERNAL_LINKS_VIA_PROXY` | Links handed to VLC / Outplayer / Infuse: through the Worker (`true`) or straight from Twitch (`false`) |
@@ -177,6 +180,56 @@ already playing switches over by itself and resumes where it was.
 
 A copy of the site with its own Worker lists its fallbacks in
 `public/config.js`: `window.TU_CONFIG = { apiUrl: '…', fallbackApiUrls: ['…'] }`.
+
+### Video relay on your own server (VPS)
+
+Almost all of the Worker's requests come from video playback on the website:
+every VOD segment goes through `/api/proxy`, and a live stream's playlist is
+reloaded every ~2 s — roughly 360 requests per hour of VOD and 1,800 per hour
+of live, per viewer. The video relay runs the same proxy (`worker.js`) on a
+server of yours, with no request limit. The Worker keeps everything else
+(backups, usage count, announcements, stream and VOD lookups).
+
+The website sends playback through the relay when one is set
+(`DEFAULT_RELAY_URL` in `public/assets/js/api.js`, or `relayUrl` in
+`public/config.js`), and falls back to the Worker on its own when the relay
+doesn't answer — even in the middle of a video. The iOS app reads Twitch's CDN
+directly and doesn't need it.
+
+You need a server with Docker, ports 80 and 443 open, and a domain name
+pointing to it (a free subdomain from [duckdns.org](https://www.duckdns.org)
+works). Caddy gets and renews the HTTPS certificate by itself.
+
+1. In a folder on the server, put [`relay/docker-compose.yml`](relay/docker-compose.yml)
+   and [`relay/Caddyfile`](relay/Caddyfile), and a `.env` file:
+   ```
+   RELAY_DOMAIN=myrelay.duckdns.org
+   ```
+2. `docker compose up -d`, then check that `https://myrelay.duckdns.org/health`
+   answers `ok`.
+3. Set `DEFAULT_RELAY_URL` (or `relayUrl`) to `https://myrelay.duckdns.org`.
+
+To update: `docker compose pull && docker compose up -d`. The relay runs from
+the website's image (`ghcr.io/mxfia19/twitchunblock-web`), started with
+`node /app/relay.mjs`.
+
+`ALLOWED_ORIGINS` (in `docker-compose.yml`) lists the websites allowed to use
+the relay; other sites get a 403, so they can't use your bandwidth. Bandwidth:
+every VOD watched on the website goes through the server (about 1.5–3.5 GB per
+hour depending on quality); live video segments don't, only their playlists.
+
+**Oracle Cloud:** open ports 80 and 443 in two places — in the VCN's security
+list (*Networking → Virtual cloud networks → your VCN → Security lists →
+Add ingress rules*, source `0.0.0.0/0`, TCP, ports `80` and `443`), and in the
+instance's firewall. On Oracle's Ubuntu images:
+
+```bash
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+sudo netfilter-persistent save
+```
+
+(Oracle Linux: `sudo firewall-cmd --permanent --add-service=http --add-service=https && sudo firewall-cmd --reload`.)
 
 ### Locally
 ```bash

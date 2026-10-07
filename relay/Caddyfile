@@ -1,0 +1,8 @@
+# HTTPS du relais vidéo : certificat Let's Encrypt obtenu et renouvelé seul
+# pour RELAY_DOMAIN (fichier .env à côté de docker-compose.yml).
+{$RELAY_DOMAIN} {
+	reverse_proxy relay:8788 {
+		# Vidéo : chaque morceau part dès qu'il arrive, sans tampon.
+		flush_interval -1
+	}
+}
