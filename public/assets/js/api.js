@@ -35,7 +35,7 @@ export const WORKER_BASES = [...new Set([API_URL, ...FALLBACK_URLS.map(originOf)
 // de secours (écarté 30 min). Une instance avec sa propre adresse
 // (config.js) n'hérite pas du relais officiel : elle donne le sien dans
 // `relayUrl`, ou aucun.
-const DEFAULT_RELAY_URL = ''
+const DEFAULT_RELAY_URL = 'https://relais.mxfia19.duckdns.org'
 export const RELAY_BASE = originOf(CFG.relayUrl ?? (CFG.apiUrl ? '' : DEFAULT_RELAY_URL))
 
 // Worker mis de côté sur cet appareil, pour ne pas le retenter à chaque

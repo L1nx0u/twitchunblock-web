@@ -196,20 +196,35 @@ The website sends playback through the relay when one is set
 doesn't answer — even in the middle of a video. The iOS app reads Twitch's CDN
 directly and doesn't need it.
 
-You need a server with Docker, ports 80 and 443 open, and a domain name
-pointing to it (a free subdomain from [duckdns.org](https://www.duckdns.org)
-works). Caddy gets and renews the HTTPS certificate by itself.
+You need a server with Docker and a domain name pointing to it (a free
+subdomain from [duckdns.org](https://www.duckdns.org) works — DuckDNS also
+answers for any name under yours, like `relay.yourname.duckdns.org`).
 
 1. In a folder on the server, put [`relay/docker-compose.yml`](relay/docker-compose.yml)
    and [`relay/Caddyfile`](relay/Caddyfile), and a `.env` file:
    ```
    RELAY_DOMAIN=myrelay.duckdns.org
    ```
-2. `docker compose up -d`, then check that `https://myrelay.duckdns.org/health`
-   answers `ok`.
-3. Set `DEFAULT_RELAY_URL` (or `relayUrl`) to `https://myrelay.duckdns.org`.
+2. Start it:
+   - **A web server already uses ports 80/443** (Caddy, nginx…): run
+     `docker compose up -d`, then have that server forward `RELAY_DOMAIN` to
+     `127.0.0.1:8788`. With Caddy, add to its Caddyfile and reload it
+     (`sudo systemctl reload caddy`):
+     ```
+     myrelay.duckdns.org {
+         reverse_proxy 127.0.0.1:8788 {
+             flush_interval -1
+         }
+     }
+     ```
+   - **Ports 80/443 are free**: `docker compose --profile caddy up -d` — the
+     bundled Caddy gets and renews the HTTPS certificate by itself (open ports
+     80 and 443, see below).
+3. Check that `https://myrelay.duckdns.org/health` answers `ok`.
+4. Set `DEFAULT_RELAY_URL` (or `relayUrl`) to `https://myrelay.duckdns.org`.
 
-To update: `docker compose pull && docker compose up -d`. The relay runs from
+To update: `docker compose pull && docker compose up -d` (add `--profile caddy`
+if you use the bundled Caddy). The relay runs from
 the website's image (`ghcr.io/mxfia19/twitchunblock-web`), started with
 `node /app/relay.mjs`.
 
@@ -224,8 +239,7 @@ Add ingress rules*, source `0.0.0.0/0`, TCP, ports `80` and `443`), and in the
 instance's firewall. On Oracle's Ubuntu images:
 
 ```bash
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+sudo iptables -I INPUT -p tcp -m multiport --dports 80,443 -m state --state NEW -j ACCEPT
 sudo netfilter-persistent save
 ```
 
