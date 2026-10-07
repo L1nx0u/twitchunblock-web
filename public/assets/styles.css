@@ -879,8 +879,12 @@ input[type='search']::-webkit-search-cancel-button { filter: invert(1) opacity(0
 .msg.notice-raid svg { color: var(--purple); flex: none; }
 .btn.xs { height: 26px; padding: 0 10px; font-size: 12px; }
 .msg.notice-sub { color: var(--purple); }
-.msg.announce { margin: 4px 8px; padding: 6px 10px; border-radius: 8px; background: color-mix(in srgb, var(--announce) 16%, transparent); box-shadow: inset 3px 0 var(--announce); }
+.msg.msg-announce { margin: 4px 8px; padding: 6px 10px; border-radius: 8px; background: color-mix(in srgb, var(--announce) 16%, transparent); box-shadow: inset 3px 0 var(--announce); }
 .setting.setting-col { flex-direction: column; align-items: stretch; gap: 8px; }
+.feedback-form { display: flex; flex-direction: column; gap: 10px; }
+.feedback-form textarea.text-input { height: auto; min-height: 130px; padding: 10px 12px; line-height: 1.45; resize: vertical; }
+.feedback-form .fb-info { color: var(--text); opacity: 0.75; overflow-wrap: anywhere; }
+.feedback-form .btn.primary { align-self: stretch; justify-content: center; }
 .text-input { width: 100%; height: 38px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: 14px; }
 .text-input:focus { outline: 2px solid var(--purple); outline-offset: -1px; }
 

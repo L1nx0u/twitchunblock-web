@@ -6,6 +6,32 @@
 
 export const CHANGELOG = [
   {
+    version: '2026.10.07c',
+    items: {
+      fr: [
+        'Direct : environ 6 s de retard au lieu de 20. Le lecteur se plaçait trop loin du direct (Twitch annonce des segments de 6 s qui en durent 2).',
+        'Direct : ←/→ et les boutons ±10 s marchent aussi pendant un live, pour se rapprocher du direct ou revenir un peu en arrière — comme dans le lecteur incrusté.',
+        'Nouveau : « Signaler un bug ou proposer une idée », dans les réglages et sur l’écran d’erreur du lecteur.',
+        'Chat : les annonces (messages encadrés des modérateurs et des bots) s’affichent correctement, le pseudo n’est plus coupé en morceaux.',
+        'Sans compte, le site explique pourquoi une liste s’arrête à 100 : c’est la limite de Twitch pour les visiteurs non connectés.',
+      ],
+      en: [
+        'Live: about 6 s of delay instead of 20. The player sat too far from the live edge (Twitch announces 6-second segments that last 2).',
+        'Live: ←/→ and the ±10 s buttons now work during a live stream too, to get closer to live or go back a little — like in picture-in-picture.',
+        'New: “Report a bug or suggest an idea”, in the settings and on the player error screen.',
+        'Chat: announcements (boxed messages from moderators and bots) display properly, the username is no longer split into pieces.',
+        'Without an account, the site explains why a list stops at 100: it’s Twitch’s limit for logged-out visitors.',
+      ],
+      es: [
+        'Directo: unos 6 s de retraso en lugar de 20. El reproductor se quedaba demasiado lejos del directo (Twitch anuncia segmentos de 6 s que duran 2).',
+        'Directo: ←/→ y los botones ±10 s también funcionan durante un directo, para acercarse al directo o retroceder un poco, como en el modo imagen en imagen.',
+        'Nuevo: «Informar de un error o proponer una idea», en los ajustes y en la pantalla de error del reproductor.',
+        'Chat: los anuncios (mensajes enmarcados de moderadores y bots) se muestran bien, el nombre ya no se corta en trozos.',
+        'Sin cuenta, la web explica por qué una lista se detiene en 100: es el límite de Twitch para visitantes sin sesión.',
+      ],
+    },
+  },
+  {
     version: '2026.10.07b',
     items: {
       fr: [

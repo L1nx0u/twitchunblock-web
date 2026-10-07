@@ -484,6 +484,8 @@ const actions = {
     b.innerHTML = `${icon('heart', 15)}<span>${esc(t(on ? 'following' : 'follow'))}</span>`
   },
   'whats-new': () => showWhatsNew(CHANGELOG, 'changelog'),
+  feedback: () => openFeedback(),
+  'feedback-bug': () => openFeedback('bug'),
   'replay-tutorial': () => startTour(),
   'home-offline': () => setHomeTab('offline'),
   'toggle-layout': () => { store.prefs.homeList = !store.prefs.homeList; store.savePrefs(); applyLayout() },
@@ -2172,6 +2174,75 @@ function closeWatch({ url = true } = {}) {
   }
 }
 
+// ── Retours : bug, idée ────────────────────────────────────────────────────
+// Depuis les réglages, ou l'écran d'erreur du lecteur. Le Worker range le
+// message et le transmet sur Discord ; ce qui part est montré avant l'envoi.
+const FEEDBACK_KINDS = ['bug', 'idea', 'other']
+
+/** Infos techniques jointes : de quoi reproduire un bug, rien de plus. */
+function feedbackInfo() {
+  const brands = navigator.userAgentData?.brands?.filter((b) => !/not.?a.?brand/i.test(b.brand))
+  const w = state.watch
+  return {
+    browser: brands?.length ? brands.map((b) => `${b.brand} ${b.version}`).join(', ') : navigator.userAgent.slice(0, 160),
+    os: navigator.userAgentData?.platform || navigator.platform || '',
+    lang: lang(),
+    page: location.pathname + location.search,
+    screen: `${screen.width}×${screen.height}`,
+    // Ce qui se lisait : la VOD ou la chaîne en cause, pour un bug de lecture.
+    watching: w ? [w.kind, w.login, w.kind !== 'live' ? w.id : null].filter(Boolean).join(' ') : null,
+    account: Boolean(session.login),
+  }
+}
+
+function openFeedback(kind = 'bug') {
+  const info = feedbackInfo()
+  const summary = [info.browser, info.os, `v${usage.SITE_VERSION}`, info.page, info.watching].filter(Boolean).join(' · ')
+  let current = FEEDBACK_KINDS.includes(kind) ? kind : 'bug'
+  openSheet(`
+    <div class="sheet-head"><h2>${esc(t('feedback'))}</h2><button class="icon-btn" type="button" data-sheet-close>${icon('x', 20)}</button></div>
+    <form class="sheet-section feedback-form" id="feedback-form">
+      <div class="segmented full" id="fb-kind">
+        ${FEEDBACK_KINDS.map((k) => `<button type="button" data-fb="${k}" class="${k === current ? 'active' : ''}">${esc(t(`fb_${k}`))}</button>`).join('')}
+      </div>
+      <textarea class="text-input" id="fb-message" rows="6" maxlength="2000" placeholder="${esc(t(`fb_ph_${current}`))}"></textarea>
+      <input class="text-input" id="fb-contact" type="text" maxlength="100" autocomplete="off" placeholder="${esc(t('fb_contact_ph'))}">
+      <p class="muted small">${esc(t('fb_info'))}<br><span class="fb-info">${esc(summary)}</span></p>
+      <button class="btn primary" type="submit" id="fb-send">${icon('send', 16)}<span>${esc(t('fb_send'))}</span></button>
+    </form>`)
+  const sheet = $('#sheet')
+  sheet.onclick = (e) => {
+    if (e.target.closest('[data-sheet-close]')) return closeSheet()
+    const b = e.target.closest('[data-fb]')
+    if (!b) return
+    current = b.dataset.fb
+    for (const x of $$('[data-fb]', sheet)) x.classList.toggle('active', x === b)
+    $('#fb-message').placeholder = t(`fb_ph_${current}`)
+  }
+  $('#feedback-form').onsubmit = async (e) => {
+    e.preventDefault()
+    const message = $('#fb-message').value.trim()
+    if (message.length < 5) {
+      toast(t('fb_short'), 'error')
+      return $('#fb-message').focus()
+    }
+    const btn = $('#fb-send')
+    btn.disabled = true
+    try {
+      await api.sendFeedback({
+        kind: current, message, contact: $('#fb-contact').value.trim(),
+        platform: 'web', version: usage.SITE_VERSION, info,
+      })
+      closeSheet()
+      toast(t('fb_thanks'), 'success')
+    } catch (err) {
+      btn.disabled = false
+      toast(t(err?.status === 429 ? 'fb_too_many' : 'fb_failed'), 'error')
+    }
+  }
+  setTimeout(() => $('#fb-message')?.focus(), 250)
+}
+
 // ── Feuilles : ouvrir dans…, réglages ─────────────────────────────────────
 function openSheet(html) {
   const sheet = $('#sheet')
@@ -2312,6 +2383,7 @@ function openSettings() {
         <a class="sheet-row" href="${api.GITHUB_URL}" target="_blank" rel="noopener">${icon('github', 18)}<span>${esc(t('source_site'))}</span>${icon('external', 16)}</a>
         <a class="sheet-row" href="${api.APP_GITHUB_URL}" target="_blank" rel="noopener">${icon('github', 18)}<span>${esc(t('source_app'))}</span>${icon('external', 16)}</a>
         <a class="sheet-row" href="${api.DISCORD_URL}" target="_blank" rel="noopener">${icon('discord', 18)}<span>${esc(t('discord_join'))}</span>${icon('external', 16)}</a>
+        <button class="sheet-row" type="button" data-action="feedback">${icon('bug', 18)}<span>${esc(t('feedback'))}</span></button>
         <button class="sheet-row" type="button" data-action="whats-new">${icon('sparkles', 18)}<span>${esc(t('changelog'))}</span></button>
         <button class="sheet-row" type="button" data-action="replay-tutorial">${icon('play', 18)}<span>${esc(t('replay_tutorial'))}</span></button>
       </div>

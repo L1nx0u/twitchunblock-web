@@ -132,8 +132,8 @@ export class Player {
           </div>
           <div class="p-bar">
             <button class="p-btn p-play" type="button">${icon('play', 22)}</button>
-            <button class="p-btn p-back vod-only" type="button" data-i18n-title="back10">${icon('back10', 20)}<b>10</b></button>
-            <button class="p-btn p-fwd vod-only" type="button" data-i18n-title="fwd10">${icon('fwd10', 20)}<b>10</b></button>
+            <button class="p-btn p-back" type="button" data-i18n-title="back10">${icon('back10', 20)}<b>10</b></button>
+            <button class="p-btn p-fwd" type="button" data-i18n-title="fwd10">${icon('fwd10', 20)}<b>10</b></button>
             <div class="p-volume">
               <button class="p-btn p-mute" type="button">${icon('volume', 21)}</button>
               <input class="p-vol" type="range" min="0" max="1" step="0.05" aria-label="volume">
@@ -336,7 +336,12 @@ export class Player {
         },
         backBufferLength: 90,
         maxBufferLength: 30,
-        liveSyncDurationCount: 3,
+        // Distance au bord du direct, en secondes. Twitch déclare des
+        // segments de 6 s (EXT-X-TARGETDURATION) qui en durent 2 : compté en
+        // segments (liveSyncDurationCount: 3), le lecteur se tenait à 18 s du
+        // bord — environ 20 s de retard, contre 3 à 4 s une fois avancé à la
+        // main. 4 s, c'est deux vrais segments d'avance : bas sans caler.
+        liveSyncDuration: 4,
         // Une VOD part du début (ou de la reprise) même si sa playlist n'a
         // pas de fin déclarée : sinon hls.js la prend pour un direct et part
         // du bord (VOD reconstruite encore en cours d'écriture, par exemple).
@@ -458,10 +463,18 @@ export class Player {
   }
 
   seekBy(delta) {
-    if (this.kind !== 'vod') return
     const v = this.video
-    const d = Number.isFinite(v.duration) ? v.duration : Infinity
-    v.currentTime = Math.max(0, Math.min(d - 1, v.currentTime + delta))
+    if (this.kind === 'live') {
+      // Direct : dans la fenêtre que garde Twitch (~30 s), comme dans le
+      // lecteur incrusté (PiP) — avancer rapproche du direct.
+      if (!v.seekable.length) return
+      const start = v.seekable.start(0)
+      const end = v.seekable.end(v.seekable.length - 1)
+      v.currentTime = Math.max(start, Math.min(end - 1.5, v.currentTime + delta))
+    } else {
+      const d = Number.isFinite(v.duration) ? v.duration : Infinity
+      v.currentTime = Math.max(0, Math.min(d - 1, v.currentTime + delta))
+    }
     this.flash(delta > 0 ? `+${delta} s` : `${delta} s`)
   }
 

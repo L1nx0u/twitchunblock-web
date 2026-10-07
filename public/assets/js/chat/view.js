@@ -598,8 +598,11 @@ export class ChatView {
       return (me && (tk.kind === 'mention' || tk.kind === 'text') && v === me)
         || (tk.kind === 'text' && words.includes(v))
     })
+    // « msg-announce », pas « announce » : cette classe-là est celle de la
+    // bannière d'annonce du site (mise en page en colonnes, bordure) — le
+    // message en héritait et le pseudo s'écrasait sur plusieurs lignes.
     div.className = 'msg'
-      + (m.announce ? ' announce' : '')
+      + (m.announce ? ' msg-announce' : '')
       + (m.isHighlight ? ' hl' : '')
       + (m.isFirstMessage ? ' first' : '')
       + (mentionsMe ? ' me' : '')

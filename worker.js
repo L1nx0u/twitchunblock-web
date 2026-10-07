@@ -62,6 +62,9 @@ export default {
                 // Annonces affichées dans l'app (lecture publique, écriture admin)
                 case '/api/announcement': return await handleAnnouncementGet(env);
                 case '/api/announcement/react': return await handleAnnouncementReact(request, env);
+                // Retours (bug, idée) du site et de l'app
+                case '/api/feedback': return await handleFeedback(request, env, ctx);
+                case '/api/admin/feedback': return await handleAdminFeedback(request, env);
 
                 // Commandes Moobot pour le site (son API refuse les navigateurs)
                 case '/api/bot-commands/moobot': return await handleMoobotCommands(url);
@@ -906,6 +909,132 @@ async function handleAdminAnnouncement(request, env) {
     // expirationTtl : 60 s minimum chez Cloudflare.
     await store(env).put(ANNOUNCEMENT_KEY, JSON.stringify(announcement), { expirationTtl: Math.max(60, ttl) });
     return jsonResponse({ ok: true, announcement });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Retours (bug, idée, autre) envoyés depuis le site et l'app.
+//
+//  POST /api/feedback { kind, message, contact?, platform, version, info? }
+//  Rangés dans D1 (clé `fb_<date>_<hasard>`, tout dans les métadonnées : la
+//  liste admin se lit en une requête), gardés 180 jours. Si le secret
+//  FEEDBACK_WEBHOOK (adresse d'un webhook Discord) est posé sur le Worker,
+//  chacun est aussi publié dans le salon de ce webhook. Ni adresse IP ni
+//  compte Twitch stockés : ce que la personne écrit, et les infos techniques
+//  affichées avant l'envoi.
+// ═══════════════════════════════════════════════════════════════════════════
+const FEEDBACK_PREFIX = 'fb_';
+const FEEDBACK_KINDS = ['bug', 'idea', 'other'];
+const FEEDBACK_TTL = 180 * 86400;
+const feedbackHits = new Map();   // adresse → { n, until } (mémoire de l'instance)
+
+/** Texte libre : sans caractères de contrôle (sauf retours à la ligne), borné. */
+const cleanText = (v, max) => String(v ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim().slice(0, max);
+
+async function handleFeedback(request, env, ctx) {
+    if (request.method !== 'POST') return jsonError('Method Not Allowed', 405);
+    if (!env.DB) return jsonError("Base D1 'DB' non liée au Worker.", 500);
+    if (BOT_UA.test(request.headers.get('User-Agent') || '')) return jsonResponse({ ok: true, ignored: true });
+    // 5 retours par heure et par adresse : de quoi tout dire, pas de quoi inonder.
+    const ip = request.headers.get('CF-Connecting-IP') || '';
+    const now = Date.now();
+    const hit = feedbackHits.get(ip);
+    if (!hit || hit.until < now) {
+        if (feedbackHits.size > 5000) feedbackHits.clear();
+        feedbackHits.set(ip, { n: 1, until: now + 60 * 60 * 1000 });
+    } else if (++hit.n > 5) return jsonError('Trop de messages, réessaie dans une heure', 429);
+
+    let body;
+    try { body = await request.json(); } catch (e) { return jsonError('JSON invalide', 400); }
+    const message = cleanText(body.message, 2000);
+    if (message.length < 5) return jsonError('Message trop court', 400);
+    let info = body.info;
+    if (info && typeof info === 'object') { try { info = JSON.stringify(info); } catch (e) { info = ''; } }
+    const entry = {
+        k: FEEDBACK_KINDS.includes(body.kind) ? body.kind : 'other',
+        m: message,
+        c: cleanText(body.contact, 100) || null,
+        p: PLATFORMS.includes(body.platform) ? body.platform : 'web',
+        v: cleanText(body.version, 32) || '?',
+        i: cleanText(info, 600) || null,
+        at: now,
+    };
+    const key = `${FEEDBACK_PREFIX}${now.toString(36)}_${crypto.randomUUID().slice(0, 8)}`;
+    await store(env).put(key, '', { metadata: entry, expirationTtl: FEEDBACK_TTL });
+    if (env.FEEDBACK_WEBHOOK) {
+        const post = postFeedbackToDiscord(String(env.FEEDBACK_WEBHOOK), entry);
+        if (ctx?.waitUntil) ctx.waitUntil(post); else await post;
+    }
+    return jsonResponse({ ok: true });
+}
+
+/** Infos techniques (JSON envoyé par le client) en lignes « clé : valeur ». */
+function readableInfo(text) {
+    try {
+        const o = JSON.parse(text);
+        if (o && typeof o === 'object') {
+            const lines = Object.entries(o).filter(([, v]) => v !== null && v !== '' && v !== false).map(([k, v]) => `${k} : ${v}`);
+            if (lines.length) return lines.join('\n');
+        }
+    } catch (e) { /* texte libre : tel quel */ }
+    return text;
+}
+
+/** Publie un retour dans le salon Discord du webhook (sans mention possible). */
+async function postFeedbackToDiscord(webhook, e) {
+    if (!/^https:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api\/webhooks\//.test(webhook)) return;
+    const KINDS = { bug: '🐞 Bug', idea: '💡 Idée', other: '💬 Autre' };
+    const COLORS = { bug: 0xeb0400, idea: 0x9147ff, other: 0x6b7280 };
+    const fields = [{ name: 'Plateforme', value: `${e.p === 'ios' ? 'App iOS' : 'Site'} · ${e.v}`, inline: true }];
+    if (e.c) fields.push({ name: 'Contact', value: e.c, inline: true });
+    if (e.i) fields.push({ name: 'Infos', value: readableInfo(e.i).slice(0, 1000) });
+    try {
+        await fetch(webhook, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username: 'TwitchUnblock',
+                allowed_mentions: { parse: [] },
+                embeds: [{ title: KINDS[e.k] || KINDS.other, description: e.m.slice(0, 4000), color: COLORS[e.k] ?? COLORS.other, fields, timestamp: new Date(e.at).toISOString() }],
+            }),
+        });
+    } catch (err) { /* Discord indisponible : le retour reste dans D1 */ }
+}
+
+// GET /api/admin/feedback — les retours, du plus récent au plus ancien.
+// POST /api/admin/feedback — { delete: '<clé>' } ou { clear: true }.
+async function handleAdminFeedback(request, env) {
+    const { denied } = await requireAdmin(request);
+    if (denied) return denied;
+    const all = async () => {
+        const out = [];
+        let cursor;
+        do {
+            const page = await store(env).list({ prefix: FEEDBACK_PREFIX, limit: 1000, cursor });
+            out.push(...page.keys);
+            cursor = page.list_complete ? undefined : page.cursor;
+        } while (cursor && out.length < 5000);
+        return out;
+    };
+    if (request.method === 'POST') {
+        let body;
+        try { body = await request.json(); } catch (e) { return jsonError('JSON invalide', 400); }
+        if (typeof body.delete === 'string' && body.delete.startsWith(FEEDBACK_PREFIX)) {
+            await store(env).delete(body.delete);
+            return jsonResponse({ ok: true, deleted: 1 });
+        }
+        if (body.clear === true) {
+            // Une écriture D1 par retour : 500 au plus par action.
+            const keys = (await all()).slice(0, 500);
+            for (const k of keys) await store(env).delete(k.name);
+            return jsonResponse({ ok: true, deleted: keys.length });
+        }
+        return jsonError('Action inconnue', 400);
+    }
+    const items = (await all()).map(({ name, metadata }) => {
+        const m = metadata || {};
+        return { key: name, kind: m.k || 'other', message: m.m || '', contact: m.c || null, platform: m.p || '?', version: m.v || '?', info: m.i || null, at: m.at || 0 };
+    }).sort((a, b) => b.at - a.at);
+    return new Response(JSON.stringify({ items }), { headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 }
 
 // ── Réactions aux annonces ───────────────────────────────────────────────

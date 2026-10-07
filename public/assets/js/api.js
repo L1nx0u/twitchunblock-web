@@ -489,6 +489,22 @@ export function fixProxiedUrl(url, playlistUrl) {
   }
 }
 
+/** Retour (bug, idée) : rangé par le Worker principal (base D1), qui le
+ *  transmet aussi sur Discord. Lève avec `status` en cas de refus. */
+export async function sendFeedback(body) {
+  const res = await fetch(`${API_URL}/api/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status}`)
+    err.status = res.status
+    throw err
+  }
+  return res.json()
+}
+
 export function getChannelVideos(login) {
   return workerJson(`/api/get-channel-videos?name=${encodeURIComponent(login)}`)
 }
