@@ -1,5 +1,20 @@
 const CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
 
+// ── Services externes ────────────────────────────────────────────────────────
+// Tout ce qui n'est ni Twitch direct ni ce Worker, regroupé ici : ce sont les
+// points de fragilité (identifiant non documenté, service tiers, liste
+// d'hôtes qui évolue). Voir les journaux « en amont » quand l'un d'eux lâche.
+const UPSTREAMS = {
+    gql: 'https://gql.twitch.tv/gql',
+    usherLive: 'https://usher.ttvnw.net/api/channel/hls',
+    usherVod: 'https://usher.ttvnw.net/vod',
+    validate: 'https://id.twitch.tv/oauth2/validate',
+    luminousLive: (login) => `https://as.luminous.dev/live/${login}?allow_source=true`,
+    vodMeta: (channel) => `https://api.vodvod.top/channels/@${channel}`,
+    moobotMeta: (channel) => `https://api.moo.bot/1/channel/meta?name=${channel}`,
+    moobotList: (id) => `https://api.moo.bot/1/channel/public/commands/list?channel=${encodeURIComponent(id)}`,
+};
+
 // Headers pour RÉPONDRE à votre site web
 const RESPONSE_HEADERS = {
     'Access-Control-Allow-Origin': '*',
@@ -18,11 +33,11 @@ const REQUEST_HEADERS = {
 // Formats Twitch : tout paramètre qui finit dans une requête GQL ou une
 // adresse est vérifié d'abord. Avant, `name` était collé tel quel dans le
 // texte de la requête GQL — un guillemet suffisait à en réécrire le contenu.
-const LOGIN_RE = /^[a-zA-Z0-9_]{1,25}$/;
-const VOD_ID_RE = /^\d{1,20}$/;
-const CURSOR_RE = /^[A-Za-z0-9+/=_-]{1,500}$/;
+export const LOGIN_RE = /^[a-zA-Z0-9_]{1,25}$/;
+export const VOD_ID_RE = /^\d{1,20}$/;
+export const CURSOR_RE = /^[A-Za-z0-9+/=_-]{1,500}$/;
 
-const QUALITY_ORDER = ['chunked', 'source', '1080p60', '1080p30', '720p60', '720p30', '480p30', '360p30', '160p30', 'audio_only'];
+export const QUALITY_ORDER = ['chunked', 'source', '1080p60', '1080p30', '720p60', '720p30', '480p30', '360p30', '160p30', 'audio_only'];
 
 export default {
     async fetch(request, env, ctx) {
@@ -103,7 +118,7 @@ async function tokenIdentity(request) {
     const key = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
     const hit = tokenCache.get(key);
     if (hit && hit.until > Date.now()) return hit;
-    const res = await fetch('https://id.twitch.tv/oauth2/validate', { headers: { Authorization: `OAuth ${token}` } });
+    const res = await fetch(UPSTREAMS.validate, { headers: { Authorization: `OAuth ${token}` } });
     if (!res.ok) { tokenCache.delete(key); return null; }
     const v = await res.json();
     const userId = v && v.user_id ? String(v.user_id) : null;
@@ -186,7 +201,7 @@ const SYNC_MAX_BYTES = 256 * 1024;
 const SYNC_MAX_PROGRESS = 500;
 // Seuls les champs connus, en texte de longueur raisonnable : la sauvegarde
 // ne doit pas servir à stocker n'importe quoi.
-function cleanHistoryItem(it) {
+export function cleanHistoryItem(it) {
     if (!it || typeof it !== 'object') return null;
     const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : undefined);
     const term = str(it.term, 100);
@@ -233,7 +248,7 @@ async function handleGetLive(url, request, workerOrigin) {
 
     try {
         // --- TENTATIVE 1 : Luminous API (Filtre Anti-Pub) ---
-        const resLuminous = await fetch(`https://as.luminous.dev/live/${login}?allow_source=true`, { headers: getRequestHeaders(login) });
+        const resLuminous = await fetch(UPSTREAMS.luminousLive(login), { headers: getRequestHeaders(login) });
         if (resLuminous.ok) {
             m3u8Content = await resLuminous.text();
             masterUrl = resLuminous.url;
@@ -241,10 +256,12 @@ async function handleGetLive(url, request, workerOrigin) {
             throw new Error("Luminous down");
         }
     } catch(e) {
+        // Luminous vu d'ici : une panne ici = les pubs reviennent pour tous.
+        console.warn(`get-live ${login} : Luminous injoignable, repli Twitch`);
         // --- TENTATIVE 2 : Plan de Secours Officiel Twitch ---
         try {
             const token = await getAccessToken(login, true); if (!token) return jsonError("Offline", 404);
-            const resUsher = await fetch(`https://usher.ttvnw.net/api/channel/hls/${login}.m3u8?allow_source=true&allow_audio_only=true&allow_spectre=true&player=twitchweb&playlist_include_framerate=true&segment_preference=4&sig=${encodeURIComponent(token.signature)}&token=${encodeURIComponent(token.value)}`, { headers: REQUEST_HEADERS });
+            const resUsher = await fetch(`${UPSTREAMS.usherLive}/${login}.m3u8?allow_source=true&allow_audio_only=true&allow_spectre=true&player=twitchweb&playlist_include_framerate=true&segment_preference=4&sig=${encodeURIComponent(token.signature)}&token=${encodeURIComponent(token.value)}`, { headers: REQUEST_HEADERS });
             if (!resUsher.ok) throw new Error("Stream introuvable");
             m3u8Content = await resUsher.text();
             masterUrl = resUsher.url;
@@ -277,7 +294,7 @@ async function handleGetM3U8(url, request, workerOrigin) {
     try {
         const token = await getAccessToken(vodId, false);
         if (token) {
-            const res = await fetch(`https://usher.ttvnw.net/vod/${vodId}.m3u8?nauth=${encodeURIComponent(token.value)}&nauthsig=${encodeURIComponent(token.signature)}&allow_source=true&player_backend=mediaplayer`, { headers: REQUEST_HEADERS });
+            const res = await fetch(`${UPSTREAMS.usherVod}/${vodId}.m3u8?nauth=${encodeURIComponent(token.value)}&nauthsig=${encodeURIComponent(token.signature)}&allow_source=true&player_backend=mediaplayer`, { headers: REQUEST_HEADERS });
             if (res.ok) { 
                 const links = parseAndProxyM3U8(await res.text(), res.url, workerOrigin, true, useProxy); 
                 return jsonResponse({ links, best: links["Source"] || links["Auto"] }); 
@@ -349,7 +366,7 @@ async function handleRecoverList(url, request) {
     if (rateLimited('recover', request, 20, MINUTE)) return jsonError('Trop de requêtes', 429);
     let arr;
     try {
-        const r = await fetch(`https://api.vodvod.top/channels/@${channel}`,
+        const r = await fetch(UPSTREAMS.vodMeta(channel),
             { headers: { 'User-Agent': REQUEST_HEADERS['User-Agent'], Accept: 'application/json' } });
         if (!r.ok) return jsonResponse({ streams: [] });
         arr = await r.json();
@@ -410,6 +427,7 @@ async function handleRecoverResolve(url, request, workerOrigin) {
             }
         }
     }
+    console.warn(`recover-resolve ${login} : aucun hôte ne sert la diffusion`);
     return jsonError('VOD introuvable', 404);
 }
 
@@ -418,7 +436,7 @@ async function handleRecoverResolve(url, request, workerOrigin) {
 // VODs) et Luminous. Sans cette liste, /api/proxy relayait n'importe quelle
 // adresse — un proxy ouvert à tout Internet, aux frais du Worker.
 const PROXY_HOSTS = ['ttvnw.net', 'jtvnw.net', 'twitch.tv', 'cloudfront.net', 'luminous.dev', 'twitchcdn.net'];
-function proxyAllowed(target) {
+export function proxyAllowed(target) {
     try {
         const u = new URL(target);
         if (u.protocol !== 'https:') return false;
@@ -432,7 +450,7 @@ function proxyAllowed(target) {
 
 // Playlist reconnue avant récupération : extension, ou hôtes qui n'en servent
 // que des playlists (Luminous, variantes Twitch sans « .m3u8 »).
-function isPlaylistTarget(target) {
+export function isPlaylistTarget(target) {
     if (target.includes('.m3u8')) return true;
     try {
         const h = new URL(target).hostname;
@@ -499,7 +517,7 @@ async function handleProxy(url, request) {
 }
 
 // --- FONCTIONS UTILITAIRES ---
-function parseAndProxyM3U8(content, master, workerOrigin, isVod, useProxy = true) { 
+export function parseAndProxyM3U8(content, master, workerOrigin, isVod, useProxy = true) { 
     const lines = content.split('\n'); const proxyBase = `${workerOrigin}/api/proxy?url=`; let unsorted = {}, last = ""; 
     lines.forEach(l => { 
         if (l.includes('VIDEO="')) { try { let n = l.split('VIDEO="')[1].split('"')[0]; if (n === 'chunked') n = 'Source'; last = n; } catch(e) {} } 
@@ -510,7 +528,7 @@ function parseAndProxyM3U8(content, master, workerOrigin, isVod, useProxy = true
 }
 
 async function twitchGQL(query, variables = {}) {
-    const res = await fetch('https://gql.twitch.tv/gql', {
+    const res = await fetch(UPSTREAMS.gql, {
         method: 'POST',
         headers: { 'Client-ID': CLIENT_ID, 'Content-Type': 'application/json', 'User-Agent': REQUEST_HEADERS['User-Agent'], 'Device-ID': 'MkMq8a9' + Math.random().toString(36).substring(2, 15) },
         body: JSON.stringify({ query, variables })
@@ -686,7 +704,7 @@ const rateBuckets = new Map();   // limite:adresse → { n, until }
 function clientIp(request) {
     return request.headers.get('CF-Connecting-IP') || '';
 }
-function rateLimited(name, request, max, windowMs) {
+export function rateLimited(name, request, max, windowMs) {
     const ip = clientIp(request);
     if (!ip) return false;
     const now = Date.now();
@@ -1000,16 +1018,16 @@ async function handleMoobotCommands(url) {
     }
     let commands = [];
     try {
-        const meta = await (await fetch(`https://api.moo.bot/1/channel/meta?name=${channel}`)).json();
+        const meta = await (await fetch(UPSTREAMS.moobotMeta(channel))).json();
         const id = meta?.channel?.userid;
         if (id) {
-            const list = await (await fetch(`https://api.moo.bot/1/channel/public/commands/list?channel=${encodeURIComponent(id)}`)).json();
+            const list = await (await fetch(UPSTREAMS.moobotList(id))).json();
             commands = (list?.list ?? [])
                 .filter((c) => c?.identifier)
                 .map((c) => ({ name: String(c.identifier).startsWith('!') ? String(c.identifier) : `!${c.identifier}`, response: String(c.response ?? '') }))
                 .slice(0, 500);
         }
-    } catch (e) {}
+    } catch (e) { console.warn(`bot-commands ${channel} : Moobot injoignable`); }
     const body = JSON.stringify({ commands });
     if (moobotCache.size > 500) moobotCache.clear();
     moobotCache.set(channel, { at: Date.now(), body });
@@ -1117,3 +1135,7 @@ function applyEnvConfig(env) {
     if (list(env?.ADMIN_TWITCH_IDS).length) ADMIN_IDS = list(env.ADMIN_TWITCH_IDS).filter((x) => /^\d{1,20}$/.test(x));
     if (list(env?.SITE_ORIGINS).length) USAGE_ORIGINS = list(env.SITE_ORIGINS);
 }
+
+// ── Exports de test ────────────────────────────────────────────────────────
+// Les fonctions pures ci-dessus sont exportées pour la suite de tests
+// (`npm test`) : le Worker lui-même n'utilise que l'export par défaut.

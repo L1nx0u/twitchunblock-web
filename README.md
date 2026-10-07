@@ -73,7 +73,15 @@ public/              The website, served as-is by Vercel (no build step)
   assets/
     styles.css
     js/
-      main.js        Navigation, home, streamer page, settings
+      main.js        Shell: boot, session, sync, navigation, click routing
+      state.js       Shared session, navigation state and live references
+      ui.js          Static icons and modal sheets
+      cards.js       Stream / VOD / clip cards and shared bits
+      home.js        Discover: continue watching, follows, top, categories
+      tour.js        Guided tour, changelog sheet, credits
+      streamer.js    Channel page: search, tabs, deleted-VOD recovery list
+      watch.js       Player wiring: lives, VODs, clips, raids, mini player
+      settings.js    Settings, open-in sheet, backup, announcements, stats
       player.js      Video player (hls.js)
       api.js         Worker, Helix and GQL access — configuration at the top
       usage.js       Anonymous usage count
@@ -84,9 +92,12 @@ public/              The website, served as-is by Vercel (no build step)
 worker.js            Backend: Cloudflare Worker
 wrangler.toml        Worker configuration
 vercel.json          Website configuration on Vercel
+package.json         `npm test` only (no dependencies, no build step)
+test/                Automated checks (node:test): worker + site pure logic
 ```
 
 The website is plain JavaScript (ES modules) — no framework, no build step.
+Run the checks with `npm test` (Node 20+, nothing to install).
 
 ---
 
@@ -155,6 +166,23 @@ Every push to `main` is deployed automatically. `vercel.json` serves the `public
 npx wrangler deploy
 ```
 The `DB` D1 database (history backups, usage count, announcements) is declared in `wrangler.toml`; the Worker creates its table on first use.
+
+### Your own backend (fork independence)
+
+By default this fork talks to the upstream Worker's address (see `API_URL` in `public/assets/js/api.js`). To run on your own quota, with yourself as admin:
+
+1. `npx wrangler login`, then `npx wrangler d1 create twitchunblock` — paste the returned `database_id` over the one in `wrangler.toml`.
+2. `npx wrangler deploy`, then claim it as yours under `[vars]` in `wrangler.toml` and redeploy:
+   ```toml
+   [vars]
+   ADMIN_TWITCH_IDS = "123456789"   # your numeric Twitch user ID(s), comma-separated
+   SITE_ORIGINS = "https://your-site.vercel.app"   # counted web origins, comma-separated
+   ```
+   Without `ADMIN_TWITCH_IDS`, nobody — including you — is admin.
+3. Point the site at it in `public/config.js`: `window.TU_CONFIG = { apiUrl: 'https://your-worker.you.workers.dev' }`.
+4. For Twitch login, create an app on [dev.twitch.tv/console](https://dev.twitch.tv/console) with your site URL + `/` as redirect, and add `twitchClientId` and `redirectUri` to the same `TU_CONFIG`.
+
+Until then, the site keeps working on the upstream backend — nothing breaks.
 
 ### Fallback Worker (daily limit)
 

@@ -108,7 +108,9 @@ export async function workerJson(path, { timeout = 0 } = {}) {
  *  Décidé ici plutôt que par chaque visiteur. La lecture sur le site, elle,
  *  passe toujours par le proxy : le CDN des VODs n'accepte que twitch.tv. */
 export const EXTERNAL_LINKS_VIA_PROXY = true
-export const GITHUB_URL = 'https://github.com/MXFia19/TwitchUnblock-Web'
+export const GITHUB_URL = 'https://github.com/L1nx0u/twitchunblock-web'
+// L'app iOS et le Discord sont ceux de l'auteur d'origine : il n'existe pas
+// de fork côté app, et les rapports de bugs y sont centralisés.
 export const APP_GITHUB_URL = 'https://github.com/MXFia19/TwitchUnblock'
 export const DISCORD_URL = 'https://discord.gg/cEsMRdxsVq'
 export const HELIX_CLIENT_ID = CFG.twitchClientId || 'uyvqdqrz614y5wx5l4kev6c4ln7u9a'
@@ -118,6 +120,15 @@ export const REDIRECT_URI = CFG.redirectUri || 'https://test2-fawn-eta.vercel.ap
 /** `chat:read` / `chat:edit` en plus de l'ancien périmètre : sans eux, l'IRC
  *  refuse le jeton et on ne peut que lire le chat en anonyme. */
 export const SCOPES = ['user:read:follows', 'chat:read', 'chat:edit']
+
+// ── Services externes ──────────────────────────────────────────────────────
+// Socle Twitch regroupé ici : si une adresse change, un seul endroit à
+// retoucher (même idée côté Worker, voir UPSTREAMS dans worker.js).
+export const UPSTREAMS = {
+  gql: 'https://gql.twitch.tv/gql',
+  helix: 'https://api.twitch.tv/helix',
+  id: 'https://id.twitch.tv/oauth2',
+}
 
 const LOGIN_RE = /^[a-z0-9_]{1,25}$/
 
@@ -140,7 +151,7 @@ async function json(url, init) {
 /** Toujours avec des variables : un nom saisi n'est jamais recollé tel quel
  *  dans le texte de la requête. */
 export async function gql(query, variables = {}) {
-  const data = await json('https://gql.twitch.tv/gql', {
+  const data = await json(UPSTREAMS.gql, {
     method: 'POST',
     headers: { 'Client-ID': GQL_CLIENT_ID, 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, variables }),
@@ -417,7 +428,7 @@ export async function syncPush(userId, data) {
 
 // ── Helix (compte connecté) ────────────────────────────────────────────────
 function helix(path) {
-  return json(`https://api.twitch.tv/helix/${path}`, {
+  return json(`${UPSTREAMS.helix}/${path}`, {
     headers: { Authorization: `Bearer ${store.token}`, 'Client-Id': HELIX_CLIENT_ID },
   })
 }
@@ -425,7 +436,7 @@ function helix(path) {
 /** Vérifie le jeton et renvoie son titulaire et ses droits. `null` = expiré. */
 export async function validateToken(token) {
   try {
-    const res = await fetch('https://id.twitch.tv/oauth2/validate', {
+    const res = await fetch(`${UPSTREAMS.id}/validate`, {
       headers: { Authorization: `OAuth ${token}` },
     })
     if (!res.ok) return null
@@ -462,7 +473,16 @@ export function loginUrl() {
     response_type: 'token',
     scope: SCOPES.join(' '),
   })
-  return `https://id.twitch.tv/oauth2/authorize?${params}`
+  return `${UPSTREAMS.id}/authorize?${params}`
+}
+
+/** Révoque un jeton côté Twitch (déconnexion vraie, pas un simple oubli). */
+export function revokeToken(token) {
+  return fetch(`${UPSTREAMS.id}/revoke`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: HELIX_CLIENT_ID, token }),
+  }).catch(() => {})
 }
 
 // ── Clips ──────────────────────────────────────────────────────────────────

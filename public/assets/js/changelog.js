@@ -6,6 +6,20 @@
 
 export const CHANGELOG = [
   {
+    version: '2026.10.07',
+    items: {
+      fr: [
+        'Sous le capot : code du site réorganisé en modules, garde-fous contre les abus sur le serveur, et premières vérifications automatiques.',
+      ],
+      en: [
+        'Under the hood: site code split into modules, new server-side abuse guards, and first automated checks.',
+      ],
+      es: [
+        'Entre bastidores: código del sitio dividido en módulos, nuevas protecciones contra abusos en el servidor y primeras comprobaciones automáticas.',
+      ],
+    },
+  },
+  {
     version: '2026.10.06b',
     items: {
       fr: [
