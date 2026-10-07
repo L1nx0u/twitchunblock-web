@@ -69,8 +69,7 @@ export function loadHls() {
 }
 
 /** Source d'abord, puis du plus fin au plus grossier, l'audio seul en dernier. */
-export function sortQualities(keys) {
-  const score = (k) => {
+export function sortQualities(keys) {  const score = (k) => {
     const s = k.toLowerCase()
     if (s === 'auto') return 1e6
     if (s.includes('source') || s === 'chunked') return 1e5
@@ -86,6 +85,17 @@ export function qualityLabel(k) {
   if (s.toLowerCase() === 'chunked') return 'Source'
   if (s.toLowerCase() === 'audio_only') return 'Audio'
   return s.replace(/^(\d+p)30$/, '$1')
+}
+
+/** Réglages hls.js du labo : rattrapage automatique du direct après un
+ *  accroc, et mode latence réduite (plus près du bord, moins de marge aux
+ *  secousses). */
+export function liveHlsOptions({ lowLatency = false } = {}) {
+  return {
+    maxLiveSyncPlaybackRate: 1.5,
+    liveSyncDurationCount: lowLatency ? 2 : 3,
+    ...(lowLatency ? { liveMaxLatencyDurationCount: 6 } : {}),
+  }
 }
 
 export class Player {
@@ -336,7 +346,11 @@ export class Player {
         },
         backBufferLength: 90,
         maxBufferLength: 30,
-        liveSyncDurationCount: 3,
+        // Labo (Réglages → Expérimental) : rattrapage et latence réduite.
+        // La latence réduite ne vaut que pour le direct.
+        ...liveHlsOptions({
+          lowLatency: this.kind === 'live' && this.o.prefs.lowLatency === true,
+        }),
         startPosition: this.kind === 'vod' && startAt > 1 ? startAt : -1,
       })
       this.hls = hls

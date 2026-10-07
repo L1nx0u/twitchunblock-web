@@ -9,7 +9,7 @@ import {
 import {
   cleanLogin, clipSlugFrom, fixProxiedUrl, streamFromHelix,
 } from '../public/assets/js/api.js'
-import { qualityLabel, sortQualities } from '../public/assets/js/player.js'
+import { qualityLabel, sortQualities, liveHlsOptions } from '../public/assets/js/player.js'
 
 describe('esc', () => {
   it('échappe tout ce qui entre dans le DOM', () => {
@@ -112,5 +112,16 @@ describe('qualités', () => {
     assert.equal(qualityLabel('audio_only'), 'Audio')
     assert.equal(qualityLabel('720p30'), '720p')
     assert.equal(qualityLabel('1080p60'), '1080p60')
+  })
+  it('liveHlsOptions : rattrapage toujours, latence réduite sur demande', () => {
+    assert.deepEqual(liveHlsOptions({}), {
+      maxLiveSyncPlaybackRate: 1.5,
+      liveSyncDurationCount: 3,
+    })
+    assert.deepEqual(liveHlsOptions({ lowLatency: true }), {
+      maxLiveSyncPlaybackRate: 1.5,
+      liveSyncDurationCount: 2,
+      liveMaxLatencyDurationCount: 6,
+    })
   })
 })

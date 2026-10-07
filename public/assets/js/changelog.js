@@ -6,6 +6,20 @@
 
 export const CHANGELOG = [
   {
+    version: '2026.10.07b',
+    items: {
+      fr: [
+        'Lecteur : le direct est rattrapé tout seul après un accroc. Nouveau labo dans les réglages : « Latence réduite », pour coller au bord du direct.',
+      ],
+      en: [
+        'Player: live catches up by itself after a stall. New lab in settings: “Low latency”, to hug the live edge.',
+      ],
+      es: [
+        'Reproductor: el directo se recupera solo tras un corte. Nuevo laboratorio en los ajustes: «Latencia reducida», para pegarse al borde del directo.',
+      ],
+    },
+  },
+  {
     version: '2026.10.07',
     items: {
       fr: [

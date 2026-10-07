@@ -92,6 +92,11 @@ export function openSettings() {
       ${toggle('set-clickpause', t('click_pause'), p.clickPause !== false, t('click_pause_sub'))}
     </div>
     <div class="sheet-section">
+      <h3>${esc(t('experimental'))}</h3>
+      <p class="muted small">${esc(t('experimental_sub'))}</p>
+      ${toggle('set-lowlatency', t('low_latency'), p.lowLatency === true, t('low_latency_sub'))}
+    </div>
+    <div class="sheet-section">
       <h3>${esc(t('chat_settings'))}</h3>
       ${toggle('set-sync', t('chat_sync'), p.chatSync, t('chat_sync_sub'))}
       ${toggle('set-raid', t('auto_raid'), p.autoRaid, t('auto_raid_sub'))}
@@ -183,6 +188,7 @@ export function openSettings() {
     }
     if (id === 'import-file') { importData(e.target.files?.[0]); e.target.value = ''; return }
     if (id === 'set-clickpause') p.clickPause = e.target.checked
+    if (id === 'set-lowlatency') p.lowLatency = e.target.checked
     if (id === 'set-homelist') { p.homeList = e.target.checked; store.savePrefs(); applyLayout(); return }
     if (id === 'set-toplang') {
       p.topLang = e.target.value === 'auto' ? null : e.target.value
