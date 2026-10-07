@@ -748,6 +748,8 @@ export class Player {
       html += SPEEDS.map((s) => `<button type="button" data-s="${s}" class="${s === rate ? 'on' : ''}">${s === 1 ? esc(t('normal')) : `${s}×`}</button>`).join('')
       html += '</div>'
     }
+    // Un souci pendant la lecture : le signaler d'ici, avec ce qui se lit.
+    html += `<button type="button" class="p-menu-report" data-report="1">${icon('bug', 15)}<span>${esc(t('report_problem'))}</span></button>`
     this.el.menu.innerHTML = html
     this.el.menu.hidden = false
     this.showUI()
@@ -787,6 +789,7 @@ export class Player {
     e.stopPropagation()
     const b = e.target.closest('button')
     if (!b) return
+    if (b.dataset.report) { this.closeMenu(); this.o.onReport?.(); return }
     if (b.dataset.q) this.setQuality(b.dataset.q)
     if (b.dataset.s) this.video.playbackRate = Number(b.dataset.s)
     if (b.dataset.c) { this.video.currentTime = Number(b.dataset.c); this.updateChapterLabel() }

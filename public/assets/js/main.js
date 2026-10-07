@@ -952,7 +952,10 @@ function showWhatsNew(entries, titleKey = 'whats_new') {
       <h3>${esc(versionDate(e.version))}<small>${esc(e.version)}</small></h3>
       <ul>${(e.items[l] ?? e.items.en).map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
     </div>`).join('')}
-    <div class="sheet-section"><button class="btn primary" type="button" data-sheet-close style="width:100%">${esc(t('got_it'))}</button></div>`)
+    <div class="sheet-section whats-new-actions">
+      <button class="btn primary" type="button" data-sheet-close>${esc(t('got_it'))}</button>
+      <button class="btn ghost" type="button" data-action="feedback">${icon('bug', 16)}<span>${esc(t('feedback'))}</span></button>
+    </div>`)
   $('#sheet').onclick = (e) => { if (e.target.closest('[data-sheet-close]')) closeSheet() }
 }
 
@@ -1660,6 +1663,12 @@ function setupPlayer() {
     onPause: () => { if (Date.now() - lastSyncAt > 60_000) flushSync({ force: true }) },
     onError: () => showWatchError(state.watch?.kind === 'live' ? t('err_live') : t('err_vod')),
     onWorkerDown: (base) => switchWorker(base),
+    // « Signaler un problème » du menu du lecteur : hors plein écran, la
+    // feuille n'y serait pas visible.
+    onReport: () => {
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
+      openFeedback('bug')
+    },
   })
   chat = new ChatView($('#chat'), {
     prefs: store.prefs,
@@ -2314,6 +2323,13 @@ function openSettings() {
   openSheet(`
     <div class="sheet-head"><h2>${esc(t('settings'))}</h2><button class="icon-btn" type="button" data-sheet-close>${icon('x', 20)}</button></div>
     <div class="sheet-section" id="settings-account"></div>
+    <div class="sheet-section">
+      <button class="feedback-card" type="button" data-action="feedback">
+        <span class="feedback-card-ic">${icon('bug', 18)}</span>
+        <span class="feedback-card-text"><b>${esc(t('feedback'))}</b><small>${esc(t('feedback_sub'))}</small></span>
+        ${icon('chevronRight', 16)}
+      </button>
+    </div>
     <div class="sheet-section">
       <h3>${esc(t('language'))}</h3>
       <div class="segmented full" id="set-lang">
