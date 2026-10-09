@@ -17,7 +17,7 @@ import { applyStatic, initLang, t } from './i18n.js'
 import { loadHls } from './player.js'
 import { $, $$, esc, icon, isMobile, toast } from './util.js'
 import { refs, session, state } from './state.js'
-import { closeSheet, renderIcons } from './ui.js'
+import { applyTheme, closeSheet, renderIcons } from './ui.js'
 import { followLocalInner } from './cards.js'
 import {
   applyHomeTab, applyLayout, cat, closeCategory, followedCats, isCatFollowed,
@@ -44,6 +44,7 @@ import {
 document.addEventListener('DOMContentLoaded', boot)
 
 async function boot() {
+  applyTheme(store.prefs.theme)
   initLang(store.prefs.lang)
   loadHls()   // prêt avant le premier clic
   applyStatic()

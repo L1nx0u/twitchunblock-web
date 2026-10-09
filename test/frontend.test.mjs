@@ -10,6 +10,7 @@ import {
   cleanLogin, clipSlugFrom, fixProxiedUrl, streamFromHelix,
 } from '../public/assets/js/api.js'
 import { qualityLabel, sortQualities, liveHlsOptions } from '../public/assets/js/player.js'
+import { store } from '../public/assets/js/store.js'
 
 describe('esc', () => {
   it('échappe tout ce qui entre dans le DOM', () => {
@@ -123,5 +124,11 @@ describe('qualités', () => {
       liveSyncDurationCount: 2,
       liveMaxLatencyDurationCount: 6,
     })
+  })
+})
+
+describe('thème', () => {
+  it('sombre par défaut', () => {
+    assert.equal(store.prefs.theme, 'dark')
   })
 })

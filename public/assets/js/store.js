@@ -23,6 +23,7 @@ function write(key, value) {
 
 const DEFAULT_PREFS = {
   lang: null,
+  theme: 'dark',
   topLang: null,
   homeList: false,   // accueil en liste (façon Twitch) plutôt qu'en grille
   localFollows: [],  // chaînes suivies sans compte Twitch (sur cet appareil)     // langue du top des lives ; null = celle de l'appareil

@@ -5,6 +5,14 @@
 
 import { $, icon } from './util.js'
 
+/** Applique le thème (sombre par défaut) + couleur du navigateur. */
+export function applyTheme(theme) {
+  const light = theme === 'light'
+  document.documentElement.dataset.theme = light ? 'light' : 'dark'
+  const meta = document.querySelector('meta[name="theme-color"]')
+  if (meta) meta.content = light ? '#f7f7f8' : '#0e0e10'
+}
+
 /** Remplit les emplacements d'icônes déclarés dans le HTML. */
 export function renderIcons(root = document) {
   for (const el of root.querySelectorAll('[data-icon]')) {

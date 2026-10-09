@@ -7,11 +7,11 @@ import { refreshTexts, renderAccount } from './main.js'
 import { applyLayout, loadFollowed, loadTop, renderTopLocal } from './home.js'
 import { showWhatsNew, startTour, creditsHtml } from './tour.js'
 import { refs, session, state } from './state.js'
-import { closeSheet, openSheet } from './ui.js'
+import { applyTheme, closeSheet, openSheet } from './ui.js'
 import * as api from './api.js'
 import { store } from './store.js'
 import { LANGS, applyStatic, deviceLang, lang, setLang, t } from './i18n.js'
-import { $, esc, icon, isMobile, toast, uid } from './util.js'
+import { $, $$, esc, icon, isMobile, toast, uid } from './util.js'
 import { CHANGELOG } from './changelog.js'
 import { deviceTopLang, topLangName, TOP_LANGS } from './home.js'
 import { qualityLabel } from './player.js'
@@ -79,6 +79,11 @@ export function openSettings() {
         ${LANGS.map((l) => `<button type="button" data-l="${l.id}" class="${p.lang === l.id ? 'active' : ''}">${esc(l.label)}</button>`).join('')}
       </div>
       <p class="muted small lang-hint">${esc(t('lang_auto_sub', { l: LANGS.find((x) => x.id === deviceLang())?.label ?? 'English' }))}</p>
+      <h3>${esc(t('appearance'))}</h3>
+      <div class="segmented full" id="set-theme">
+        <button type="button" data-theme-btn="dark" class="${p.theme === 'light' ? '' : 'active'}">${esc(t('theme_dark'))}</button>
+        <button type="button" data-theme-btn="light" class="${p.theme === 'light' ? 'active' : ''}">${esc(t('theme_light'))}</button>
+      </div>
       <label class="setting setting-col">
         <span class="setting-text"><span>${esc(t('top_lang'))}</span><small>${esc(t('top_lang_sub', { l: topLangName(deviceTopLang()) }))}</small></span>
         <select class="text-input" id="set-toplang">
@@ -148,6 +153,14 @@ export function openSettings() {
   const sheet = $('#sheet')
   sheet.onclick = (e) => {
     if (e.target.closest('[data-sheet-close]')) return closeSheet()
+    const th = e.target.closest('[data-theme-btn]')?.dataset.themeBtn
+    if (th) {
+      store.prefs.theme = th === 'light' ? 'light' : 'dark'
+      store.savePrefs()
+      applyTheme(store.prefs.theme)
+      for (const b of $$('#set-theme [data-theme-btn]')) b.classList.toggle('active', b.dataset.themeBtn === store.prefs.theme)
+      return
+    }
     const l = e.target.closest('[data-l]')?.dataset.l
     if (l) {
       // « Appareil » n'enregistre rien : la langue suivra l'appareil, y
