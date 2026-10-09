@@ -364,6 +364,15 @@ export class Player {
       hls.loadSource(url)
       hls.attachMedia(v)
       hls.on(Hls.Events.MANIFEST_PARSED, () => this.tryPlay())
+      // Arrivée au bord réel dès que possible : hls.js démarre au point de
+      // synchro (~8 s), le bord est ~4 s plus près. Une fois suffit.
+      if (this.kind === 'live') hls.once(Hls.Events.FRAG_BUFFERED, () => {
+        if (token !== this.attachToken) return
+        try {
+          const end = this.video.seekable.end(this.video.seekable.length - 1) - 1.5
+          if (end - this.video.currentTime > 2) this.video.currentTime = Math.max(0, end)
+        } catch {}
+      })
       // En « Auto » (playlist maître), hls.js choisit le débit : on affiche
       // lequel, sinon on ne sait jamais ce qu'on regarde vraiment.
       hls.on(Hls.Events.LEVEL_SWITCHED, (_e, d) => {
@@ -532,8 +541,12 @@ export class Player {
 
   goLive() {
     const v = this.video
-    if (this.hls?.liveSyncPosition) v.currentTime = this.hls.liveSyncPosition
-    else if (v.seekable.length) v.currentTime = Math.max(0, v.seekable.end(v.seekable.length - 1) - 4)
+    // Au bord lui-même (comme +10 s), pas au point de synchro : celui-ci
+    // garde 4 s de marge, d'où les ~8 s constatés contre ~4 s au bord.
+    // Le flux restera au bord jusqu'au prochain accroc, qui le recollera
+    // au point de synchro.
+    if (v.seekable.length) v.currentTime = Math.max(0, v.seekable.end(v.seekable.length - 1) - 1.5)
+    else if (this.hls?.liveSyncPosition) v.currentTime = this.hls.liveSyncPosition
     if (v.paused) this.tryPlay()
   }
 
