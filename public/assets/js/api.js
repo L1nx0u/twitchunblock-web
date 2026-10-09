@@ -96,11 +96,6 @@ function moveLinks(links, from, to) {
 const viaRelay = (data) => (RELAY_BASE && !isDown(RELAY_BASE) && data?.links
   ? { ...data, links: moveLinks(data.links, (o) => WORKER_BASES.includes(o), RELAY_BASE) }
   : data)
-/** Relais en panne en pleine lecture : les mêmes liens, par un Worker —
- *  un secours d'abord, pour ménager le principal. */
-export const withoutRelay = (links) => moveLinks(links, (o) => o === RELAY_BASE,
-  LOOKUP_BASES.find((b) => !isDown(b)) ?? LOOKUP_BASES[0])
-
 // Relais injoignable (VPS arrêté, mal configuré) : on le sait dès le
 // chargement de la page, plutôt qu'après les essais du lecteur.
 if (RELAY_BASE && !isDown(RELAY_BASE)) {
@@ -665,24 +660,6 @@ export async function getClips(login, period = 'LAST_WEEK', cursor = null, broad
   }`, { l: login, p: period })
   const items = (data?.user?.clips?.edges ?? []).map((e) => e.node).filter((c) => c?.slug)
   return servePage({ rest: items, seen: new Set(items.map((c) => c.slug)), more: Boolean(data?.user?.clips?.pageInfo?.hasNextPage), after: null, broadcasterId }, 24)
-}
-
-/** Fiche « À propos » d'une chaîne : description, followers, réseaux et
- *  panneaux (image, lien, texte), comme sous le lecteur de Twitch. */
-export async function getChannelAbout(login) {
-  const data = await gql(`query($l: String!) { user(login: $l) {
-    description followers { totalCount }
-    channel { socialMedias { name title url } }
-    panels { id type ... on DefaultPanel { title imageURL linkURL description } }
-  } }`, { l: login })
-  const u = data?.user
-  if (!u) return null
-  return {
-    description: u.description ?? '',
-    followers: u.followers?.totalCount ?? null,
-    socials: (u.channel?.socialMedias ?? []).filter((s) => /^https?:\/\//i.test(s?.url ?? '')),
-    panels: (u.panels ?? []).filter((p) => p?.type === 'DEFAULT' && (p.title || p.imageURL || p.description)),
-  }
 }
 
 /** Un clip prêt à lire : MP4 signé, et de quoi rejouer le chat de la VOD

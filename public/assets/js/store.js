@@ -35,7 +35,6 @@ const DEFAULT_PREFS = {
   chatSync: true,
   autoRaid: true,
   clickPause: true,  // un clic sur la vidéo met en pause (ordinateur)
-  showRecent: true,  // raccourcis vers les chaînes ouvertes récemment (onglet Streamer)
   highlightWords: [],
   hideBots: false,
   hideCommands: false,
