@@ -780,6 +780,9 @@ html[data-theme="dark"] input[type='search']::-webkit-search-cancel-button { fil
 .multi-screen:not(:-webkit-full-screen) .p-live, .multi-screen:not(:-webkit-full-screen) .p-latency,
 .multi-screen:not(:-webkit-full-screen) .p-chat, .multi-screen:not(:-webkit-full-screen) .p-pip { display: none; }
 .multi-empty { grid-column: 1 / -1; }
+/* Chat arrimé : le même panneau que le lecteur, déplacé ici tant que
+   l'onglet est ouvert. */
+.multi-chat { flex: none; width: 360px; position: sticky; top: calc(var(--head-h) + 12px); height: calc(100dvh - var(--head-h) - 24px); min-height: 420px; border-radius: var(--r-card); overflow: hidden; border: 1px solid var(--line); }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Adaptations
@@ -811,6 +814,7 @@ html[data-theme="dark"] input[type='search']::-webkit-search-cancel-button { fil
   .tabbar { display: grid; }
   .multi-layout { flex-direction: column; }
   .multi-side { width: 100%; position: static; }
+  .multi-chat { width: 100%; position: static; height: 52vh; min-height: 320px; }
   .topbar { padding: var(--safe-t) 16px 0; height: calc(58px + var(--safe-t)); }
   .content { padding: 18px 16px calc(96px + var(--safe-b)); }
   .block { margin-bottom: 30px; }

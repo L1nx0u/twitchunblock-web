@@ -1,12 +1,13 @@
 // ═══════════════════════════════════════════════════════════════════════════
 //  Multistream : plusieurs lives en grille, ajout par recherche ou suivis en
 //  direct. Chaque tuile est un vrai Player (même interface que le lecteur).
-//  Le son suit la tuile focus (clic) ; le chat reste sur le lecteur principal.
+//  Le son et le chat suivent la tuile focus (clic) ; le panneau de chat est
+//  déplacé ici tant que l'onglet est ouvert, puis rendu au lecteur.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import * as api from './api.js'
 import { store } from './store.js'
-import { session, state } from './state.js'
+import { refs, session, state } from './state.js'
 import { Player } from './player.js'
 import { stopMainPlayback } from './watch.js'
 import { localFollows } from './home.js'
@@ -15,8 +16,9 @@ import { renderIcons } from './ui.js'
 import { emptyState } from './cards.js'
 import { t } from './i18n.js'
 
-const MAX_TILES = 4
-const tiles = []   // { login, name, player, el }
+const MAX_TILES = 12
+const tiles = []   // { login, name, player, el, slimBar }
+const pending = new Map()   // login → el, ajouts en cours de chargement
 let focused = null
 let sideLoaded = false
 let suggestions = []
@@ -105,9 +107,10 @@ function hideSuggest() { suggestSeq++; $('#multi-suggest').hidden = true; sugges
 export async function addStream(raw) {
   const login = api.cleanLogin(raw)
   if (!login) return
-  if (tiles.some((m) => m.login === login)) { focusStream(login); return }
-  if (tiles.length >= MAX_TILES) { toast(t('multi_full'), 'error'); return }
+  if (tiles.some((m) => m.login === login) || pending.has(login)) { focusStream(login); return }
+  if (tiles.length + pending.size >= MAX_TILES) { toast(t('multi_full'), 'error'); return }
   stopMainPlayback()
+  dockChat()
 
   const grid = $('#multi-grid')
   grid.querySelector('.multi-empty')?.remove()
@@ -122,13 +125,15 @@ export async function addStream(raw) {
     <div class="multi-screen"></div>`
   grid.append(el)
   renderIcons(el)
+  pending.set(login, el)
 
   const [links, info] = await Promise.all([
     api.getLive(login).catch(() => null),
     api.getChannelInfo(login).catch(() => null),
   ])
-  if (!grid.contains(el)) return   // grille vidée pendant le chargement
+  if (!grid.contains(el)) { pending.delete(login); return }   // grille vidée pendant le chargement
   if (!links || !links.links || !Object.keys(links.links).length) {
+    pending.delete(login)
     el.remove()
     renderEmpty()
     toast(t('err_live'), 'error')
@@ -173,6 +178,7 @@ export async function addStream(raw) {
     if (th) th.hidden = true   // jamais câblé sur une tuile
   }
   slimBar()
+  pending.delete(login)
   tiles.push({ login, name, player, el, slimBar })
   if (!focused) focusStream(login)
   else player.video.muted = true
@@ -181,6 +187,7 @@ export async function addStream(raw) {
 export function focusStream(login) {
   if (!tiles.some((m) => m.login === login)) return
   focused = login
+  refs.chat?.openLive({ channel: login, channelId: null })
   for (const m of tiles) {
     const on = m.login === login
     m.el.classList.toggle('focused', on)
@@ -190,7 +197,12 @@ export function focusStream(login) {
 }
 
 export function removeStream(login) {
-  const i = tiles.findIndex((m) => m.login === login)
+  if (pending.has(login)) {
+    pending.get(login)?.remove()
+    pending.delete(login)
+    renderEmpty()
+    return
+  }  const i = tiles.findIndex((m) => m.login === login)
   if (i === -1) return
   const [m] = tiles.splice(i, 1)
   m.player.destroy()
@@ -207,11 +219,35 @@ export function stopMulti() {
   for (const m of tiles) m.player.destroy()
   tiles.length = 0
   focused = null
+  undockChat()
   const grid = $('#multi-grid')
   if (grid) {
     grid.innerHTML = ''
     renderEmpty()
   }
+}
+
+/** Le panneau de chat vit ici tant que l'onglet est ouvert. */
+let chatHome = null
+function dockChat() {
+  const node = $('#chat')
+  const slot = $('#multi-chat')
+  if (!node || !slot || node.parentNode === slot) return
+  if (!chatHome) chatHome = { parent: node.parentNode, next: node.nextSibling }
+  slot.append(node)
+  slot.hidden = false
+}
+function undockChat() {
+  if (!chatHome) return
+  const node = $('#chat')
+  if (node && node.parentNode && node.parentNode !== chatHome.parent) {
+    chatHome.parent.insertBefore(node, chatHome.next)
+  }
+}
+
+/** En quittant l'onglet : le chat retourne au lecteur, les tuiles jouent. */
+export function multiHidden() {
+  undockChat()
 }
 
 function renderEmpty() {
@@ -224,6 +260,8 @@ function renderEmpty() {
     d.innerHTML = emptyState(t('multi_empty'), 'grid')
     grid.append(d)
   }
+  const slot = $('#multi-chat')
+  if (slot) slot.hidden = !tiles.length && !pending.size
 }
 
 async function loadMultiSidebar() {

@@ -39,7 +39,7 @@ import {
   exportData, loadAnnouncement, openInSheet, openSettings,
   renderAnnouncement, renderSettingsAccount,
 } from './settings.js'
-import { bindMulti, multiShown, refreshMultiTexts } from './multi.js'
+import { bindMulti, multiHidden, multiShown, refreshMultiTexts } from './multi.js'
 
 // ── Démarrage ──────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', boot)
@@ -226,6 +226,7 @@ export function setTab(tab) {
   if (tab === 'channel') renderRecentChannels()
   if (tab === 'categories' && !cat.current && (cat.tab === 'followed' || Date.now() - cat.loaded > 120_000)) loadCategories()
   if (tab === 'multi') multiShown()
+  else multiHidden()
   window.scrollTo({ top: 0 })
 }
 
