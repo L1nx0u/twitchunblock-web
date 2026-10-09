@@ -9,7 +9,7 @@ import {
 import {
   cleanLogin, clipSlugFrom, fixProxiedUrl, streamFromHelix,
 } from '../public/assets/js/api.js'
-import { qualityLabel, sortQualities, liveHlsOptions } from '../public/assets/js/player.js'
+import { qualityLabel, sortQualities, liveHlsOptions, pickQuality } from '../public/assets/js/player.js'
 import { store } from '../public/assets/js/store.js'
 
 describe('esc', () => {
@@ -113,6 +113,11 @@ describe('qualités', () => {
     assert.equal(qualityLabel('audio_only'), 'Audio')
     assert.equal(qualityLabel('720p30'), '720p')
     assert.equal(qualityLabel('1080p60'), '1080p60')
+  })
+  it('pickQuality : préférence si dispo, sinon Auto, sinon première non-audio', () => {
+    assert.equal(pickQuality(['Auto', '720p30', 'audio_only'], '720p30'), '720p30')
+    assert.equal(pickQuality(['Auto', '720p30'], 'Source'), 'Auto')
+    assert.equal(pickQuality(['audio_only'], 'Source'), 'audio_only')
   })
   it('liveHlsOptions : rattrapage toujours, latence réduite sur demande', () => {
     assert.deepEqual(liveHlsOptions({}), {

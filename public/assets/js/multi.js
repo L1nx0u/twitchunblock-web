@@ -1,8 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 //  Multistream : plusieurs lives en grille, ajout par recherche ou suivis en
 //  direct. Chaque tuile est un vrai Player (même interface que le lecteur).
-//  Le son et le chat suivent la tuile focus (clic) ; le panneau de chat est
-//  déplacé ici tant que l'onglet est ouvert, puis rendu au lecteur.
+//  Le son suit la tuile focus (clic) ; le chat n'existe que dans le plein
+//  écran d'une tuile, jamais dans l'onglet.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import * as api from './api.js'
@@ -232,7 +232,8 @@ export function removeStream(login) {
     pending.delete(login)
     renderEmpty()
     return
-  }  const i = tiles.findIndex((m) => m.login === login)
+  }
+  const i = tiles.findIndex((m) => m.login === login)
   if (i === -1) return
   const [m] = tiles.splice(i, 1)
   m.player.destroy()
@@ -264,9 +265,9 @@ function moveChatHome() {
   const node = $('#chat')
   if (!node) return
   if (!chatHome && node.parentNode) chatHome = { parent: node.parentNode, next: node.nextSibling }
-  if (chatHome && node.parentNode && node.parentNode !== chatHome.parent) {
-    chatHome.parent.insertBefore(node, chatHome.next)
-  }
+  if (!chatHome || !node.parentNode || node.parentNode === chatHome.parent) return
+  const { parent, next } = chatHome
+  parent.insertBefore(node, next?.parentNode === parent ? next : null)
 }
 
 function renderEmpty() {

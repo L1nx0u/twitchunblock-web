@@ -68,8 +68,16 @@ export function loadHls() {
   return hlsPromise
 }
 
+/** Qualité initiale : la préférence si dispo, sinon Auto, sinon la première
+ *  non-audio (garde-fou : une liste sans Auto ni vidéo). */
+export function pickQuality(keys, pref) {
+  const sorted = sortQualities(keys)
+  return sorted.includes(pref) ? pref : (sorted.find((k) => !/audio/i.test(k)) ?? sorted[0])
+}
+
 /** Source d'abord, puis du plus fin au plus grossier, l'audio seul en dernier. */
-export function sortQualities(keys) {  const score = (k) => {
+export function sortQualities(keys) {
+  const score = (k) => {
     const s = k.toLowerCase()
     if (s === 'auto') return 1e6
     if (s.includes('source') || s === 'chunked') return 1e5
@@ -277,6 +285,7 @@ export class Player {
    * @param {Record<string,string>} o.links  qualité → URL
    * @param {'live'|'vod'} o.kind
    * @param {number} [o.startAt]
+   * @param {string} [o.quality]  qualité forcée (multistream : Auto)
    */
   load({ links, kind, startAt = 0, quality }) {
     this.links = links
@@ -290,9 +299,7 @@ export class Player {
     this.el.live.classList.remove('behind')
     this.el.latency.textContent = ''
     this.video.playbackRate = 1
-    const keys = sortQualities(Object.keys(links))
-    const pref = quality ?? this.o.prefs.quality
-    this.quality = keys.includes(pref) ? pref : (keys.find((k) => !/audio/i.test(k)) ?? keys[0])
+    this.quality = pickQuality(Object.keys(links), quality ?? this.o.prefs.quality)
     this.updateQualityLabel()
     this.attach(links[this.quality], startAt)
     this.showUI()
