@@ -52,9 +52,13 @@ export function bindMulti() {
     const row = e.target.closest('[data-multi-add]')
     if (row) addStream(row.dataset.multiAdd)
   })
-  document.addEventListener('fullscreenchange', () => {
-    for (const m of tiles) m.slimBar?.()
-  })
+  document.addEventListener('fullscreenchange', reslimTiles)
+  document.addEventListener('webkitfullscreenchange', reslimTiles)
+}
+
+/** Remet la barre complète en plein écran, allégée en fenêtre. */
+function reslimTiles() {
+  for (const m of tiles) m.slimBar?.()
 }
 
 /** Appelée à l'ouverture de l'onglet : charge la barre latérale une fois. */
