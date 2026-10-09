@@ -773,6 +773,8 @@ html[data-theme="dark"] input[type='search']::-webkit-search-cancel-button { fil
 .multi-screen { position: relative; aspect-ratio: 16 / 9; background: #000; }
 .multi-screen .player { position: absolute; inset: 0; }
 .multi-screen .p-theatre { display: none; }
+/* En plein écran : que la vidéo, comme le lecteur de base. */
+.multi-tile:fullscreen .multi-head, .multi-tile:-webkit-full-screen .multi-head { display: none; }
 /* Tuiles étroites : lecture, son, qualité, plein écran. En plein écran la
    barre est complète comme le lecteur de base (sauf théâtre, non câblé). */
 .multi-tile:not(:fullscreen) .p-live, .multi-tile:not(:fullscreen) .p-latency,
