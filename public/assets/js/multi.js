@@ -52,6 +52,9 @@ export function bindMulti() {
     const row = e.target.closest('[data-multi-add]')
     if (row) addStream(row.dataset.multiAdd)
   })
+  document.addEventListener('fullscreenchange', () => {
+    for (const m of tiles) m.slimBar?.()
+  })
 }
 
 /** Appelée à l'ouverture de l'onglet : charge la barre latérale une fois. */
@@ -152,7 +155,20 @@ export async function addStream(raw) {
     onError: () => toast(t('err_live'), 'error'),
   })
   player.load({ links: links.links, kind: 'live' })
-  tiles.push({ login, name, player, el })
+  // Barre allégée hors plein écran (lecture, son, qualité, plein écran),
+  // complète dedans. Fait ici et pas en CSS : ce module est toujours frais,
+  // le fichier de styles peut rester coincé en cache.
+  const slimBar = () => {
+    const fs = (document.fullscreenElement ?? document.webkitFullscreenElement) === el
+    for (const s of ['.p-live', '.p-latency', '.p-chat', '.p-pip']) {
+      const b = el.querySelector(s)
+      if (b) b.hidden = !fs
+    }
+    const th = el.querySelector('.p-theatre')
+    if (th) th.hidden = true   // jamais câblé sur une tuile
+  }
+  slimBar()
+  tiles.push({ login, name, player, el, slimBar })
   if (!focused) focusStream(login)
   else player.video.muted = true
 }
