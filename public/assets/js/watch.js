@@ -436,7 +436,12 @@ function onPlaybackTime(cur, duration) {
 }
 
 export function stopPlayback() {
+  stopMainPlayback()
   stopMulti()
+}
+
+/** Stoppe le lecteur principal seul (le multistream garde ses tuiles). */
+export function stopMainPlayback() {
   refs.hermes?.stop()
   refs.hermes = null
   $('#watch')?.classList.remove('ended')

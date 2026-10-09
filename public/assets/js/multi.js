@@ -8,9 +8,9 @@ import * as api from './api.js'
 import { store } from './store.js'
 import { session, state } from './state.js'
 import { Player } from './player.js'
-import { stopPlayback } from './watch.js'
+import { stopMainPlayback } from './watch.js'
 import { localFollows } from './home.js'
-import { $, esc, formatViewers, icon, toast } from './util.js'
+import { $, debounce, esc, formatViewers, icon, toast } from './util.js'
 import { renderIcons } from './ui.js'
 import { emptyState } from './cards.js'
 import { t } from './i18n.js'
@@ -19,12 +19,28 @@ const MAX_TILES = 4
 const tiles = []   // { login, name, player, el }
 let focused = null
 let sideLoaded = false
+let suggestions = []
+/** Numéro de la frappe en cours : une réponse différée arrivée après coup
+ *  ne rouvre plus la liste par-dessus la grille. */
+let suggestSeq = 0
 
 export function bindMulti() {
   $('#multi-form').addEventListener('submit', (e) => {
     e.preventDefault()
+    hideSuggest()
     addStream($('#multi-input').value)
     $('#multi-input').value = ''
+  })
+  const debouncedSuggest = debounce(suggestMulti, 250)
+  $('#multi-input').addEventListener('input', () => debouncedSuggest(++suggestSeq))
+  $('#multi-input').addEventListener('blur', () => setTimeout(hideSuggest, 150))
+  $('#multi-suggest').addEventListener('mousedown', (e) => {
+    const b = e.target.closest('[data-multi-pick]')
+    if (!b) return
+    e.preventDefault()
+    hideSuggest()
+    $('#multi-input').value = ''
+    addStream(b.dataset.multiPick)
   })
   $('#multi-grid').addEventListener('click', (e) => {
     const rm = e.target.closest('[data-multi-x]')
@@ -49,12 +65,42 @@ export function refreshMultiTexts() {
   renderEmpty()
 }
 
+async function suggestMulti(seq) {
+  if (seq !== suggestSeq) return
+  const raw = $('#multi-input').value
+  const word = raw.trim().split(/\s+/)[0] ?? ''
+  if (!word || raw.trim().includes(' ') || word.length < 2) return hideSuggest()
+  const local = store.history
+    .filter((h) => h.type === 'channel' && h.term.toLowerCase().includes(word.toLowerCase()))
+    .map((h) => ({ login: h.term, displayName: h.display, profileImageURL: h.avatar, stream: null }))
+  let remote = []
+  try { remote = await api.searchChannels(word) } catch {}
+  if (seq !== suggestSeq) return
+  const seen = new Set()
+  suggestions = [...local, ...remote].filter((s) => s?.login && !seen.has(s.login) && seen.add(s.login)).slice(0, 7)
+  renderSuggest()
+}
+
+function renderSuggest() {
+  const box = $('#multi-suggest')
+  if (!suggestions.length) return hideSuggest()
+  box.innerHTML = suggestions.map((s) => `
+    <button type="button" class="suggest-row" data-multi-pick="${esc(s.login)}">
+      ${s.profileImageURL ? `<img class="avatar xs" src="${esc(s.profileImageURL)}" alt="">` : `<span class="avatar xs placeholder">${icon('user', 14)}</span>`}
+      <span class="suggest-name">${esc(s.displayName || s.login)}</span>
+      ${s.stream ? `<span class="pill live sm">${esc(formatViewers(s.stream.viewersCount))}</span>` : ''}
+    </button>`).join('')
+  box.hidden = false
+}
+
+function hideSuggest() { suggestSeq++; $('#multi-suggest').hidden = true; suggestions = [] }
+
 export async function addStream(raw) {
   const login = api.cleanLogin(raw)
   if (!login) return
   if (tiles.some((m) => m.login === login)) { focusStream(login); return }
   if (tiles.length >= MAX_TILES) { toast(t('multi_full'), 'error'); return }
-  stopPlayback()
+  stopMainPlayback()
 
   const grid = $('#multi-grid')
   grid.querySelector('.multi-empty')?.remove()
