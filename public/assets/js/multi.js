@@ -148,8 +148,9 @@ export async function addStream(raw) {
   } else {
     av.textContent = (name || '?')[0]
   }
-  const player = new Player(el.querySelector('.multi-screen'), {
-    fullscreenTarget: el,
+  const screen = el.querySelector('.multi-screen')
+  const player = new Player(screen, {
+    fullscreenTarget: screen,
     prefs: store.prefs,
     savePrefs: () => store.savePrefs(),
     onToggleChat: () => focusStream(login),
@@ -163,7 +164,7 @@ export async function addStream(raw) {
   // complète dedans. Fait ici et pas en CSS : ce module est toujours frais,
   // le fichier de styles peut rester coincé en cache.
   const slimBar = () => {
-    const fs = (document.fullscreenElement ?? document.webkitFullscreenElement) === el
+    const fs = (document.fullscreenElement ?? document.webkitFullscreenElement) === screen
     for (const s of ['.p-live', '.p-latency', '.p-chat', '.p-pip']) {
       const b = el.querySelector(s)
       if (b) b.hidden = !fs

@@ -773,14 +773,12 @@ html[data-theme="dark"] input[type='search']::-webkit-search-cancel-button { fil
 .multi-screen { position: relative; aspect-ratio: 16 / 9; background: #000; }
 .multi-screen .player { position: absolute; inset: 0; }
 .multi-screen .p-theatre { display: none; }
-/* En plein écran : que la vidéo, comme le lecteur de base. */
-.multi-tile:fullscreen .multi-head, .multi-tile:-webkit-full-screen .multi-head { display: none; }
-/* Tuiles étroites : lecture, son, qualité, plein écran. En plein écran la
-   barre est complète comme le lecteur de base (sauf théâtre, non câblé). */
-.multi-tile:not(:fullscreen) .p-live, .multi-tile:not(:fullscreen) .p-latency,
-.multi-tile:not(:fullscreen) .p-chat, .multi-tile:not(:fullscreen) .p-pip,
-.multi-tile:not(:-webkit-full-screen) .p-live, .multi-tile:not(:-webkit-full-screen) .p-latency,
-.multi-tile:not(:-webkit-full-screen) .p-chat, .multi-tile:not(:-webkit-full-screen) .p-pip { display: none; }
+/* Tuiles étroites : lecture, son, qualité, plein écran. En plein écran (qui
+   ne prend que la vidéo, jamais l'en-tête) la barre est complète. */
+.multi-screen:not(:fullscreen) .p-live, .multi-screen:not(:fullscreen) .p-latency,
+.multi-screen:not(:fullscreen) .p-chat, .multi-screen:not(:fullscreen) .p-pip,
+.multi-screen:not(:-webkit-full-screen) .p-live, .multi-screen:not(:-webkit-full-screen) .p-latency,
+.multi-screen:not(:-webkit-full-screen) .p-chat, .multi-screen:not(:-webkit-full-screen) .p-pip { display: none; }
 .multi-empty { grid-column: 1 / -1; }
 
 /* ═══════════════════════════════════════════════════════════════════════════
