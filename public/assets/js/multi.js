@@ -54,8 +54,40 @@ export function bindMulti() {
     const row = e.target.closest('[data-multi-add]')
     if (row) addStream(row.dataset.multiAdd)
   })
-  document.addEventListener('fullscreenchange', reslimTiles)
-  document.addEventListener('webkitfullscreenchange', reslimTiles)
+  document.addEventListener('fullscreenchange', onFsChange)
+  document.addEventListener('webkitfullscreenchange', onFsChange)
+}
+
+/** Barre + chat sur changement de plein écran. */
+function onFsChange() {
+  reslimTiles()
+  restoreFsChat()
+}
+
+/** Le chat suit la tuile jusque dans son plein écran (comme le lecteur de
+ *  base) ; en sortant, il retourne dans la barre latérale. */
+function toggleTileChat(login) {
+  focusStream(login)
+  const m = tiles.find((t) => t.login === login)
+  const node = $('#chat')
+  if (!m || !node) return
+  const screen = m.el.querySelector('.multi-screen')
+  const fs = (document.fullscreenElement ?? document.webkitFullscreenElement) === screen
+  if (!fs) return   // en fenêtre, pas de chat : la barre allégée n'a même pas le bouton
+  if (node.parentNode === screen) moveChatHome()
+  else {
+    screen.append(node)
+    refs.chat?.openLive({ channel: login, channelId: null })
+  }
+}
+
+function restoreFsChat() {
+  const node = $('#chat')
+  const fs = document.fullscreenElement ?? document.webkitFullscreenElement
+  if (!node || !node.parentNode) return
+  if (node.parentNode.classList.contains('multi-screen') && node.parentNode !== fs) {
+    moveChatHome()
+  }
 }
 
 /** Remet la barre complète en plein écran, allégée en fenêtre. */
@@ -110,7 +142,6 @@ export async function addStream(raw) {
   if (tiles.some((m) => m.login === login) || pending.has(login)) { focusStream(login); return }
   if (tiles.length + pending.size >= MAX_TILES) { toast(t('multi_full'), 'error'); return }
   stopMainPlayback()
-  dockChat()
 
   const grid = $('#multi-grid')
   grid.querySelector('.multi-empty')?.remove()
@@ -158,13 +189,13 @@ export async function addStream(raw) {
     fullscreenTarget: screen,
     prefs: store.prefs,
     savePrefs: () => store.savePrefs(),
-    onToggleChat: () => focusStream(login),
+    onToggleChat: () => toggleTileChat(login),
     onHelp: () => toast(t('shortcuts_help'), 'info'),
     keysActive: () => state.tab === 'multi' && focused === login && !$('#sheet')?.classList.contains('open'),
     isChatOpen: () => store.prefs.chatOpen,
     onError: () => toast(t('err_live'), 'error'),
   })
-  player.load({ links: links.links, kind: 'live' })
+  player.load({ links: links.links, kind: 'live', quality: 'Auto' })
   // Barre allégée hors plein écran (lecture, son, qualité, plein écran),
   // complète dedans. Fait ici et pas en CSS : ce module est toujours frais,
   // le fichier de styles peut rester coincé en cache.
@@ -187,7 +218,6 @@ export async function addStream(raw) {
 export function focusStream(login) {
   if (!tiles.some((m) => m.login === login)) return
   focused = login
-  refs.chat?.openLive({ channel: login, channelId: null })
   for (const m of tiles) {
     const on = m.login === login
     m.el.classList.toggle('focused', on)
@@ -219,7 +249,7 @@ export function stopMulti() {
   for (const m of tiles) m.player.destroy()
   tiles.length = 0
   focused = null
-  undockChat()
+  moveChatHome()
   const grid = $('#multi-grid')
   if (grid) {
     grid.innerHTML = ''
@@ -227,27 +257,16 @@ export function stopMulti() {
   }
 }
 
-/** Le panneau de chat vit ici tant que l'onglet est ouvert. */
+/** Le chat n'existe que dans le plein écran d'une tuile, jamais dans
+ *  l'onglet. Ici : le rendre au lecteur. */
 let chatHome = null
-function dockChat() {
+function moveChatHome() {
   const node = $('#chat')
-  const slot = $('#multi-chat')
-  if (!node || !slot || node.parentNode === slot) return
-  if (!chatHome) chatHome = { parent: node.parentNode, next: node.nextSibling }
-  slot.append(node)
-  slot.hidden = false
-}
-function undockChat() {
-  if (!chatHome) return
-  const node = $('#chat')
-  if (node && node.parentNode && node.parentNode !== chatHome.parent) {
+  if (!node) return
+  if (!chatHome && node.parentNode) chatHome = { parent: node.parentNode, next: node.nextSibling }
+  if (chatHome && node.parentNode && node.parentNode !== chatHome.parent) {
     chatHome.parent.insertBefore(node, chatHome.next)
   }
-}
-
-/** En quittant l'onglet : le chat retourne au lecteur, les tuiles jouent. */
-export function multiHidden() {
-  undockChat()
 }
 
 function renderEmpty() {
@@ -260,8 +279,6 @@ function renderEmpty() {
     d.innerHTML = emptyState(t('multi_empty'), 'grid')
     grid.append(d)
   }
-  const slot = $('#multi-chat')
-  if (slot) slot.hidden = !tiles.length && !pending.size
 }
 
 async function loadMultiSidebar() {

@@ -278,7 +278,7 @@ export class Player {
    * @param {'live'|'vod'} o.kind
    * @param {number} [o.startAt]
    */
-  load({ links, kind, startAt = 0 }) {
+  load({ links, kind, startAt = 0, quality }) {
     this.links = links
     this.kind = kind
     this.root.dataset.kind = kind
@@ -291,7 +291,7 @@ export class Player {
     this.el.latency.textContent = ''
     this.video.playbackRate = 1
     const keys = sortQualities(Object.keys(links))
-    const pref = this.o.prefs.quality
+    const pref = quality ?? this.o.prefs.quality
     this.quality = keys.includes(pref) ? pref : (keys.find((k) => !/audio/i.test(k)) ?? keys[0])
     this.updateQualityLabel()
     this.attach(links[this.quality], startAt)
