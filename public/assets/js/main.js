@@ -315,6 +315,7 @@ const actions = {
   'refresh-discover': () => { loadFollowed(); loadTop(state.topLang) },
   'cat-more': () => loadCategories({ more: true }),
   'cat-streams-more': () => cat.current && openCategory(cat.current, { more: true }),
+  'clips-more': () => loadChannelClips(undefined, { more: true }),
   'cat-back': () => closeCategory(),
   'cat-follow': (e) => {
     const c = cat.current

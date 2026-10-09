@@ -74,6 +74,7 @@ describe('streamFromHelix', () => {
     })
     assert.deepEqual(out, {
       login: 'squeezie', name: 'Squeezie', avatar: '', title: 'Live', game: 'Jeu',
+      gameId: '',
       viewers: 42000, thumb: 'https://x/440x248', startedAt: '2026-10-07T10:00:00Z',
     })
   })
@@ -122,11 +123,11 @@ describe('qualités', () => {
   it('liveHlsOptions : rattrapage toujours, latence réduite sur demande', () => {
     assert.deepEqual(liveHlsOptions({}), {
       maxLiveSyncPlaybackRate: 1.5,
-      liveSyncDurationCount: 3,
+      liveSyncDuration: 4,
     })
     assert.deepEqual(liveHlsOptions({ lowLatency: true }), {
       maxLiveSyncPlaybackRate: 1.5,
-      liveSyncDurationCount: 2,
+      liveSyncDuration: 2,
       liveMaxLatencyDurationCount: 6,
     })
   })

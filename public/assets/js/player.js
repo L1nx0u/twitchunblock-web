@@ -9,7 +9,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { t } from './i18n.js'
-import { API_URL, WORKER_BASES, fixProxiedUrl, workerBaseOf } from './api.js'
+import { API_URL, RELAY_BASE, WORKER_BASES, fixProxiedUrl, proxyBaseOf } from './api.js'
 import { $, esc, formatClock, icon, isIOS } from './util.js'
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
@@ -101,7 +101,7 @@ export function qualityLabel(k) {
 export function liveHlsOptions({ lowLatency = false } = {}) {
   return {
     maxLiveSyncPlaybackRate: 1.5,
-    liveSyncDurationCount: lowLatency ? 2 : 3,
+    liveSyncDuration: lowLatency ? 2 : 4,
     ...(lowLatency ? { liveMaxLatencyDurationCount: 6 } : {}),
   }
 }
@@ -150,8 +150,8 @@ export class Player {
           </div>
           <div class="p-bar">
             <button class="p-btn p-play" type="button">${icon('play', 22)}</button>
-            <button class="p-btn p-back vod-only" type="button" data-i18n-title="back10">${icon('back10', 20)}<b>10</b></button>
-            <button class="p-btn p-fwd vod-only" type="button" data-i18n-title="fwd10">${icon('fwd10', 20)}<b>10</b></button>
+            <button class="p-btn p-back" type="button" data-i18n-title="back10">${icon('back10', 20)}<b>10</b></button>
+            <button class="p-btn p-fwd" type="button" data-i18n-title="fwd10">${icon('fwd10', 20)}<b>10</b></button>
             <div class="p-volume">
               <button class="p-btn p-mute" type="button">${icon('volume', 21)}</button>
               <input class="p-vol" type="range" min="0" max="1" step="0.05" aria-label="volume">
@@ -337,9 +337,9 @@ export class Player {
     if (token !== this.attachToken) return
 
     if (Hls?.isSupported()) {
-      // Le relais du Worker qui a servi ces liens : le principal, ou un
-      // secours si le quota du principal est atteint.
-      const relay = workerBaseOf(url) ?? API_URL
+      // Le relais qui a servi ces liens : celui du VPS, le Worker principal,
+      // ou un secours si le quota du principal est atteint.
+      const relay = proxyBaseOf(url) ?? API_URL
       const hls = new Hls({
         // Rouvrir la requête avec l'adresse corrigée : c'est le point
         // d'accroche que hls.js offre pour réécrire une URL avant envoi.
@@ -353,12 +353,12 @@ export class Player {
         },
         backBufferLength: 90,
         maxBufferLength: 30,
-        // Labo (Réglages → Expérimental) : rattrapage et latence réduite.
-        // La latence réduite ne vaut que pour le direct.
+        // Distance au bord du direct, en secondes (mesuré : ~8 s avec 4).
+        // Twitch déclare des segments de 6 s qui en durent 2 : compter en
+        // segments plaçait le lecteur à ~18 s du bord.
         ...liveHlsOptions({
           lowLatency: this.kind === 'live' && this.o.prefs.lowLatency === true,
         }),
-        startPosition: this.kind === 'vod' && startAt > 1 ? startAt : -1,
       })
       this.hls = hls
       hls.loadSource(url)
@@ -385,9 +385,12 @@ export class Player {
         // requêtes n'aboutissent plus du tout — code 0, la page d'erreur de
         // Cloudflare n'ayant pas d'en-tête CORS. Plutôt que de relancer sans
         // fin le même Worker, main.js redemande les liens à un autre.
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !data.response?.code) {
-          const down = workerBaseOf(data.frag?.url || data.context?.url || data.url || '')
-          if (down && this.o.onWorkerDown?.(down)) return
+        // Relais du VPS : même une réponse d'erreur (Twitch peut limiter son
+        // adresse IP) renvoie au Worker.
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          const down = proxyBaseOf(data.frag?.url || data.context?.url || data.url || '')
+          const failed = !data.response?.code || (down === RELAY_BASE && data.response.code >= 400)
+          if (down && failed && this.o.onWorkerDown?.(down)) return
         }
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad()
         else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError()
@@ -473,10 +476,18 @@ export class Player {
   }
 
   seekBy(delta) {
-    if (this.kind !== 'vod') return
     const v = this.video
-    const d = Number.isFinite(v.duration) ? v.duration : Infinity
-    v.currentTime = Math.max(0, Math.min(d - 1, v.currentTime + delta))
+    if (this.kind === 'live') {
+      // Direct : dans la fenêtre que garde Twitch (~30 s), comme dans le
+      // lecteur incrusté (PiP) — avancer rapproche du direct.
+      if (!v.seekable.length) return
+      const start = v.seekable.start(0)
+      const end = v.seekable.end(v.seekable.length - 1)
+      v.currentTime = Math.max(start, Math.min(end - 1.5, v.currentTime + delta))
+    } else {
+      const d = Number.isFinite(v.duration) ? v.duration : Infinity
+      v.currentTime = Math.max(0, Math.min(d - 1, v.currentTime + delta))
+    }
     this.flash(delta > 0 ? `+${delta} s` : `${delta} s`)
   }
 
@@ -500,6 +511,23 @@ export class Player {
     let delay = playing ? (Date.now() - playing) / 1000 : this.hls?.latency
     if (!Number.isFinite(delay) || delay < 0) return 0
     return Math.min(delay, 90)
+  }
+
+  /**
+   * Retard à appliquer au chat : notre distance au bord du direct. Les
+   * messages viennent de spectateurs qui regardent eux-mêmes près de ce
+   * bord. La latence totale (liveDelay) compte en plus leur propre retard
+   * et, surtout, le délai que certaines chaînes ajoutent à leur diffusion —
+   * que ces spectateurs subissent aussi : le chat arrivait alors 10 s trop
+   * tard, ou plus.
+   */
+  chatDelay() {
+    if (this.kind !== 'live') return 0
+    const v = this.video
+    let behind = this.hls ? this.hls.latency : NaN
+    if (!(behind > 0) && v.seekable.length) behind = v.seekable.end(v.seekable.length - 1) - v.currentTime
+    if (!Number.isFinite(behind) || behind < 0) return 0
+    return Math.min(behind, 60)
   }
 
   goLive() {

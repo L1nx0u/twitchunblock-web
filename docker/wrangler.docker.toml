@@ -5,9 +5,11 @@ main = "worker.js"
 compatibility_date = "2024-01-01"
 
 # Le site est servi par le même serveur que le Worker : /api/* va au Worker,
-# le reste aux fichiers de public/.
+# le reste aux fichiers de public/. `ASSETS` permet au Worker de servir
+# la page pour les adresses façon Twitch (/xqc, /videos/…).
 [assets]
 directory = "./public"
+binding = "ASSETS"
 html_handling = "auto-trailing-slash"
 
 # Base D1 locale (SQLite dans /data) ; la table est créée au premier appel.

@@ -5,7 +5,7 @@
 
 import { pushSync } from './main.js'
 import { isLocallyFollowed } from './home.js'
-import { state } from './state.js'
+import { session, state } from './state.js'
 import * as api from './api.js'
 import { store } from './store.js'
 import { lang, t } from './i18n.js'
@@ -148,24 +148,38 @@ async function loadChannelHighlights() {
   $('#channel-highlights').innerHTML = list?.length ? list.map((v) => vodCard(v, name)).join('') : emptyState(t('no_highlights'), 'film')
 }
 
-/** Section Clips de la page chaîne, chargée à part (période au choix). */
-export async function loadChannelClips(period = state.clipPeriod ?? 'LAST_WEEK') {
+/** Section Clips de la page chaîne, chargée à part (période au choix).
+ *  « Charger plus » puise la suite (Helix, connecté uniquement). */
+export async function loadChannelClips(period = state.clipPeriod ?? 'LAST_WEEK', { more = false } = {}) {
   const login = state.channel?.login
   const box = $('#channel-clips')
   if (!login || !box) return
   state.clipPeriod = period
   for (const b of document.querySelectorAll('[data-clip-period]')) b.classList.toggle('active', b.dataset.clipPeriod === period)
-  // Gardés en mémoire : la page est redessinée à chaque frappe du filtre.
+  // Gardées en mémoire : la page est redessinée à chaque frappe du filtre.
   const key = `${login}|${period}`
   state.clipCache ??= new Map()
-  let clips = state.clipCache.get(key)
-  if (!clips) {
-    box.innerHTML = skeleton(4, 'vod')
-    clips = await api.getClips(login, period).catch(() => null)
-    if (clips) state.clipCache.set(key, clips)
+  let page = state.clipCache.get(key)
+  if (!page || (!more && !page.items?.length)) {
+    if (!more) box.innerHTML = skeleton(4, 'vod')
+    page = await api.getClips(login, period, null, state.channel?.info?.id ?? null).catch(() => null)
+    if (page) state.clipCache.set(key, page)
+  } else if (more && page.cursor) {
+    const next = await api.getClips(login, period, page.cursor).catch(() => null)
+    if (next?.items?.length) {
+      page = { items: [...page.items, ...next.items.filter((x) => !page.items.some((y) => y.slug === x.slug))], cursor: next.cursor }
+      state.clipCache.set(key, page)
+    } else if (!session.token) {
+      const moreBox = $('#channel-clips-more')
+      if (moreBox) moreBox.innerHTML = `<p class="muted small">${esc(t('more_needs_login'))}</p>`
+      return
+    }
   }
   if (state.channel?.login !== login || state.clipPeriod !== period || !$('#channel-clips')) return
-  $('#channel-clips').innerHTML = clips?.length ? clips.map(clipCard).join('') : emptyState(t('no_clips'), 'film')
+  const list = page?.items ?? []
+  $('#channel-clips').innerHTML = list.length ? list.map(clipCard).join('') : emptyState(t('no_clips'), 'film')
+  const moreBox = $('#channel-clips-more')
+  if (moreBox) moreBox.innerHTML = page?.cursor ? `<button class="btn ghost" type="button" data-action="clips-more">${esc(t('load_more'))}</button>` : ''
 }
 
 /** Playlists de la chaîne : une rangée défilante par playlist, comme sur Twitch. */
@@ -304,6 +318,7 @@ export function renderChannel(keyword = '') {
         </div>
       </div>
       <div class="grid vods" id="channel-clips"></div>
+      <div class="load-more" id="channel-clips-more"></div>
     </section>`
   loadChannelTab(tab)
 

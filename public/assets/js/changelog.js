@@ -4,9 +4,26 @@
 //  en tête. Le site montre celles qu'on n'a pas encore vues.
 // ═══════════════════════════════════════════════════════════════════════════
 
-export const SITE_VERSION = '2026.10.07c'
+export const SITE_VERSION = '2026.10.09'
 
 export const CHANGELOG = [
+  {
+    version: '2026.10.09',
+    items: {
+      fr: [
+        'Clips : « Charger plus » pour voir au-delà des 100 premiers (connecté, sinon le site le dit).',
+        'Direct : il démarre plus près du bord (~8 s de retard au lieu de ~20).',
+      ],
+      en: [
+        'Clips: “Load more” past the first 100 (logged in, otherwise the site says so).',
+        'Live starts closer to the edge (~8s delay instead of ~20s).',
+      ],
+      es: [
+        'Clips: «Cargar más» más allá de los 100 primeros (conectado, si no el sitio lo dice).',
+        'El directo empieza más cerca del borde (~8 s de retraso en vez de ~20 s).',
+      ],
+    },
+  },
   {
     version: '2026.10.07c',
     items: {

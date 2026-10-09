@@ -25,6 +25,24 @@ const FALLBACK_URLS = CFG.fallbackApiUrls ?? (CFG.apiUrl ? [] : DEFAULT_FALLBACK
 const originOf = (u) => { try { return new URL(u).origin } catch { return null } }
 /** Le principal d'abord, puis les secours, dans l'ordre. */
 export const WORKER_BASES = [...new Set([API_URL, ...FALLBACK_URLS.map(originOf).filter(Boolean)])]
+/**
+ * Ordre pour tout ce qui ne dépend pas de D1 (lives, VODs, relais vidéo,
+ * Moobot) : les secours d'abord, le principal en dernier recours. Son quota
+ * reste ainsi pour ce que lui seul sait faire — sauvegardes et annonces.
+ */
+const LOOKUP_BASES = [...WORKER_BASES.slice(1), WORKER_BASES[0]]
+
+// ── Relais vidéo (serveur à soi) ───────────────────────────────────────────
+// La lecture fait presque tout le quota de requêtes du Worker : chaque
+// segment de VOD, la playlist d'un direct toutes les ~2 s. Un relais sur un
+// VPS (docker/relay.mjs, README « Video relay ») exécute le même proxy, sans
+// quota : les liens de lecture du Worker y sont redirigés, le Worker garde
+// tout le reste. Relais injoignable → retour au Worker, comme pour un Worker
+// de secours (écarté 30 min). Une instance avec sa propre adresse
+// (config.js) n'hérite pas du relais officiel : elle donne le sien dans
+// `relayUrl`, ou aucun.
+const DEFAULT_RELAY_URL = 'https://relais.mxfia19.duckdns.org'
+export const RELAY_BASE = originOf(CFG.relayUrl ?? (CFG.apiUrl ? '' : DEFAULT_RELAY_URL))
 
 // Worker mis de côté sur cet appareil, pour ne pas le retenter à chaque
 // requête. La page d'erreur de Cloudflare n'a pas d'en-tête CORS : le
@@ -45,7 +63,8 @@ const isDown = (base) => Math.max(downStored()[base] || 0, downMem[base] || 0) >
 /** Écarte un Worker en panne. `false` s'il n'y a aucun autre Worker vers
  *  qui se tourner : l'appelant garde alors son comportement habituel. */
 export function markWorkerDown(base) {
-  if (WORKER_BASES.length < 2 || !WORKER_BASES.includes(base)) return false
+  // Le relais a toujours un recours : le Worker.
+  if (base !== RELAY_BASE && (WORKER_BASES.length < 2 || !WORKER_BASES.includes(base))) return false
   const until = Date.now() + DOWN_MS
   downMem[base] = until
   const m = downStored()
@@ -54,10 +73,43 @@ export function markWorkerDown(base) {
   return true
 }
 
-/** Worker (principal ou secours) qui a servi cette adresse, sinon null. */
-export function workerBaseOf(url) {
+/** Qui relaie cette adresse : le relais vidéo ou un Worker, sinon null. */
+export function proxyBaseOf(url) {
   const o = originOf(url)
-  return WORKER_BASES.includes(o) ? o : null
+  return o && (o === RELAY_BASE || WORKER_BASES.includes(o)) ? o : null
+}
+
+/** Liens de lecture d'un relais à l'autre (même route /api/proxy des deux
+ *  côtés) : vers le relais vidéo s'il répond, vers le Worker sinon. */
+function moveLinks(links, from, to) {
+  const out = {}
+  for (const [q, link] of Object.entries(links ?? {})) {
+    let moved = link
+    try {
+      const u = new URL(link)
+      if (from(u.origin) && u.pathname === '/api/proxy') moved = `${to}${u.pathname}${u.search}`
+    } catch {}
+    out[q] = moved
+  }
+  return out
+}
+const viaRelay = (data) => (RELAY_BASE && !isDown(RELAY_BASE) && data?.links
+  ? { ...data, links: moveLinks(data.links, (o) => WORKER_BASES.includes(o), RELAY_BASE) }
+  : data)
+/** Relais en panne en pleine lecture : les mêmes liens, par un Worker —
+ *  un secours d'abord, pour ménager le principal. */
+export const withoutRelay = (links) => moveLinks(links, (o) => o === RELAY_BASE,
+  LOOKUP_BASES.find((b) => !isDown(b)) ?? LOOKUP_BASES[0])
+
+// Relais injoignable (VPS arrêté, mal configuré) : on le sait dès le
+// chargement de la page, plutôt qu'après les essais du lecteur.
+if (RELAY_BASE && !isDown(RELAY_BASE)) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 4000)
+  fetch(`${RELAY_BASE}/health`, { cache: 'no-store', signal: ctrl.signal })
+    .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`) })
+    .catch(() => markWorkerDown(RELAY_BASE))
+    .finally(() => clearTimeout(timer))
 }
 
 /**
@@ -68,9 +120,9 @@ export function workerBaseOf(url) {
  * pas une panne : un autre Worker dirait la même chose.
  */
 export async function workerJson(path, { timeout = 0 } = {}) {
-  const bases = WORKER_BASES.filter((b) => !isDown(b))
+  const bases = LOOKUP_BASES.filter((b) => !isDown(b))
   const failed = []
-  for (const base of [...bases, ...WORKER_BASES.filter((b) => !bases.includes(b))]) {
+  for (const base of [...bases, ...LOOKUP_BASES.filter((b) => !bases.includes(b))]) {
     const ctrl = timeout ? new AbortController() : null
     const timer = ctrl ? setTimeout(() => ctrl.abort(), timeout) : null
     let res
@@ -163,8 +215,8 @@ export async function getChannelInfo(login) {
   const data = await gql(`query($l: String!) {
     user(login: $l) {
       id login displayName profileImageURL(width: 150) lastBroadcast { startedAt }
-      stream { id title viewersCount createdAt game { displayName name } previewImageURL(width: 640, height: 360) }
-      broadcastSettings { title game { displayName } }
+      stream { id title viewersCount createdAt game { id displayName name } previewImageURL(width: 640, height: 360) }
+      broadcastSettings { title game { id displayName } }
     }
   }`, { l: login })
   return data?.user ?? null
@@ -187,6 +239,7 @@ function streamFromGQL(n) {
     avatar: n?.broadcaster?.profileImageURL ?? '',
     title: n?.title ?? '',
     game: n?.game?.displayName ?? '',
+    gameId: n?.game?.id ?? '',
     viewers: n?.viewersCount ?? 0,
     thumb: n?.previewImageURL ?? '',
     startedAt: n?.createdAt ?? null,
@@ -201,7 +254,7 @@ export async function getChannelsByLogins(logins) {
     const data = await gql(`query($l: [String!]) { users(logins: $l) { login displayName profileImageURL(width: 70)
       lastBroadcast { startedAt }
       videos(first: 1, type: ARCHIVE, sort: TIME) { edges { node { publishedAt lengthSeconds } } }
-      stream { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { displayName } } } }`, { l: logins.slice(i, i + 100) })
+      stream { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { id displayName } } } }`, { l: logins.slice(i, i + 100) })
     for (const u of data?.users ?? []) {
       if (!u?.login) continue
       // Fin du dernier live : la dernière VOD (début + durée) ou, si plus
@@ -229,14 +282,70 @@ export async function getFollowedLogins(userId) {
 }
 
 // ── Catégories (GQL public) ────────────────────────────────────────────────
-const CAT_FIELDS = 'id name displayName boxArtURL(width: 188, height: 250) viewersCount'
-const catFrom = (n) => ({ id: n.id, name: n.displayName || n.name, box: n.boxArtURL || '', viewers: n.viewersCount ?? null })
+const CAT_FIELDS = 'id name displayName slug boxArtURL(width: 188, height: 250) viewersCount'
+const catFrom = (n) => ({ id: n.id, name: n.displayName || n.name, slug: n.slug || '', box: n.boxArtURL || '', viewers: n.viewersCount ?? null })
+
+/** Une catégorie par son nom d'adresse (« just-chatting », comme sur Twitch). */
+export async function getCategoryBySlug(slug) {
+  const data = await gql(`query($s: String!) { game(slug: $s) { ${CAT_FIELDS} } }`, { s: slug })
+  return data?.game ? catFrom(data.game) : null
+}
+
+// Pagination. En GQL public, Twitch exige un jeton d'intégrité dès la 2e page
+// (« failed integrity check », requête persistée comprise) : « Charger plus »
+// ne ramenait rien. On prend donc d'un coup les 100 premiers (le maximum
+// accepté), servis par tranches ; au-delà, seul Helix sait continuer, avec
+// le compte Twitch. Le « curseur » est un objet opaque :
+//   { rest: à servir, seen: déjà vus, more: Twitch en a d'autres, after: curseur Helix }
+function servePage(c, step) {
+  const items = c.rest.slice(0, step)
+  const rest = c.rest.slice(step)
+  const helixNext = c.more && Boolean(store.token)
+  // `locked` : Twitch en a d'autres, mais il faut le compte pour les voir.
+  return { items, cursor: rest.length || helixNext ? { ...c, rest } : null, locked: !rest.length && c.more && !store.token }
+}
+
+/** Page Helix suivante, sans ce qui est déjà affiché (Helix repart du début :
+ *  ses 100 premiers recouvrent ceux de GQL). Jusqu'à 3 pages pour trouver du
+ *  neuf ; une erreur clôt la liste au lieu de la vider. */
+async function helixMore(c, path, convert, keyOf, step) {
+  let after = c.after
+  const fresh = []
+  try {
+    for (let i = 0; i < 3 && fresh.length < step; i++) {
+      const data = await helix(`${path}${path.includes('?') ? '&' : '?'}first=100${after ? `&after=${encodeURIComponent(after)}` : ''}`)
+      after = data?.pagination?.cursor ?? null
+      for (const x of (data?.data ?? []).map(convert)) {
+        const k = keyOf(x)
+        if (k && !c.seen.has(k)) { c.seen.add(k); fresh.push(x) }
+      }
+      if (!after) break
+    }
+  } catch {
+    after = null
+  }
+  return servePage({ ...c, rest: fresh, more: Boolean(after), after }, step)
+}
+
+const catFromHelix = (g) => ({ id: g.id, name: g.name, box: String(g.box_art_url ?? '').replace('{width}', '188').replace('{height}', '250'), viewers: null })
 
 /** Catégories les plus regardées. { items, cursor } */
 export async function getTopCategories(cursor = null) {
-  const data = await gql(`query($c: Cursor) { games(first: 40, after: $c) { edges { cursor node { ${CAT_FIELDS} } } pageInfo { hasNextPage } } }`, { c: cursor })
-  const edges = data?.games?.edges ?? []
-  return { items: edges.map((e) => catFrom(e.node)), cursor: data?.games?.pageInfo?.hasNextPage ? edges.at(-1)?.cursor ?? null : null }
+  let page
+  if (cursor?.rest?.length) page = servePage(cursor, 40)
+  else if (cursor) page = await helixMore(cursor, 'games/top', catFromHelix, (x) => x.id, 40)
+  else {
+    const data = await gql(`query { games(first: 100) { edges { node { ${CAT_FIELDS} } } pageInfo { hasNextPage } } }`)
+    const items = (data?.games?.edges ?? []).map((e) => catFrom(e.node))
+    page = servePage({ rest: items, seen: new Set(items.map((x) => x.id)), more: Boolean(data?.games?.pageInfo?.hasNextPage), after: null }, 40)
+  }
+  // Helix ne donne pas l'audience : complétée par GQL, en une requête.
+  const missing = page.items.filter((x) => x.viewers == null).map((x) => x.id)
+  if (missing.length) {
+    const byId = Object.fromEntries((await getCategoriesByIds(missing).catch(() => [])).map((x) => [x.id, x]))
+    page.items = page.items.map((x) => byId[x.id] ?? x)
+  }
+  return page
 }
 
 export async function searchCategories(q) {
@@ -255,13 +364,25 @@ export async function getCategoriesByIds(ids) {
   return ids.map((_, i) => data?.[`g${i}`]).filter(Boolean).map(catFrom)
 }
 
-/** Lives d'une catégorie. { items, cursor } */
+/** Lives d'une catégorie, par tranches de 30. { items, cursor } (voir servePage) */
 export async function getCategoryStreams(id, cursor = null) {
-  const data = await gql(`query($id: ID!, $c: Cursor) { game(id: $id) { streams(first: 30, after: $c) {
-    edges { cursor node { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { displayName }
-      broadcaster { login displayName profileImageURL(width: 50) } } } pageInfo { hasNextPage } } } }`, { id, c: cursor })
-  const edges = data?.game?.streams?.edges ?? []
-  return { items: edges.map((e) => streamFromGQL(e.node)).filter((s) => s.login), cursor: data?.game?.streams?.pageInfo?.hasNextPage ? edges.at(-1)?.cursor ?? null : null }
+  let page
+  if (cursor?.rest?.length) page = servePage(cursor, 30)
+  else if (cursor) page = await helixMore(cursor, `streams?game_id=${encodeURIComponent(id)}`, streamFromHelix, (s) => s.login, 30)
+  else {
+    const data = await gql(`query($id: ID!) { game(id: $id) { streams(first: 100) {
+      edges { node { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { id displayName }
+        broadcaster { login displayName profileImageURL(width: 50) } } } pageInfo { hasNextPage } } } }`, { id })
+    const items = (data?.game?.streams?.edges ?? []).map((e) => streamFromGQL(e.node)).filter((s) => s.login)
+    page = servePage({ rest: items, seen: new Set(items.map((s) => s.login)), more: Boolean(data?.game?.streams?.pageInfo?.hasNextPage), after: null }, 30)
+  }
+  // Helix ne donne pas les photos de profil : complétées en une requête.
+  const missing = page.items.filter((s) => !s.avatar).map((s) => s.login)
+  if (missing.length) {
+    const avatars = await getAvatars(missing)
+    for (const s of page.items) if (!s.avatar) s.avatar = avatars[s.login] ?? ''
+  }
+  return page
 }
 
 /** Lesquelles de ces chaînes sont en live (suivis sans compte), par GQL public. */
@@ -269,7 +390,7 @@ export async function getLiveByLogins(logins) {
   const out = []
   for (let i = 0; i < logins.length; i += 100) {
     const data = await gql(`query($l: [String!]) { users(logins: $l) { login displayName profileImageURL(width: 50)
-      stream { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { displayName } } } }`, { l: logins.slice(i, i + 100) })
+      stream { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { id displayName } } } }`, { l: logins.slice(i, i + 100) })
     for (const u of data?.users ?? []) {
       if (u?.stream) out.push(streamFromGQL({ ...u.stream, broadcaster: u }))
     }
@@ -284,6 +405,7 @@ export function streamFromHelix(s) {
     avatar: '',
     title: s.title ?? '',
     game: s.game_name ?? '',
+    gameId: s.game_id ?? '',
     viewers: s.viewer_count ?? 0,
     thumb: String(s.thumbnail_url ?? '').replace('{width}', '440').replace('{height}', '248'),
     startedAt: s.started_at ?? null,
@@ -298,7 +420,7 @@ export async function getTopStreams(language) {
       edges { node {
         title viewersCount createdAt previewImageURL(width: 440, height: 248)
         broadcaster { login displayName profileImageURL(width: 50) }
-        game { displayName }
+        game { id displayName }
       } }
     }
   }`, { n: 24, langs: language ? [language.toUpperCase()] : null })
@@ -324,7 +446,7 @@ export async function getVodMeta(id) {
       id title lengthSeconds createdAt
       previewThumbnailURL(width: 320, height: 180)
       owner { id login displayName profileImageURL(width: 70) }
-      game { displayName }
+      game { id displayName }
     }
   }`, { id })
   return data?.video ?? null
@@ -336,19 +458,19 @@ export async function getVodMeta(id) {
 // bloqué — chargement infini et « CORS error » dans la console. Le réglage
 // « proxy » ne concerne plus que les liens donnés aux applis externes
 // (VLC, Infuse…), voir `directUrl`.
-export function getLive(login) {
-  return workerJson(`/api/get-live?name=${encodeURIComponent(login)}&proxy=true`)
+export async function getLive(login) {
+  return viaRelay(await workerJson(`/api/get-live?name=${encodeURIComponent(login)}&proxy=true`))
 }
 
-export function getVodLinks(id) {
-  return workerJson(`/api/get-m3u8?id=${encodeURIComponent(id)}&proxy=true`)
+export async function getVodLinks(id) {
+  return viaRelay(await workerJson(`/api/get-m3u8?id=${encodeURIComponent(id)}&proxy=true`))
 }
 
 /** Adresse d'origine derrière un lien du proxy, pour les applis externes. */
 export function directUrl(link) {
   try {
     const u = new URL(link)
-    if (workerBaseOf(link) && u.pathname === '/api/proxy') return u.searchParams.get('url') || link
+    if (proxyBaseOf(link) && u.pathname === '/api/proxy') return u.searchParams.get('url') || link
   } catch {}
   return link
 }
@@ -366,8 +488,8 @@ export function directUrl(link) {
 export function fixProxiedUrl(url, playlistUrl) {
   try {
     const u = new URL(url)
-    // Le Worker qui a servi la playlist : le principal, ou un secours.
-    const base = workerBaseOf(playlistUrl) ?? API_URL
+    // Qui a servi la playlist : le relais vidéo, le Worker ou un secours.
+    const base = proxyBaseOf(playlistUrl) ?? API_URL
     // Sous-playlists de direct (Luminous, playlist.ttvnw.net) laissées en
     // direct par le Worker : leurs jetons sont liés à l'adresse IP du Worker,
     // le navigateur s'y faisait refuser (403) et « Auto » ne démarrait pas.
@@ -396,8 +518,8 @@ export function getRecoverableStreams(channel) {
   return workerJson(`/api/recover-list?channel=${encodeURIComponent(channel)}`)
 }
 /** Liens d'une diffusion supprimée, ou lève (404) si le CDN ne la sert plus. */
-export function resolveRecovery(login, streamID, epoch) {
-  return workerJson(`/api/recover-resolve?login=${encodeURIComponent(login)}&streamID=${encodeURIComponent(streamID)}&epoch=${encodeURIComponent(epoch)}`)
+export async function resolveRecovery(login, streamID, epoch) {
+  return viaRelay(await workerJson(`/api/recover-resolve?login=${encodeURIComponent(login)}&streamID=${encodeURIComponent(streamID)}&epoch=${encodeURIComponent(epoch)}`))
 }
 
 // La sauvegarde exige le jeton Twitch de son propriétaire : le Worker le fait
@@ -515,14 +637,52 @@ export async function getCollections(login) {
     .filter((c) => c.videos.length)
 }
 
-export async function getClips(login, period = 'LAST_WEEK') {
+const CLIP_PERIOD_DAYS = { LAST_DAY: 1, LAST_WEEK: 7, LAST_MONTH: 30 }
+const clipFromHelix = (c) => ({
+  slug: c.id, title: c.title ?? '', viewCount: c.view_count ?? 0, durationSeconds: c.duration ?? 0,
+  createdAt: c.created_at ?? null, thumbnailURL: c.thumbnail_url ?? '', curator: { displayName: c.creator_name ?? '' },
+})
+
+/** Clips les plus vus d'une chaîne sur la période, par tranches de 24.
+ *  { items, cursor } — même pagination que les catégories (servePage) :
+ *  Twitch refuse la page 2 en GQL public, on prend donc les 100 premiers ;
+ *  au-delà, Helix continue avec le compte (il lui faut l'id de la chaîne). */
+export async function getClips(login, period = 'LAST_WEEK', cursor = null, broadcasterId = null) {
+  if (cursor?.rest?.length) return servePage(cursor, 24)
+  if (cursor) {
+    if (!cursor.broadcasterId) return { items: [], cursor: null }
+    const days = CLIP_PERIOD_DAYS[period]
+    const now = new Date()
+    // Sans date de fin, Helix s'arrête une semaine après le début.
+    const range = days ? `&started_at=${new Date(now - days * 86_400_000).toISOString()}&ended_at=${now.toISOString()}` : ''
+    return helixMore(cursor, `clips?broadcaster_id=${encodeURIComponent(cursor.broadcasterId)}${range}`, clipFromHelix, (c) => c.slug, 24)
+  }
   const data = await gql(`query($l: String!, $p: ClipsPeriod) {
-    user(login: $l) { clips(first: 24, criteria: { period: $p, sort: VIEWS_DESC }) { edges { node {
+    user(login: $l) { clips(first: 100, criteria: { period: $p, sort: VIEWS_DESC }) { edges { node {
       slug title viewCount durationSeconds createdAt thumbnailURL(width: 480, height: 272)
       curator { displayName }
-    } } } }
+    } } pageInfo { hasNextPage } } }
   }`, { l: login, p: period })
-  return (data?.user?.clips?.edges ?? []).map((e) => e.node).filter((c) => c?.slug)
+  const items = (data?.user?.clips?.edges ?? []).map((e) => e.node).filter((c) => c?.slug)
+  return servePage({ rest: items, seen: new Set(items.map((c) => c.slug)), more: Boolean(data?.user?.clips?.pageInfo?.hasNextPage), after: null, broadcasterId }, 24)
+}
+
+/** Fiche « À propos » d'une chaîne : description, followers, réseaux et
+ *  panneaux (image, lien, texte), comme sous le lecteur de Twitch. */
+export async function getChannelAbout(login) {
+  const data = await gql(`query($l: String!) { user(login: $l) {
+    description followers { totalCount }
+    channel { socialMedias { name title url } }
+    panels { id type ... on DefaultPanel { title imageURL linkURL description } }
+  } }`, { l: login })
+  const u = data?.user
+  if (!u) return null
+  return {
+    description: u.description ?? '',
+    followers: u.followers?.totalCount ?? null,
+    socials: (u.channel?.socialMedias ?? []).filter((s) => /^https?:\/\//i.test(s?.url ?? '')),
+    panels: (u.panels ?? []).filter((p) => p?.type === 'DEFAULT' && (p.title || p.imageURL || p.description)),
+  }
 }
 
 /** Un clip prêt à lire : MP4 signé, et de quoi rejouer le chat de la VOD
@@ -531,7 +691,7 @@ export async function getClip(slug) {
   const data = await gql(`query($s: ID!) { clip(slug: $s) {
     slug title viewCount durationSeconds createdAt
     broadcaster { id login displayName profileImageURL(width: 70) }
-    game { displayName }
+    game { id displayName }
     video { id } videoOffsetSeconds
     playbackAccessToken(params: { platform: "web", playerType: "site", playerBackend: "mediaplayer" }) { signature value }
     videoQualities { quality frameRate sourceURL }

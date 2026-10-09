@@ -12,7 +12,7 @@ import { fetchBotCommands } from './botcmds.js'
 import { VodChat } from './vod.js'
 import { parseBadgeTag } from './badges.js'
 import { emoteCatalog, suggestEmotes } from './emotes.js'
-import { plainText, systemMessage } from './message.js'
+import { linkifyHtml, plainText, systemMessage } from './message.js'
 import { clipSlugFrom, gql } from '../api.js'
 import { t } from '../i18n.js'
 import { $, debounce, esc, formatClock, icon, toast } from '../util.js'
@@ -598,8 +598,11 @@ export class ChatView {
       return (me && (tk.kind === 'mention' || tk.kind === 'text') && v === me)
         || (tk.kind === 'text' && words.includes(v))
     })
+    // « msg-announce », pas « announce » : cette classe-là est celle de la
+    // bannière d'annonce du site (mise en page en colonnes, bordure) — le
+    // message en héritait et le pseudo s'écrasait sur plusieurs lignes.
     div.className = 'msg'
-      + (m.announce ? ' announce' : '')
+      + (m.announce ? ' msg-announce' : '')
       + (m.isHighlight ? ' hl' : '')
       + (m.isFirstMessage ? ' first' : '')
       + (mentionsMe ? ' me' : '')
@@ -827,11 +830,15 @@ export class ChatView {
       list.innerHTML = !sets.length
         ? `<p class="muted small">${esc(t('bot_commands_none'))}</p>`
         : shown.map((s) => `<section><h4><img src="${esc(s.icon)}" alt="">${esc(s.bot)} <span class="muted">${s.commands.length}</span></h4>
-            ${s.commands.map((c) => `<button type="button" class="bot-cmd" data-cmd="${esc(c.name)}"><code>${esc(c.name)}</code>${c.response ? `<span>${esc(c.response)}</span>` : ''}</button>`).join('')}</section>`).join('')
+            ${s.commands.map((c) => `<div class="bot-cmd" role="button" tabindex="0" data-cmd="${esc(c.name)}"><code>${esc(c.name)}</code>${c.response ? `<span>${linkifyHtml(c.response)}</span>` : ''}</div>`).join('')}</section>`).join('')
     }
     render()
     box.querySelector('.bot-cmds-filter').oninput = (e) => render(e.target.value)
+    // Clavier : Entrée sur une commande comme un clic.
+    list.onkeydown = (e) => { if (e.key === 'Enter' && e.target.matches('[data-cmd]')) e.target.click() }
     list.onclick = async (e) => {
+      // Un lien dans la réponse s'ouvre, sans utiliser la commande.
+      if (e.target.closest('a')) return
       const b = e.target.closest('[data-cmd]')
       if (!b) return
       // On peut écrire : la commande va dans le champ ; sinon elle est copiée.

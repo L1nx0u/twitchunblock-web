@@ -22,7 +22,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css">
+  <!-- Chemins absolus : la page est aussi servie sous /xqc, /videos/123… -->
+  <link rel="stylesheet" href="/assets/styles.css">
 
   <script>
     // Retour de la connexion Twitch. Doit tourner avant tout le reste : dans
@@ -50,14 +51,14 @@
       try { localStorage.removeItem('tu_oauth_state'); localStorage.setItem('twitch_token', token) } catch (e) {}
     })()
   </script>
-  <script src="config.js"></script>
-  <script type="module" src="assets/js/main.js"></script>
+  <script src="/config.js"></script>
+  <script type="module" src="/assets/js/main.js"></script>
 </head>
 <body>
   <div class="app">
     <!-- ── Barre du haut ─────────────────────────────────────────────── -->
     <header class="topbar">
-      <a class="brand" href="./" aria-label="TwitchUnblock">
+      <a class="brand" href="/" aria-label="TwitchUnblock">
         <span class="brand-mark" data-icon="twitch" data-size="20"></span>
         <span class="brand-name">Twitch<b>Unblock</b></span>
       </a>
@@ -69,6 +70,8 @@
         <button type="button" data-tab="link"><span data-icon="link" data-size="18"></span><span data-i18n="nav_link"></span></button>
       </nav>
       <div class="topbar-actions">
+        <!-- Bug ou idée : en vue sur toutes les pages, avec son texte sur grand écran. -->
+        <button class="feedback-btn" type="button" data-action="feedback" data-i18n-title="feedback"><span data-icon="bug" data-size="17"></span><span class="feedback-btn-label" data-i18n="feedback_short"></span></button>
         <button class="icon-btn" type="button" data-action="settings" data-i18n-title="settings" data-icon="settings"></button>
         <button class="account-btn" id="account-btn" type="button" data-action="login"></button>
       </div>

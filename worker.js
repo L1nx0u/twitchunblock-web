@@ -72,12 +72,20 @@ export default {
                 // Annonces affichées dans l'app (lecture publique, écriture admin)
                 case '/api/announcement': return await handleAnnouncementGet(env);
                 case '/api/announcement/react': return await handleAnnouncementReact(request, env);
+                // Retours (bug, idée) du site et de l'app
 
                 // Commandes Moobot pour le site (son API refuse les navigateurs)
                 case '/api/bot-commands/moobot': return await handleMoobotCommands(url);
                 case '/api/admin/announcement': return await handleAdminAnnouncement(request, env);
-                
-                default: return new Response("Not Found", { status: 404, headers: RESPONSE_HEADERS });
+
+                default:
+                    // Docker (site + Worker ensemble) : les adresses du site façon
+                    // Twitch (/xqc, /videos/123, /directory…) ne sont pas des
+                    // fichiers ; elles reçoivent la page, qui ouvre la bonne vue.
+                    if (env.ASSETS && request.method === 'GET' && !url.pathname.startsWith('/api/')) {
+                        return env.ASSETS.fetch(new Request(new URL('/', url).href, { headers: request.headers }));
+                    }
+                    return new Response("Not Found", { status: 404, headers: RESPONSE_HEADERS });
             }
         } catch (e) {
             // Pas de message interne renvoyé au client : seulement dans les logs.
@@ -377,11 +385,14 @@ async function handleRecoverList(url, request) {
         const sid = typeof m.StreamID === 'string' ? m.StreamID : (m.StreamID != null ? String(m.StreamID) : '');
         const start = Date.parse(m.StartTime);
         if (!VOD_ID_RE.test(sid) || !Number.isFinite(start)) return null;
+        // { Float64, Valid } ; Valid à false tant que la diffusion est en cours.
+        const hls = m.HlsDurationSeconds || {};
         return {
             streamID: sid, login: String(m.StreamerLoginAtStart || channel).toLowerCase(),
             epoch: Math.floor(start / 1000), start: m.StartTime,
             title: String(m.TitleAtStart || ''), game: String(m.GameNameAtStart || ''),
             maxViews: Number(m.MaxViews) || 0,
+            duration: hls.Valid ? Math.round(Number(hls.Float64) || 0) : 0,
         };
     }).filter(Boolean);
     return jsonResponse({ streams });
@@ -508,7 +519,11 @@ async function handleProxy(url, request) {
                 // pistes audio EXT-X-MEDIA…).
                 return line.replace(/URI="([^"]+)"/g, (_m, u) => `URI="${proxify(u, tagIsPlaylist)}"`);
             }
-            const out = proxify(line, nextIsPlaylist);
+            // Passages coupés pour droits d'auteur : les playlists du CDN des
+            // VODs les listent en « N-unmuted.ts », que le CDN refuse (403) —
+            // la lecture bloquait dès le premier. Seul « N-muted.ts » (son
+            // coupé) se lit.
+            const out = proxify(line.replace(/-unmuted\.ts(?=$|\?)/, '-muted.ts'), nextIsPlaylist);
             nextIsPlaylist = false;
             return out;
         }).join('\n');
@@ -715,14 +730,6 @@ async function handleAdminAnnouncement(request, env) {
     await store(env).put(ANNOUNCEMENT_KEY, JSON.stringify(announcement), { expirationTtl: Math.max(60, ttl) });
     return jsonResponse({ ok: true, announcement });
 }
-
-// ── Réactions aux annonces ───────────────────────────────────────────────
-// Une réaction par appareil (identifiant aléatoire de l'app ou du site),
-// modifiable ou retirable. Clé `annr_<annonce>_<appareil>`, l'emoji en
-// métadonnées : le décompte (réservé à l'admin) se fait avec list(), sans
-// lecture par clé. Les clés expirent une semaine après l'annonce.
-const REACTIONS = ['👍', '❤️', '🔥', '😂', '👎'];
-const REACTION_PREFIX = 'annr_';
 
 async function handleAnnouncementReact(request, env) {
     if (request.method !== 'POST') return jsonError('Method Not Allowed', 405);
