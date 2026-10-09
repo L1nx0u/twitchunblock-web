@@ -65,6 +65,7 @@
         <button type="button" data-tab="discover" class="active"><span data-icon="compass" data-size="18"></span><span data-i18n="nav_discover"></span></button>
         <button type="button" data-tab="categories"><span data-icon="layers" data-size="18"></span><span data-i18n="nav_categories"></span></button>
         <button type="button" data-tab="channel"><span data-icon="user" data-size="18"></span><span data-i18n="nav_channel"></span></button>
+        <button type="button" data-tab="multi"><span data-icon="grid" data-size="18"></span><span data-i18n="nav_multi"></span></button>
         <button type="button" data-tab="link"><span data-icon="link" data-size="18"></span><span data-i18n="nav_link"></span></button>
       </nav>
       <div class="topbar-actions">
@@ -157,6 +158,22 @@
         <div id="channel-result"></div>
       </section>
 
+      <!-- ── Multistream ─────────────────────────────────────────── -->
+      <section class="view" id="view-multi" hidden>
+        <div class="multi-layout">
+          <aside class="multi-side">
+            <form class="search" id="multi-form" autocomplete="off" role="search">
+              <span class="search-icon" data-icon="search" data-size="18"></span>
+              <input id="multi-input" type="search" enterkeyhint="search" data-i18n-ph="multi_search_ph" autocapitalize="off" spellcheck="false">
+              <button class="btn primary" type="submit"><span data-i18n="search"></span></button>
+            </form>
+            <h3><span data-icon="heart" data-size="15"></span><span data-i18n="multi_followed"></span></h3>
+            <div class="multi-followed" id="multi-followed"></div>
+          </aside>
+          <div class="multi-grid" id="multi-grid"></div>
+        </div>
+      </section>
+
       <!-- ── Lien / ID ─────────────────────────────────────────────── -->
       <section class="view" id="view-link" hidden>
         <div class="link-card">
@@ -183,6 +200,7 @@
       <button type="button" data-tab="discover" class="active"><span data-icon="compass" data-size="22"></span><span data-i18n="nav_discover"></span></button>
       <button type="button" data-tab="categories"><span data-icon="layers" data-size="22"></span><span data-i18n="nav_categories"></span></button>
       <button type="button" data-tab="channel"><span data-icon="user" data-size="22"></span><span data-i18n="nav_channel"></span></button>
+      <button type="button" data-tab="multi"><span data-icon="grid" data-size="22"></span><span data-i18n="nav_multi"></span></button>
       <button type="button" data-tab="link"><span data-icon="link" data-size="22"></span><span data-i18n="nav_link"></span></button>
     </nav>
   </div>

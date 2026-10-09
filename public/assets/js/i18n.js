@@ -5,7 +5,7 @@
 
 const STRINGS = {
   fr: {
-    nav_discover: 'Découvrir', nav_channel: 'Streamer', nav_link: 'Lien / ID',
+    nav_discover: 'Découvrir', nav_channel: 'Streamer', nav_link: 'Lien / ID', nav_multi: 'Multi', multi_search_ph: 'Nom du streamer…', multi_followed: 'En direct suivis', multi_empty: 'Ajoute des lives : cherche un streamer ou touche une chaîne suivie.', multi_full: '4 lives au maximum.',
     tagline: 'Les lives et VODs Twitch, sans abonnement.',
     login: 'Se connecter avec Twitch', logout: 'Déconnexion',
     login_prompt: 'Connecte-toi pour retrouver tes chaînes suivies et synchroniser ton historique entre tes appareils.',
@@ -56,7 +56,7 @@ const STRINGS = {
     about: 'À propos', about_text: 'Aucune donnée n’est revendue. L’historique reste dans ton navigateur et, si tu es connecté, dans une sauvegarde liée à ton compte.',
   },
   en: {
-    nav_discover: 'Discover', nav_channel: 'Streamer', nav_link: 'Link / ID',
+    nav_discover: 'Discover', nav_channel: 'Streamer', nav_link: 'Link / ID', nav_multi: 'Multi', multi_search_ph: 'Streamer name…', multi_followed: 'Followed live', multi_empty: 'Add some lives: search a streamer or tap a followed channel.', multi_full: '4 lives at most.',
     tagline: 'Twitch lives and VODs, no subscription needed.',
     login: 'Log in with Twitch', logout: 'Log out',
     login_prompt: 'Log in to find your followed channels and sync your history across devices.',
@@ -105,7 +105,7 @@ const STRINGS = {
     about: 'About', about_text: 'No data is sold. Your history stays in your browser and, if you log in, in a backup tied to your account.',
   },
   es: {
-    nav_discover: 'Descubrir', nav_channel: 'Streamer', nav_link: 'Enlace / ID',
+    nav_discover: 'Descubrir', nav_channel: 'Streamer', nav_link: 'Enlace / ID', nav_multi: 'Multi', multi_search_ph: 'Nombre del streamer…', multi_followed: 'Seguidos en directo', multi_empty: 'Añade directos: busca un streamer o toca un canal seguido.', multi_full: '4 directos como máximo.',
     tagline: 'Directos y VODs de Twitch, sin suscripción.',
     login: 'Iniciar sesión con Twitch', logout: 'Cerrar sesión',
     login_prompt: 'Inicia sesión para ver tus canales seguidos y sincronizar tu historial entre dispositivos.',

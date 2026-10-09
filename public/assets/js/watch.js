@@ -16,6 +16,7 @@ import {
 import { Player } from './player.js'
 import { ChatView } from './chat/view.js'
 import { Hermes } from './chat/hermes.js'
+import { stopMulti } from './multi.js'
 
 // ── Lecteur ────────────────────────────────────────────────────────────────
 export function setupPlayer() {
@@ -434,7 +435,8 @@ function onPlaybackTime(cur, duration) {
   }
 }
 
-function stopPlayback() {
+export function stopPlayback() {
+  stopMulti()
   refs.hermes?.stop()
   refs.hermes = null
   $('#watch')?.classList.remove('ended')

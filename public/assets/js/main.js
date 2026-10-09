@@ -39,6 +39,7 @@ import {
   exportData, loadAnnouncement, openInSheet, openSettings,
   renderAnnouncement, renderSettingsAccount,
 } from './settings.js'
+import { bindMulti, multiShown, refreshMultiTexts } from './multi.js'
 
 // ── Démarrage ──────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', boot)
@@ -224,10 +225,12 @@ export function setTab(tab) {
   }
   if (tab === 'channel') renderRecentChannels()
   if (tab === 'categories' && !cat.current && (cat.tab === 'followed' || Date.now() - cat.loaded > 120_000)) loadCategories()
+  if (tab === 'multi') multiShown()
   window.scrollTo({ top: 0 })
 }
 
 function bindGlobal() {
+  bindMulti()
   document.addEventListener('click', (e) => {
     const tab = e.target.closest('[data-tab]')
     if (tab) return setTab(tab.dataset.tab)
@@ -379,4 +382,5 @@ export function refreshTexts() {
   if (state.tab === 'discover') { loadFollowed(); loadTop(state.topLang) }
   if (state.channel) renderChannel($('#vod-filter')?.value?.trim().toLowerCase() ?? '')
   refs.chat.applyPrefs()
+  refreshMultiTexts()
 }
