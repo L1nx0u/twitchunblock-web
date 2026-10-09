@@ -70,14 +70,13 @@
         <button type="button" data-tab="link"><span data-icon="link" data-size="18"></span><span data-i18n="nav_link"></span></button>
       </nav>
       <div class="topbar-actions">
-        <!-- Bug ou idée : en vue sur toutes les pages, avec son texte sur grand écran. -->
-        <button class="feedback-btn" type="button" data-action="feedback" data-i18n-title="feedback"><span data-icon="bug" data-size="17"></span><span class="feedback-btn-label" data-i18n="feedback_short"></span></button>
         <button class="icon-btn" type="button" data-action="settings" data-i18n-title="settings" data-icon="settings"></button>
         <button class="account-btn" id="account-btn" type="button" data-action="login"></button>
       </div>
     </header>
 
     <main class="content">
+      <h1 class="sr-only" data-i18n="tagline"></h1>
       <!-- ── Découvrir ─────────────────────────────────────────────── -->
       <section class="view" id="view-discover">
         <div id="announcement" hidden></div>
@@ -135,7 +134,7 @@
               <button type="button" data-cat-tab="followed" data-i18n="cat_followed"></button>
               <button type="button" data-cat-tab="all" class="active" data-i18n="cat_all"></button>
             </div>
-            <label class="filter" id="cat-search-wrap"><span data-icon="search" data-size="16"></span><input id="cat-search" type="search" autocomplete="off" data-i18n-ph="cat_search_ph"></label>
+            <label class="filter" id="cat-search-wrap"><span data-icon="search" data-size="16"></span><input id="cat-search" type="search" autocomplete="off" data-i18n-ph="cat_search_ph" data-i18n-aria="cat_search_ph"></label>
           </div>
           <div class="cat-grid" id="cat-grid"></div>
           <div class="load-more" id="cat-more"></div>
@@ -147,7 +146,7 @@
       <section class="view" id="view-channel" hidden>
         <form class="search" id="channel-form" autocomplete="off" role="search">
           <span class="search-icon" data-icon="search" data-size="18"></span>
-          <input id="channel-input" type="search" enterkeyhint="search" data-i18n-ph="search_channel_ph" autocapitalize="off" spellcheck="false">
+          <input id="channel-input" type="search" enterkeyhint="search" data-i18n-ph="search_channel_ph" data-i18n-aria="search_channel_ph" autocapitalize="off" spellcheck="false">
           <button class="btn primary" type="submit"><span data-i18n="search"></span></button>
           <div class="suggest" id="channel-suggest" hidden></div>
         </form>
@@ -167,7 +166,7 @@
           <aside class="multi-side">
             <form class="search" id="multi-form" autocomplete="off" role="search">
               <span class="search-icon" data-icon="search" data-size="18"></span>
-              <input id="multi-input" type="search" enterkeyhint="search" data-i18n-ph="multi_search_ph" autocapitalize="off" spellcheck="false">
+              <input id="multi-input" type="search" enterkeyhint="search" data-i18n-ph="multi_search_ph" data-i18n-aria="multi_search_ph" autocapitalize="off" spellcheck="false">
               <button class="btn primary" type="submit"><span data-i18n="search"></span></button>
               <div class="suggest" id="multi-suggest" hidden></div>
             </form>
@@ -186,7 +185,7 @@
           <p class="muted" data-i18n="link_desc"></p>
           <form class="search" id="link-form" autocomplete="off">
             <span class="search-icon" data-icon="link" data-size="18"></span>
-            <input id="link-input" type="text" inputmode="url" enterkeyhint="go" data-i18n-ph="link_ph" autocapitalize="off" spellcheck="false">
+            <input id="link-input" type="text" inputmode="url" enterkeyhint="go" data-i18n-ph="link_ph" data-i18n-aria="link_ph" autocapitalize="off" spellcheck="false">
             <button class="btn primary" type="submit"><span data-i18n="link_open"></span></button>
           </form>
         </div>

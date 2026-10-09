@@ -205,4 +205,5 @@ export function applyStatic(root = document) {
     el.title = t(el.dataset.i18nTitle)
     el.setAttribute('aria-label', t(el.dataset.i18nTitle))
   }
+  for (const el of root.querySelectorAll('[data-i18n-aria]')) el.setAttribute('aria-label', t(el.dataset.i18nAria))
 }

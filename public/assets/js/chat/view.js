@@ -76,7 +76,7 @@ export class ChatView {
         <div class="chat-suggest" role="listbox" hidden></div>
         <div class="emote-picker" hidden>
           <div class="emote-picker-head">
-            <input class="emote-search" type="search" autocomplete="off" data-i18n-ph="emote_search_ph">
+            <input class="emote-search" type="search" autocomplete="off" data-i18n-ph="emote_search_ph" data-i18n-aria="emote_search_ph">
           </div>
           <div class="emote-grid"></div>
         </div>
@@ -709,6 +709,7 @@ export class ChatView {
     if (writable) {
       const ready = Boolean(this.client?.canSend)
       this.el.input.placeholder = ready ? t('chat_send_ph') : t('chat_connecting')
+      this.el.input.setAttribute('aria-label', this.el.input.placeholder)
       this.el.input.disabled = !ready
       this.el.send.disabled = !ready
     } else {
@@ -817,7 +818,7 @@ export class ChatView {
     box.hidden = false
     box.innerHTML = `<div class="bot-cmds-head">${icon('terminal', 16)}<b>${esc(t('bot_commands'))}</b>
         <button class="icon-btn xs" type="button" data-close>${icon('x', 16)}</button></div>
-      <input class="bot-cmds-filter" type="search" autocomplete="off" placeholder="${esc(t('bot_commands_filter'))}">
+      <input class="bot-cmds-filter" type="search" autocomplete="off" placeholder="${esc(t('bot_commands_filter'))}" aria-label="${esc(t('bot_commands_filter'))}">
       <div class="bot-cmds-list"><p class="muted small">${esc(t('loading'))}</p></div>`
     box.querySelector('[data-close]').onclick = () => { box.hidden = true }
     const sets = await fetchBotCommands(channel)

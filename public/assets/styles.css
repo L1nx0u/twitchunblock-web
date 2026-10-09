@@ -17,6 +17,7 @@
   --primary-hi: #a970ff;
   --purple: #bf94ff;
   --live: #e91916;
+  --announce: var(--purple);
   --danger: #ff4f4d;
   --success: #00c878;
 
@@ -48,6 +49,7 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 [hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 html { -webkit-text-size-adjust: 100%; background: var(--bg); color-scheme: dark; }
 html[data-theme="light"] { color-scheme: light; }
@@ -152,30 +154,6 @@ html[data-theme="dark"] input[type='search']::-webkit-search-cancel-button { fil
 .nav button:hover { color: var(--text); }
 .nav button.active { background: var(--surface); color: #fff; }
 .topbar-actions { display: flex; align-items: center; gap: 8px; flex: none; }
-.feedback-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  height: 36px; padding: 0 12px; border-radius: 999px; flex: none;
-  border: 1px solid rgba(191, 148, 255, 0.35); background: rgba(145, 70, 255, 0.10);
-  color: var(--purple); font-weight: 600; font-size: 13px;
-  transition: background 0.15s, border-color 0.15s;
-}
-.feedback-btn:hover { background: rgba(145, 70, 255, 0.2); border-color: var(--purple); }
-/* Écran moyen ou petit : l'icône seule, la barre n'a pas la place du texte. */
-@media (max-width: 1200px) {
-  .feedback-btn { width: 36px; padding: 0; }
-  .feedback-btn-label { display: none; }
-}
-.feedback-card {
-  display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px;
-  border-radius: var(--r-control); border: 1px solid rgba(191, 148, 255, 0.35);
-  background: rgba(145, 70, 255, 0.10); color: var(--text); text-align: left;
-  transition: background 0.15s;
-}
-.feedback-card:hover { background: rgba(145, 70, 255, 0.18); }
-.feedback-card-ic { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: rgba(145, 70, 255, 0.22); color: var(--purple); }
-.feedback-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.feedback-card-text small { color: var(--muted); font-size: 12.5px; font-weight: 500; }
-.feedback-card > svg { flex: none; color: var(--muted); }
 .whats-new-actions { display: flex; flex-direction: column; gap: 8px; }
 .whats-new-actions .btn { width: 100%; justify-content: center; }
 .account-btn {
@@ -973,10 +951,6 @@ html[data-theme="dark"] input[type='search']::-webkit-search-cancel-button { fil
 .msg.notice-sub { color: var(--purple); }
 .msg.msg-announce { margin: 4px 8px; padding: 6px 10px; border-radius: 8px; background: color-mix(in srgb, var(--announce) 16%, transparent); box-shadow: inset 3px 0 var(--announce); }
 .setting.setting-col { flex-direction: column; align-items: stretch; gap: 8px; }
-.feedback-form { display: flex; flex-direction: column; gap: 10px; }
-.feedback-form textarea.text-input { height: auto; min-height: 130px; padding: 10px 12px; line-height: 1.45; resize: vertical; }
-.feedback-form .fb-info { color: var(--text); opacity: 0.75; overflow-wrap: anywhere; }
-.feedback-form .btn.primary { align-self: stretch; justify-content: center; }
 .text-input { width: 100%; height: 38px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: 14px; }
 .text-input:focus { outline: 2px solid var(--purple); outline-offset: -1px; }
 
