@@ -75,6 +75,10 @@ export function pickQuality(keys, pref) {
   return sorted.includes(pref) ? pref : (sorted.find((k) => !/audio/i.test(k)) ?? sorted[0])
 }
 
+/** Marge au bord du direct (s) : 2,5 s = un segment entier d'avance.
+ *  En dessous, la moindre secousse réseau fait caler la lecture. */
+const LIVE_EDGE_MARGIN = 2.5
+
 /** Source d'abord, puis du plus fin au plus grossier, l'audio seul en dernier. */
 export function sortQualities(keys) {
   const score = (k) => {
@@ -97,12 +101,13 @@ export function qualityLabel(k) {
 
 /** Réglages hls.js du labo : rattrapage automatique du direct après un
  *  accroc, et mode latence réduite (plus près du bord, moins de marge aux
- *  secousses). */
+ *  secousses). Tout en secondes (Duration) : hls.js refuse de mélanger les
+ *  styles Duration et Count. */
 export function liveHlsOptions({ lowLatency = false } = {}) {
   return {
     maxLiveSyncPlaybackRate: 1.5,
     liveSyncDuration: lowLatency ? 2 : 4,
-    ...(lowLatency ? { liveMaxLatencyDurationCount: 6 } : {}),
+    ...(lowLatency ? { liveMaxLatencyDuration: 12 } : {}),
   }
 }
 
@@ -369,7 +374,7 @@ export class Player {
       if (this.kind === 'live') hls.once(Hls.Events.FRAG_BUFFERED, () => {
         if (token !== this.attachToken) return
         try {
-          const end = this.video.seekable.end(this.video.seekable.length - 1) - 1.5
+          const end = this.video.seekable.end(this.video.seekable.length - 1) - LIVE_EDGE_MARGIN
           if (end - this.video.currentTime > 2) this.video.currentTime = Math.max(0, end)
         } catch {}
       })
@@ -545,7 +550,7 @@ export class Player {
     // garde 4 s de marge, d'où les ~8 s constatés contre ~4 s au bord.
     // Le flux restera au bord jusqu'au prochain accroc, qui le recollera
     // au point de synchro.
-    if (v.seekable.length) v.currentTime = Math.max(0, v.seekable.end(v.seekable.length - 1) - 1.5)
+    if (v.seekable.length) v.currentTime = Math.max(0, v.seekable.end(v.seekable.length - 1) - LIVE_EDGE_MARGIN)
     else if (this.hls?.liveSyncPosition) v.currentTime = this.hls.liveSyncPosition
     if (v.paused) this.tryPlay()
   }

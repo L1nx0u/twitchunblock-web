@@ -128,8 +128,16 @@ describe('qualités', () => {
     assert.deepEqual(liveHlsOptions({ lowLatency: true }), {
       maxLiveSyncPlaybackRate: 1.5,
       liveSyncDuration: 2,
-      liveMaxLatencyDurationCount: 6,
+      liveMaxLatencyDuration: 12,
     })
+  })
+  it('liveHlsOptions : jamais de mélange Duration/Count (hls.js le refuse)', () => {
+    for (const opts of [liveHlsOptions({}), liveHlsOptions({ lowLatency: true })]) {
+      const keys = Object.keys(opts)
+      const hasDuration = keys.some((k) => /Duration/.test(k) && !/DurationCount/.test(k))
+      const hasCount = keys.some((k) => /DurationCount/.test(k))
+      assert.equal(hasDuration && hasCount, false)
+    }
   })
 })
 
