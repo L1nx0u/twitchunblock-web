@@ -48,12 +48,16 @@ export default {
         const workerOrigin = url.origin; 
         
         try {
+            // Les applis externes (Infuse) réclament une adresse qui finit par
+            // « .m3u8 » : /api/proxy/<nom>.m3u8 est la même route que
+            // /api/proxy, pas une route à part.
+            if (isProxyPath(url.pathname)) return await handleProxy(url, request);
+
             switch (url.pathname) {
                 case '/': return new Response("Twitch Proxy - Anti 403 Ready", { headers: RESPONSE_HEADERS });
                 case '/api/get-live': return await handleGetLive(url, request, workerOrigin);
                 case '/api/get-channel-videos': return await handleGetVideos(url);
                 case '/api/get-m3u8': return await handleGetM3U8(url, request, workerOrigin);
-                case '/api/proxy': return await handleProxy(url, request);
 
                 // Récupération de VODs supprimées (le navigateur ne peut joindre
                 // ni la source externe ni le CDN de Twitch : CORS). Voir plus bas.
@@ -447,17 +451,44 @@ async function handleRecoverResolve(url, request, workerOrigin) {
 // Hôtes que le proxy accepte de relayer : Twitch (playlists, segments,
 // VODs) et Luminous. Sans cette liste, /api/proxy relayait n'importe quelle
 // adresse — un proxy ouvert à tout Internet, aux frais du Worker.
-const PROXY_HOSTS = ['ttvnw.net', 'jtvnw.net', 'twitch.tv', 'cloudfront.net', 'luminous.dev', 'twitchcdn.net'];
+//
+// `twitch.tv` n'y figure plus : la liste laissait passer TOUT le domaine,
+// dont gql.twitch.tv — de quoi se servir du Worker comme relais gratuit vers
+// l'API de Twitch (et brûler son quota du jour). Les seuls hôtes de Twitch
+// utiles sont les serveurs de VOD, nommés à part juste en dessous.
+const PROXY_HOSTS = ['ttvnw.net', 'jtvnw.net', 'cloudfront.net', 'luminous.dev', 'twitchcdn.net'];
+// Serveurs de VOD reconstruites : ils ne servent que des dossiers
+// « <empreinte>_<chaîne>_… ».
+const VOD_HOSTS = ['vod-secure.twitch.tv', 'vod-metro.twitch.tv', 'vod-pop-secure.twitch.tv'];
+// Adresses qui servent des SEGMENTS (et non des listes) : seules celles-là
+// échappent au plafond par adresse (voir handleProxy).
+const SEGMENT_HOSTS = ['ttvnw.net', 'cloudfront.net', 'twitchcdn.net', ...VOD_HOSTS];
+
 export function proxyAllowed(target) {
     try {
         const u = new URL(target);
         if (u.protocol !== 'https:') return false;
-        if (!PROXY_HOSTS.some((h) => u.hostname === h || u.hostname.endsWith('.' + h))) return false;
         // N'importe qui peut héberger des fichiers sur cloudfront.net : on n'y
         // accepte que les dossiers de VOD Twitch (« <empreinte>_<chaîne>_… »).
-        if (u.hostname.endsWith('.cloudfront.net')) return /^\/[0-9a-f]{20}_/.test(u.pathname);
-        return true;
+        // Les serveurs de VOD de Twitch portent exactement le même dossier.
+        if (u.hostname.endsWith('.cloudfront.net') || VOD_HOSTS.includes(u.hostname)) {
+            return /^\/[0-9a-f]{20}_/.test(u.pathname);
+        }
+        return PROXY_HOSTS.some((h) => u.hostname === h || u.hostname.endsWith('.' + h));
     } catch (e) { return false; }
+}
+
+/** Adresse qui sert des segments (pas des listes) : jamais plafonnée. */
+export function isSegmentHost(target) {
+    try {
+        const h = new URL(target).hostname;
+        return SEGMENT_HOSTS.some((x) => h === x || h.endsWith('.' + x));
+    } catch (e) { return false; }
+}
+
+/** `/api/proxy`, et sa variante « …/<nom>.m3u8 » réclamée par les applis externes. */
+export function isProxyPath(pathname) {
+    return pathname === '/api/proxy' || pathname.startsWith('/api/proxy/');
 }
 
 // Playlist reconnue avant récupération : extension, ou hôtes qui n'en servent
@@ -473,10 +504,14 @@ export function isPlaylistTarget(target) {
 async function handleProxy(url, request) {
     const target = url.searchParams.get('url'); if (!target) return new Response("URL manquante", { status: 400, headers: RESPONSE_HEADERS });
     if (!proxyAllowed(target)) return new Response("Hôte non autorisé", { status: 403, headers: RESPONSE_HEADERS });
-    // Seules les playlists sont bornées : les segments partent en continu (un
+    // Seules les LISTES sont bornées : les segments partent en continu (un
     // direct en consomme un toutes les quelques secondes) et un plafond par
-    // adresse y casserait la lecture derrière un NAT partagé.
-    if (isPlaylistTarget(target) && rateLimited('proxy-pl', request, 120, MINUTE)) {
+    // adresse y casserait la lecture derrière un NAT partagé. Mais toute
+    // adresse qui n'est PAS un serveur de segments est bornée aussi — sans
+    // cela, un hôte accepté mais non-CDN (playlist, ou toute adresse ajoutée
+    // plus tard) se relayait en boucle sans rien coûter à qui l'exploitait.
+    const playlist = isPlaylistTarget(target);
+    if ((playlist || !isSegmentHost(target)) && rateLimited(playlist ? 'proxy-pl' : 'proxy-other', request, 120, MINUTE)) {
         return new Response("Trop de requêtes", { status: 429, headers: RESPONSE_HEADERS });
     }
     const isVod = url.searchParams.get('isVod') === 'true', workerOrigin = url.origin;
@@ -489,6 +524,9 @@ async function handleProxy(url, request) {
     newHeaders.set("Access-Control-Allow-Origin", "*");
     newHeaders.set("Access-Control-Expose-Headers", "*");
     newHeaders.delete("Set-Cookie");
+    // Le corps d'une liste est réécrit (chaque adresse remplacée par celle du
+    // proxy, bien plus longue) : la longueur annoncée par le CDN ne vaut plus.
+    newHeaders.delete("Content-Length");
 
     // Playlist reconnue à son type, pas seulement à son extension : celles
     // de Luminous (« /live/<chaîne>?allow_source=true ») et les variantes

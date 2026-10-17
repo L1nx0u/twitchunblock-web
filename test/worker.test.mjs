@@ -9,6 +9,8 @@ import {
   CURSOR_RE,
   proxyAllowed,
   isPlaylistTarget,
+  isSegmentHost,
+  isProxyPath,
   parseAndProxyM3U8,
   cleanHistoryItem,
   rateLimited,
@@ -55,6 +57,32 @@ describe('proxyAllowed', () => {
     assert.equal(proxyAllowed('https://evil.example.com/video.ts'), false)
     assert.equal(proxyAllowed('https://dqrpb9wgowsf5.cloudfront.net/n-importe-quoi.txt'), false)
     assert.equal(proxyAllowed('pas une url'), false)
+  })
+  // Régression : `twitch.tv` entier était accepté, gql.twitch.tv compris —
+  // de quoi se servir du Worker comme relais gratuit vers l'API de Twitch.
+  it('refuse le reste de twitch.tv, l’API GQL comprise', () => {
+    assert.equal(proxyAllowed('https://gql.twitch.tv/gql'), false)
+    assert.equal(proxyAllowed('https://www.twitch.tv/squeezie'), false)
+  })
+  it('accepte les serveurs de VOD de Twitch, dossiers à empreinte compris', () => {
+    assert.equal(proxyAllowed('https://vod-secure.twitch.tv/abcd1234abcd1234abcd_chaine_1/chunked/index-dvr.m3u8'), true)
+    assert.equal(proxyAllowed('https://vod-secure.twitch.tv/n-importe-quoi.txt'), false)
+  })
+})
+
+describe('isSegmentHost', () => {
+  it('reconnaît les adresses qui servent des segments (jamais plafonnées)', () => {
+    assert.equal(isSegmentHost('https://d2nvs31859zcd8.cloudfront.net/abcd1234abcd1234abcd_s_1/chunked/12.ts'), true)
+    assert.equal(isSegmentHost('https://vod-secure.twitch.tv/abcd1234abcd1234abcd_s_1/chunked/12.ts'), true)
+    assert.equal(isSegmentHost('https://as.luminous.dev/live/squeezie'), false)
+  })
+})
+
+describe('isProxyPath', () => {
+  it('accepte /api/proxy et la variante des applis externes', () => {
+    assert.equal(isProxyPath('/api/proxy'), true)
+    assert.equal(isProxyPath('/api/proxy/squeezie.m3u8'), true)
+    assert.equal(isProxyPath('/api/get-live'), false)
   })
 })
 
