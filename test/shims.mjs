@@ -1,6 +1,9 @@
 // Environnement navigateur minimal : les modules du site tournent sous Node
 // pour les tests (stockage, langue, origine). Importé en premier.
 if (!globalThis.window) globalThis.window = {}
+// La page charge toujours public/config.js avant les modules : le shim fait
+// pareil, sans quoi chaque exécution avertirait d'une config absente.
+globalThis.window.TU_CONFIG ??= { apiUrl: 'same-origin' }
 if (!globalThis.navigator) {
   globalThis.navigator = {
     userAgent: 'node-test',

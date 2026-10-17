@@ -103,12 +103,10 @@ describe('fixProxiedUrl', () => {
 })
 
 describe('qualités', () => {
-  it('sortQualities : Auto, puis par définition, audio en dernier', () => {
-    // Tel quel : une 1080p60 (score 108060) passe devant « Source » (100000).
-    // Le commentaire du lecteur dit l'inverse — à trancher (voir synthèse).
+  it('sortQualities : Auto, puis Source, puis par définition, audio en dernier', () => {
     assert.deepEqual(
       sortQualities(['720p30', 'audio_only', 'Source', 'Auto', '1080p60']),
-      ['Auto', '1080p60', 'Source', '720p30', 'audio_only'],
+      ['Auto', 'Source', '1080p60', '720p30', 'audio_only'],
     )
   })
   it('qualityLabel : étiquettes courtes', () => {

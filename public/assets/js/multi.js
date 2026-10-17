@@ -189,6 +189,9 @@ export async function addStream(raw) {
     fullscreenTarget: screen,
     prefs: store.prefs,
     savePrefs: () => store.savePrefs(),
+    // Le son coupé des tuiles non visées ne doit pas devenir le réglage
+    // enregistré (voir Player.syncVolume).
+    isTile: true,
     onToggleChat: () => toggleTileChat(login),
     onHelp: () => toast(t('shortcuts_help'), 'info'),
     keysActive: () => state.tab === 'multi' && focused === login && !$('#sheet')?.classList.contains('open'),

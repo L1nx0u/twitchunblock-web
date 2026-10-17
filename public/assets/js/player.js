@@ -83,8 +83,10 @@ const LIVE_EDGE_MARGIN = 2.5
 export function sortQualities(keys) {
   const score = (k) => {
     const s = k.toLowerCase()
-    if (s === 'auto') return 1e6
-    if (s.includes('source') || s === 'chunked') return 1e5
+    if (s === 'auto') return 1e9
+    // « Source » avant toute définition : c'est le flux d'origine, le plus
+    // fin. À 1e5, un 1080p60 (score 108 060) passait devant lui.
+    if (s.includes('source') || s === 'chunked') return 1e6
     if (s.includes('audio')) return -1
     const m = s.match(/(\d+)p(\d+)?/)
     return m ? Number(m[1]) * 100 + Number(m[2] || 30) : 0
@@ -630,6 +632,9 @@ export class Player {
     this.el.mute.title = t(muted ? 'unmute' : 'mute')
     if (document.activeElement !== this.el.vol) this.el.vol.value = String(muted ? 0 : v.volume)
     this.el.vol.style.setProperty('--fill', `${(muted ? 0 : v.volume) * 100}%`)
+    // Une tuile de multistream coupe le son de tout ce qui n'a pas le focus :
+    // en faire un réglage rendrait muet le prochain live qu'on ouvre.
+    if (this.o.isTile) return
     this.o.prefs.volume = v.volume
     this.o.prefs.muted = v.muted
     this.o.savePrefs()
