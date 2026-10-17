@@ -3,8 +3,8 @@
 # --no-cache`) ; il n'a plus qu'à la télécharger :
 #   docker compose pull && docker compose up -d
 #
-#   main         → ghcr.io/mxfia19/twitchunblock-web:latest
-#   test-17d298  → ghcr.io/mxfia19/twitchunblock-web:test
+#   main         → ghcr.io/l1nx0u/twitchunblock-web:latest
+#   test-17d298  → ghcr.io/l1nx0u/twitchunblock-web:test
 #
 # amd64 et arm64 : PC et serveurs, mais aussi Raspberry Pi et Mac Apple Silicon.
 name: Docker image
@@ -27,8 +27,7 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # En minuscules : ghcr.io refuse les majuscules du nom de compte.
-  IMAGE: ghcr.io/mxfia19/twitchunblock-web
+  IMAGE: ghcr.io/l1nx0u/twitchunblock-web
 
 jobs:
   image:

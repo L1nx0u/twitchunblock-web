@@ -4,9 +4,29 @@
 //  en tête. Le site montre celles qu'on n'a pas encore vues.
 // ═══════════════════════════════════════════════════════════════════════════
 
-export const SITE_VERSION = '2026.10.17'
+export const SITE_VERSION = '2026.10.17b'
 
 export const CHANGELOG = [
+  {
+    version: '2026.10.17b',
+    items: {
+      fr: [
+        'Multi : couper le son d’une tuile ne rend plus muet le prochain live ouvert.',
+        'Qualité : « Source » passe avant le 1080p60 quand le lecteur n’a pas « Auto ».',
+        '« Ouvrir dans Infuse » : le lien ne tombe plus sur « introuvable ».',
+      ],
+      en: [
+        'Multi: muting one tile no longer leaves the next stream opened silent.',
+        'Quality: “Source” now ranks above 1080p60 when “Auto” is not available.',
+        '“Open in Infuse”: the link no longer lands on “not found”.',
+      ],
+      es: [
+        'Multi: silenciar una ventana ya no deja mudo el próximo directo.',
+        'Calidad: «Source» ahora va antes del 1080p60 cuando no hay «Auto».',
+        '«Abrir en Infuse»: el enlace ya no da «no encontrado».',
+      ],
+    },
+  },
   {
     version: '2026.10.17',
     items: {

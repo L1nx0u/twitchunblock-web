@@ -6,7 +6,7 @@
 # dépôt, on peut la construire soi-même avec `build: .` à la place de `image:`.
 services:
   twitchunblock:
-    image: ghcr.io/mxfia19/twitchunblock-web:latest
+    image: ghcr.io/l1nx0u/twitchunblock-web:latest
     container_name: twitchunblock
     restart: unless-stopped
     ports:
@@ -14,13 +14,13 @@ services:
     volumes:
       - twitchunblock-data:/data
     environment:
-      # Adresse publique du site (sans / final). Sert à l'adresse de retour
-      # de la connexion Twitch et aux origines acceptées pour le comptage.
+      # Adresse publique du site (sans / final) : c'est l'adresse de retour
+      # de la connexion Twitch.
       PUBLIC_URL: "http://localhost:8787"
       # Connexion Twitch (facultatif) : crée une application sur
       # https://dev.twitch.tv/console avec PUBLIC_URL/ comme adresse de retour.
       TWITCH_CLIENT_ID: ""
-      # Ton identifiant Twitch, pour les outils développeur de /stats.
+      # Ton identifiant Twitch, pour les outils d'administration (annonces).
       ADMIN_TWITCH_IDS: ""
 
 volumes:

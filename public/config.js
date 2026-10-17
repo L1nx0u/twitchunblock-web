@@ -1,6 +1,6 @@
 // Configuration du site. Vide = valeurs officielles (voir assets/js/api.js).
 // En auto-hébergement (Docker), ce fichier est réécrit au démarrage du
-// conteneur : voir docker/entrypoint.sh et README (section Docker).
+// conteneur : voir docker/entrypoint.sh.
 // Clés possibles : apiUrl, twitchClientId, redirectUri, fallbackApiUrls
 // (Workers de secours quand le quota du jour est atteint) et relayUrl
 // (relais vidéo sur un serveur à soi, s'il existe un jour).

@@ -24,7 +24,7 @@ enabled = false
 persist = true
 head_sampling_rate = 1
 
-# Base D1 : tout le stockage (sauvegardes, comptage, annonces, réactions).
+# Base D1 : tout le stockage (sauvegardes, annonces, réactions).
 # La table est créée par le Worker au premier appel (CREATE TABLE IF NOT EXISTS).
 [[d1_databases]]
 binding = "DB"
@@ -34,7 +34,8 @@ database_id = "9c479a4a-5beb-4e14-b5bd-762737428339"
 # Worker de secours, sur un AUTRE compte Cloudflare : le quota gratuit
 # (100 000 requêtes par jour) est par compte. Déployé avec
 # `npx wrangler deploy --env fallback` (sans base D1 — un environnement
-# n'hérite pas des liaisons). Voir README, « Fallback Worker ».
+# n'hérite pas des liaisons). Son adresse se donne au site dans config.js
+# (`fallbackApiUrls`).
 [env.fallback]
 workers_dev = true
 
