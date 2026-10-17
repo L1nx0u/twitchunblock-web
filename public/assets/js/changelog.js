@@ -4,9 +4,23 @@
 //  en tête. Le site montre celles qu'on n'a pas encore vues.
 // ═══════════════════════════════════════════════════════════════════════════
 
-export const SITE_VERSION = '2026.10.17b'
+export const SITE_VERSION = '2026.10.17c'
 
 export const CHANGELOG = [
+  {
+    version: '2026.10.17c',
+    items: {
+      fr: [
+        'Chat : il ne prend plus le délai de publication de la chaîne en plus du nôtre — les messages arrivaient plusieurs secondes après l’image qu’ils commentent.',
+      ],
+      en: [
+        'Chat: it no longer adds the channel’s own publish delay on top of ours — messages were arriving several seconds after the picture they react to.',
+      ],
+      es: [
+        'Chat: ya no suma el retardo de publicación del canal al nuestro — los mensajes llegaban varios segundos después de la imagen que comentan.',
+      ],
+    },
+  },
   {
     version: '2026.10.17b',
     items: {

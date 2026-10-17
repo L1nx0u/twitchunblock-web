@@ -9,7 +9,7 @@ import {
 import {
   API_URL, cleanLogin, clipSlugFrom, fixProxiedUrl, streamFromHelix,
 } from '../public/assets/js/api.js'
-import { qualityLabel, sortQualities, liveHlsOptions, pickQuality } from '../public/assets/js/player.js'
+import { Player, qualityLabel, sortQualities, liveHlsOptions, pickQuality } from '../public/assets/js/player.js'
 import { store } from '../public/assets/js/store.js'
 
 describe('esc', () => {
@@ -146,6 +146,24 @@ describe('qualités', () => {
       const hasCount = keys.some((k) => /DurationCount/.test(k))
       assert.equal(hasDuration && hasCount, false)
     }
+  })
+})
+
+describe('retard du chat', () => {
+  // Le lecteur ne s'instancie pas sans DOM : on appelle les deux mesures sur
+  // un objet qui porte juste ce qu'elles lisent.
+  const lecteur = () => ({
+    kind: 'live',
+    hls: { playingDate: new Date(Date.now() - 9000), latency: 4 },
+    video: { seekable: { length: 0 }, currentTime: 0 },
+  })
+  it('liveDelay : âge de l’image, délai de publication de Twitch compris', () => {
+    assert.ok(Player.prototype.liveDelay.call(lecteur()) >= 8.9)
+  })
+  // Régression : le chat était retenu de liveDelay — donc du délai de
+  // publication en plus — et arrivait plusieurs secondes après l'image.
+  it('chatDelay : notre seule distance au bord, sans le délai de publication', () => {
+    assert.equal(Player.prototype.chatDelay.call(lecteur()), 4)
   })
 })
 

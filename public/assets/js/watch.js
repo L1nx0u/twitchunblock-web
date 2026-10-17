@@ -40,8 +40,12 @@ export function setupPlayer() {
   })
   refs.chat = new ChatView($('#chat'), {
     prefs: store.prefs,
-    // Retard de l'image à compenser dans le chat, si le réglage est actif.
-    getDelay: () => (store.prefs.chatSync ? refs.player.liveDelay() : 0),
+    // Retard à compenser dans le chat, si le réglage est actif : NOTRE
+    // distance au bord du direct, pas l'âge de l'image. `liveDelay` compte en
+    // plus le délai que la chaîne met à publier son segment — un délai que
+    // les spectateurs dont on lit les messages subissent eux aussi : le chat
+    // arrivait alors 10 s trop tard, ou plus (voir Player.chatDelay).
+    getDelay: () => (store.prefs.chatSync ? refs.player.chatDelay() : 0),
     onOpenChannel: (login) => openLive(login),
     onOpenClip: (slug) => openClip(slug),
     onPrefsChange: () => store.savePrefs(),
