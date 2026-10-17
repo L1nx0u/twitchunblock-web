@@ -2,6 +2,13 @@ name = "twitchunblock"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
+# Domaine à soi : échappe aux blocages VPN sur *.workers.dev. Le domaine est
+# sur le même compte Cloudflare (zone l1nx0u.me) ; Cloudflare crée le
+# certificat et l'entrée DNS tout seul.
+routes = [
+  { pattern = "api.l1nx0u.me", custom_domain = true }
+]
+
 [observability]
 enabled = false
 head_sampling_rate = 1
