@@ -7,7 +7,7 @@ import {
   esc, formatClock, formatDuration, formatViewers, thumb,
 } from '../public/assets/js/util.js'
 import {
-  cleanLogin, clipSlugFrom, fixProxiedUrl, streamFromHelix,
+  API_URL, cleanLogin, clipSlugFrom, fixProxiedUrl, streamFromHelix,
 } from '../public/assets/js/api.js'
 import { qualityLabel, sortQualities, liveHlsOptions, pickQuality } from '../public/assets/js/player.js'
 import { store } from '../public/assets/js/store.js'
@@ -81,7 +81,9 @@ describe('streamFromHelix', () => {
 })
 
 describe('fixProxiedUrl', () => {
-  const WORKER = 'https://test2.kurzmathis4.workers.dev'
+  // Le Worker est celui que la config du site désigne (ici, faute de
+  // config.js, l'origine du site) : c'est lui que le lecteur doit retrouver.
+  const WORKER = API_URL
   it('renvoie les relatifs du Worker vers le proxy, à côté de la playlist', () => {
     const playlist = `${WORKER}/api/proxy?url=${encodeURIComponent('https://d1x/cloud/chunked/index.m3u8')}&isVod=true`
     assert.equal(

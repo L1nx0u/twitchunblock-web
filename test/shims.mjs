@@ -10,6 +10,9 @@ if (!globalThis.navigator) {
     maxTouchPoints: 0,
   }
 }
+if (!globalThis.location) {
+  globalThis.location = { origin: 'http://localhost', pathname: '/', search: '', hash: '' }
+}
 if (!globalThis.localStorage) {
   const data = new Map()
   globalThis.localStorage = {

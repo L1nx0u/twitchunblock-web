@@ -5,23 +5,24 @@
 
 import { store } from './store.js'
 
-// Auto-hébergement : public/config.js peut remplacer l'adresse du Worker
+// Auto-hébergement : public/config.js donne l'adresse du Worker
 // (« same-origin » = le site et le Worker servis ensemble, comme sous Docker)
-// et l'application Twitch utilisée pour la connexion.
+// et l'application Twitch utilisée pour la connexion. Rien n'est deviné : un
+// fork ne se rabat JAMAIS sur l'infrastructure de quelqu'un d'autre. Sans
+// config.js, on parle à sa propre origine (le cas Docker), jamais ailleurs.
 const CFG = window.TU_CONFIG ?? {}
-export const API_URL = CFG.apiUrl === 'same-origin' ? location.origin : (CFG.apiUrl || 'https://test2.kurzmathis4.workers.dev')
+if (!CFG.apiUrl) console.warn('[TwitchUnblock] public/config.js absent ou sans apiUrl : les appels viseront l’origine du site.')
+export const API_URL = CFG.apiUrl && CFG.apiUrl !== 'same-origin' ? CFG.apiUrl : location.origin
 
 // ── Workers de secours ─────────────────────────────────────────────────────
 // Le Worker gratuit est limité à 100 000 requêtes par jour et par compte
 // Cloudflare : au-delà, il répond « error code: 1027 » (HTTP 429) jusqu'à
-// minuit UTC. Un second Worker, déployé sur un autre compte (README,
-// « Fallback Worker »), prend alors le relais pour tout ce qui ne dépend pas
-// de la base D1 : lives, VODs, relais vidéo, commandes Moobot. Sauvegarde,
-// comptage et annonces restent sur le principal : leurs données y sont.
-// Une instance avec sa propre adresse (config.js) n'hérite pas des secours
-// officiels : elle donne les siens dans `fallbackApiUrls`, ou aucun.
-const DEFAULT_FALLBACK_URLS = ['https://test2-fallback.vxcraftmanpetit.workers.dev']
-const FALLBACK_URLS = CFG.fallbackApiUrls ?? (CFG.apiUrl ? [] : DEFAULT_FALLBACK_URLS)
+// minuit UTC. Un second Worker, déployé sur un autre compte, prend alors le
+// relais pour tout ce qui ne dépend pas de la base D1 : lives, VODs, relais
+// vidéo, commandes Moobot. Sauvegarde et annonces restent sur le principal :
+// leurs données y sont. Les adresses des secours se donnent dans config.js
+// (`fallbackApiUrls`) ; il n'y en a aucune par défaut.
+const FALLBACK_URLS = CFG.fallbackApiUrls ?? []
 const originOf = (u) => { try { return new URL(u).origin } catch { return null } }
 /** Le principal d'abord, puis les secours, dans l'ordre. */
 export const WORKER_BASES = [...new Set([API_URL, ...FALLBACK_URLS.map(originOf).filter(Boolean)])]
@@ -35,14 +36,12 @@ const LOOKUP_BASES = [...WORKER_BASES.slice(1), WORKER_BASES[0]]
 // ── Relais vidéo (serveur à soi) ───────────────────────────────────────────
 // La lecture fait presque tout le quota de requêtes du Worker : chaque
 // segment de VOD, la playlist d'un direct toutes les ~2 s. Un relais sur un
-// VPS (docker/relay.mjs, README « Video relay ») exécute le même proxy, sans
-// quota : les liens de lecture du Worker y sont redirigés, le Worker garde
-// tout le reste. Relais injoignable → retour au Worker, comme pour un Worker
-// de secours (écarté 30 min). Une instance avec sa propre adresse
-// (config.js) n'hérite pas du relais officiel : elle donne le sien dans
-// `relayUrl`, ou aucun.
-const DEFAULT_RELAY_URL = 'https://relais.mxfia19.duckdns.org'
-export const RELAY_BASE = originOf(CFG.relayUrl ?? (CFG.apiUrl ? '' : DEFAULT_RELAY_URL))
+// VPS, exécutant le même proxy, n'a pas de quota : les liens de lecture du
+// Worker y sont redirigés, le Worker garde tout le reste. Relais
+// injoignable → retour au Worker, comme pour un Worker de secours (écarté
+// 30 min). Aucun relais par défaut : on donne le sien dans config.js
+// (`relayUrl`), ou aucun.
+export const RELAY_BASE = originOf(CFG.relayUrl)
 
 // Worker mis de côté sur cet appareil, pour ne pas le retenter à chaque
 // requête. La page d'erreur de Cloudflare n'a pas d'en-tête CORS : le
@@ -159,10 +158,14 @@ export const GITHUB_URL = 'https://github.com/L1nx0u/twitchunblock-web'
 // L'app iOS est celle de l'auteur d'origine : il n'existe pas
 // de fork côté app.
 export const APP_GITHUB_URL = 'https://github.com/MXFia19/TwitchUnblock'
-export const HELIX_CLIENT_ID = CFG.twitchClientId || 'uyvqdqrz614y5wx5l4kev6c4ln7u9a'
+// Application Twitch de l'auto-hébergeur, donnée par config.js. Vide = la
+// connexion n'est pas proposée : mieux vaut cela que de renvoyer le visiteur
+// se connecter chez l'application de quelqu'un d'autre.
+export const HELIX_CLIENT_ID = CFG.twitchClientId || ''
 export const GQL_CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko'
-/** Seule adresse de retour déclarée chez Twitch : elle ne doit pas changer. */
-export const REDIRECT_URI = CFG.redirectUri || 'https://test2-fawn-eta.vercel.app/'
+/** Adresse de retour déclarée chez Twitch : celle de config.js, sinon la
+ *  racine de notre propre origine. */
+export const REDIRECT_URI = CFG.redirectUri || `${location.origin}/`
 /** `chat:read` / `chat:edit` en plus de l'ancien périmètre : sans eux, l'IRC
  *  refuse le jeton et on ne peut que lire le chat en anonyme. */
 export const SCOPES = ['user:read:follows', 'chat:read', 'chat:edit']
