@@ -99,13 +99,20 @@ export function qualityLabel(k) {
   return s.replace(/^(\d+p)30$/, '$1')
 }
 
-/** Réglages hls.js du labo : rattrapage automatique du direct après un
- *  accroc, et mode latence réduite (plus près du bord, moins de marge aux
- *  secousses). Tout en secondes (Duration) : hls.js refuse de mélanger les
- *  styles Duration et Count. */
+/** Réglages hls.js du direct : distance au bord, et mode latence réduite
+ *  (plus près du bord, moins de marge aux secousses). Tout en secondes
+ *  (Duration) : hls.js refuse de mélanger les styles Duration et Count.
+ *
+ *  Surtout pas de `maxLiveSyncPlaybackRate` : cette option fait accélérer la
+ *  vidéo jusqu'à sa valeur pour rattraper le bord. Or hls.js la pousse
+ *  d'autant plus fort que la playlist est vieille (`edgeStalled`) — et un
+ *  onglet en arrière-plan, dont les minuteurs sont ralentis par le
+ *  navigateur, est exactement le cas d'une playlist vieille. Le son, léger,
+ *  suit un 1,5× sans peine ; l'image, lourde, reste derrière : le son passe
+ *  avant l'image. On recolle au bord autrement — `goLive()` et un saut au
+ *  retour sur l'onglet —, sans jamais toucher au débit. */
 export function liveHlsOptions({ lowLatency = false } = {}) {
   return {
-    maxLiveSyncPlaybackRate: 1.5,
     liveSyncDuration: lowLatency ? 2 : 4,
     ...(lowLatency ? { liveMaxLatencyDuration: 12 } : {}),
   }
@@ -271,14 +278,38 @@ export class Player {
       if (matchMedia('(pointer: fine)').matches) this.toggleFullscreen()
     })
     // Raccourcis sur toute la page (plus seulement lecteur sélectionné), tant
-    // que le lecteur est affiché en grand et qu'on n'écrit pas.
-    document.addEventListener('keydown', (e) => {
+    // que le lecteur est affiché en grand et qu'on n'écrit pas. Gardés en
+    // propriétés : `destroy` doit pouvoir les retirer, sinon chaque tuile de
+    // multistream détruite laisserait ses écouteurs — et tout son lecteur —
+    // en vie sur le document.
+    this.onKeyDown = (e) => {
       if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return
       if (this.o.keysActive ? this.o.keysActive() : this.root.contains(document.activeElement)) this.onKey(e)
-    })
+    }
+    this.onFsChange = () => this.syncFullscreen()
+    document.addEventListener('keydown', this.onKeyDown)
+    document.addEventListener('fullscreenchange', this.onFsChange)
+    document.addEventListener('webkitfullscreenchange', this.onFsChange)
 
-    document.addEventListener('fullscreenchange', () => this.syncFullscreen())
-    document.addEventListener('webkitfullscreenchange', () => this.syncFullscreen())
+    // Retour sur l'onglet. En arrière-plan, le navigateur ralentit le
+    // chargement et met la vidéo de côté pendant que le son, lui, continue :
+    // l'image prend du retard sur le son. Le seul moyen de recoller les deux
+    // pistes est un saut (hls.js le conseille lui-même après un gel). On ne
+    // le fait que si l'on a perdu du terrain PENDANT l'absence : quelqu'un
+    // qui regardait volontairement en différé reste où il est.
+    this.onVisibility = () => {
+      if (document.hidden) {
+        const edge = this.kind === 'live' && !this.video.paused ? this.liveEdge() : null
+        this.hiddenBehind = edge === null ? null : edge - this.video.currentTime
+        return
+      }
+      const was = this.hiddenBehind
+      this.hiddenBehind = null
+      if (was == null || this.kind !== 'live' || this.video.paused) return
+      const edge = this.liveEdge()
+      if (edge !== null && edge - this.video.currentTime - was > 5) this.goLive()
+    }
+    document.addEventListener('visibilitychange', this.onVisibility)
 
     this.syncVolume()
     this.syncPlay()
@@ -444,6 +475,10 @@ export class Player {
 
   destroy() {
     this.destroyHls()
+    document.removeEventListener('keydown', this.onKeyDown)
+    document.removeEventListener('fullscreenchange', this.onFsChange)
+    document.removeEventListener('webkitfullscreenchange', this.onFsChange)
+    document.removeEventListener('visibilitychange', this.onVisibility)
     this.video.pause()
     this.video.removeAttribute('src')
     this.video.load()
@@ -545,14 +580,20 @@ export class Player {
   }
 
   goLive() {
-    const v = this.video
     // Au bord lui-même (comme +10 s), pas au point de synchro : celui-ci
     // garde 4 s de marge, d'où les ~8 s constatés contre ~4 s au bord.
     // Le flux restera au bord jusqu'au prochain accroc, qui le recollera
     // au point de synchro.
-    if (v.seekable.length) v.currentTime = Math.max(0, v.seekable.end(v.seekable.length - 1) - LIVE_EDGE_MARGIN)
-    else if (this.hls?.liveSyncPosition) v.currentTime = this.hls.liveSyncPosition
-    if (v.paused) this.tryPlay()
+    const edge = this.liveEdge()
+    if (edge !== null) this.video.currentTime = edge
+    if (this.video.paused) this.tryPlay()
+  }
+
+  /** Où se trouve le bord du direct, ou `null` s'il est encore inconnu. */
+  liveEdge() {
+    const v = this.video
+    if (v.seekable.length) return Math.max(0, v.seekable.end(v.seekable.length - 1) - LIVE_EDGE_MARGIN)
+    return Number.isFinite(this.hls?.liveSyncPosition) ? this.hls.liveSyncPosition : null
   }
 
   toggleMute() {

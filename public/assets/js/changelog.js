@@ -4,9 +4,23 @@
 //  en tête. Le site montre celles qu'on n'a pas encore vues.
 // ═══════════════════════════════════════════════════════════════════════════
 
-export const SITE_VERSION = '2026.10.09'
+export const SITE_VERSION = '2026.10.17'
 
 export const CHANGELOG = [
+  {
+    version: '2026.10.17',
+    items: {
+      fr: [
+        'Direct : le son ne passe plus avant l’image après un passage sur un autre onglet (le lecteur n’accélère plus la vidéo pour rattraper le direct).',
+      ],
+      en: [
+        'Live: sound no longer runs ahead of the picture after switching browser tabs (the player no longer speeds the video up to catch the live edge).',
+      ],
+      es: [
+        'Directo: el sonido ya no se adelanta a la imagen tras cambiar de pestaña (el reproductor ya no acelera el vídeo para alcanzar el directo).',
+      ],
+    },
+  },
   {
     version: '2026.10.09',
     items: {

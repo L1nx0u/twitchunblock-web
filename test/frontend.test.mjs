@@ -120,16 +120,24 @@ describe('qualités', () => {
     assert.equal(pickQuality(['Auto', '720p30'], 'Source'), 'Auto')
     assert.equal(pickQuality(['audio_only'], 'Source'), 'audio_only')
   })
-  it('liveHlsOptions : rattrapage toujours, latence réduite sur demande', () => {
+  it('liveHlsOptions : distance au bord en secondes, latence réduite sur demande', () => {
     assert.deepEqual(liveHlsOptions({}), {
-      maxLiveSyncPlaybackRate: 1.5,
       liveSyncDuration: 4,
     })
     assert.deepEqual(liveHlsOptions({ lowLatency: true }), {
-      maxLiveSyncPlaybackRate: 1.5,
       liveSyncDuration: 2,
       liveMaxLatencyDuration: 12,
     })
+  })
+  // Régression : avec `maxLiveSyncPlaybackRate`, hls.js accélérait la vidéo
+  // jusqu'à 1,5× pour rattraper le bord — d'autant plus fort que la playlist
+  // était vieille, donc systématiquement après un passage en arrière-plan.
+  // Le son (léger) tenait le 1,5×, l'image (lourde) restait derrière : son
+  // avant image au retour sur l'onglet.
+  it('liveHlsOptions : ne touche jamais au débit de lecture', () => {
+    for (const opts of [liveHlsOptions({}), liveHlsOptions({ lowLatency: true })]) {
+      assert.equal('maxLiveSyncPlaybackRate' in opts, false)
+    }
   })
   it('liveHlsOptions : jamais de mélange Duration/Count (hls.js le refuse)', () => {
     for (const opts of [liveHlsOptions({}), liveHlsOptions({ lowLatency: true })]) {
