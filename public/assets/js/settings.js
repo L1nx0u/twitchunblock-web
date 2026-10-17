@@ -298,21 +298,23 @@ const ANN_REACTIONS = ['👍', '❤️', '🔥', '😂', '👎']
 const ANN_REACTED = 'tu_ann_reacted'
 // Identifiant stable de cet appareil pour les réactions aux annonces : gardé
 // ici uniquement, jamais croisé avec quoi que ce soit d'autre.
+/** UUID au hasard — le Worker refuse toute autre forme d'identifiant. */
+function randomUuid() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
+  })
+}
 function deviceInstallId() {
   try {
     let id = localStorage.getItem('tu_install_id')
     if (!/^[0-9a-f-]{36}$/i.test(id || '')) {
       id = uid()
-      if (!/^[0-9a-f-]{36}$/i.test(id)) {
-        id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-          const r = (Math.random() * 16) | 0
-          return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
-        })
-      }
+      if (!/^[0-9a-f-]{36}$/i.test(id)) id = randomUuid()
       localStorage.setItem('tu_install_id', id)
     }
     return id
-  } catch { return uid() }
+  } catch { return randomUuid() }
 }
 function annReactions() { try { return JSON.parse(localStorage.getItem(ANN_REACTED) || '{}') } catch { return {} } }
 function annReaction(id) { return annReactions()[id] ?? null }

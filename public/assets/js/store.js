@@ -87,8 +87,10 @@ export const store = {
 
   // ── Progression des VODs ────────────────────────────────────────────────
   getProgress(vodId) {
-    const v = Number.parseFloat(localStorage.getItem(`vod_progress_${vodId}`))
-    return Number.isFinite(v) ? v : 0
+    try {
+      const v = Number.parseFloat(localStorage.getItem(`vod_progress_${vodId}`))
+      return Number.isFinite(v) ? v : 0
+    } catch { return 0 }
   },
   setProgress(vodId, seconds) {
     try { localStorage.setItem(`vod_progress_${vodId}`, String(seconds)) } catch {}
@@ -104,13 +106,17 @@ export const store = {
 
   allProgress() {
     const out = {}
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i)
-      if (k?.startsWith('vod_progress_')) {
-        const v = Number.parseFloat(localStorage.getItem(k))
-        if (Number.isFinite(v)) out[k.slice('vod_progress_'.length)] = v
+    // Comme le reste du fichier : un stockage refusé (navigation privée
+    // stricte, cookies bloqués) ne doit pas faire échouer l'appelant.
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i)
+        if (k?.startsWith('vod_progress_')) {
+          const v = Number.parseFloat(localStorage.getItem(k))
+          if (Number.isFinite(v)) out[k.slice('vod_progress_'.length)] = v
+        }
       }
-    }
+    } catch {}
     return out
   },
 }

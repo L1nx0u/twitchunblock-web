@@ -233,6 +233,9 @@ function liveEnded(token) {
   if (state.watch !== token || token.ended) return
   token.ended = true
   if (token.info) token.info.stream = null
+  // La relecture des infos toutes les 30 s remettrait la pastille « En
+  // direct » sur l'écran de fin : elle n'a plus rien à observer.
+  clearInterval(infoTimer)
   clearInterval(uptimeTimer)
   const box = $('#watch-ended')
   const raid = token.raidTarget

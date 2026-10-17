@@ -88,6 +88,9 @@ export async function loadFollowed({ silent = false } = {}) {
       grid.innerHTML = (live.length ? live.map(streamCard).join('') : noLiveFollowed(offline.length)) + loginCard(true)
       renderOffline(offline, live.length > 0)
     } catch {
+      // Échec : on retente plus tôt qu'un cycle normal (le tic relit les
+      // suivies au bout d'une minute), sans marteler Twitch pour autant.
+      state.loaded.followed = Date.now() - 40_000
       if (!silent) { grid.innerHTML = emptyState(t('err_loading'), 'refresh'); offlineFailed() }
     }
     return
@@ -121,6 +124,8 @@ export async function loadFollowed({ silent = false } = {}) {
     // Une seule nouvelle tentative : un jeton valide mais refusé par Helix
     // (autre application, droit manquant) relançait la boucle sans fin.
     if (err.status === 401 && !followedRetried) { followedRetried = true; await adoptToken(session.token); return }
+    // Échec : on retente plus tôt qu'un cycle normal (voir plus haut).
+    state.loaded.followed = Date.now() - 40_000
     // En rafraîchissement silencieux, une panne passagère garde l'existant.
     if (!silent) { grid.innerHTML = emptyState(t('err_loading'), 'refresh'); offlineFailed() }
   }

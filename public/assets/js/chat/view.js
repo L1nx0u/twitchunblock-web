@@ -522,9 +522,14 @@ export class ChatView {
 
   releaseDelayed() {
     const now = Date.now()
-    let n = 0
-    while (n < this.delayed.length && this.delayed[n].at <= now) n++
-    if (n) for (const d of this.delayed.splice(0, n)) this.enqueue(d.msg)
+    // Le retard mesuré bouge d'un message à l'autre : l'ordre d'arrivée n'est
+    // pas l'ordre de sortie. Une file supposée triée retenait un message
+    // derrière un autre dont l'heure était plus tardive.
+    const due = []
+    const rest = []
+    for (const d of this.delayed) (d.at <= now ? due : rest).push(d)
+    this.delayed = rest
+    for (const d of due) this.enqueue(d.msg)
     if (!this.delayed.length) { clearInterval(this.delayTimer); this.delayTimer = null }
   }
 
