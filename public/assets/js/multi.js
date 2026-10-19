@@ -20,7 +20,7 @@ const MAX_TILES = 12
 const tiles = []   // { login, name, player, el, slimBar }
 const pending = new Map()   // login → el, ajouts en cours de chargement
 let focused = null
-let sideLoaded = false
+let sideLoadedAt = 0
 let suggestions = []
 /** Numéro de la frappe en cours : une réponse différée arrivée après coup
  *  ne rouvre plus la liste par-dessus la grille. */
@@ -97,17 +97,23 @@ function reslimTiles() {
 
 /** Appelée à l'ouverture de l'onglet : charge la barre latérale une fois. */
 export function multiShown() {
-  if (!sideLoaded) { sideLoaded = true; loadMultiSidebar() }
+  // Relue comme les autres listes du site : sans cela, suivre une chaîne ou
+  // se connecter puis revenir dans l'onglet laissait une liste périmée
+  // jusqu'au rechargement de la page.
+  if (Date.now() - sideLoadedAt > 60_000) { sideLoadedAt = Date.now(); loadMultiSidebar() }
   renderEmpty()
-  // Les tuiles ont été mises en pause en quittant l'onglet : la tuile au son
-  // reprend (focusStream relance celle qui a le focus).
-  if (focused) focusStream(focused)
+  // Celles qui jouaient en quittant l'onglet reprennent ; celles qu'on avait
+  // mises en pause soi-même restent en pause.
+  for (const m of tiles) if (m.wasPlaying) m.player.video.play().catch(() => {})
 }
 
 /** Quitter l'onglet Multi : sans cela, la tuile au son continuait de jouer
  *  derrière une vue masquée, sans le moindre bouton pour l'arrêter. */
 export function pauseMulti() {
-  for (const m of tiles) m.player.video.pause()
+  for (const m of tiles) {
+    m.wasPlaying = !m.player.video.paused
+    m.player.video.pause()
+  }
 }
 
 /** Rafraîchit les textes statiques après un changement de langue. */

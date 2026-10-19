@@ -4,9 +4,35 @@
 //  en tête. Le site montre celles qu'on n'a pas encore vues.
 // ═══════════════════════════════════════════════════════════════════════════
 
-export const SITE_VERSION = '2026.10.17c'
+export const SITE_VERSION = '2026.10.19'
 
 export const CHANGELOG = [
+  {
+    version: '2026.10.19',
+    items: {
+      fr: [
+        'Réactions sous une annonce : elles partaient dans le vide (erreur serveur) — de nouveau enregistrées.',
+        'Lecteur : les raccourcis clavier (espace, flèches, M, F, T…), l’icône de plein écran et le recollage son/image au retour sur l’onglet fonctionnent à chaque vidéo, plus seulement la première.',
+        'Une panne de réseau ne tourne plus en boucle : au bout de trois essais, un écran d’erreur avec « Actualiser ».',
+        'Multistream : quitter l’onglet coupe le son des tuiles au lieu de le laisser jouer derrière.',
+        'Cartes de lives, VODs et clips : Entrée ou Espace les ouvre, comme un clic (navigation au clavier).',
+      ],
+      en: [
+        'Reactions under an announcement: they went nowhere (server error) — recorded again.',
+        'Player: keyboard shortcuts (space, arrows, M, F, T…), the fullscreen icon and the sound/picture re-sync on tab return work for every video, not just the first.',
+        'A network failure no longer loops: after three tries, an error screen with “Refresh”.',
+        'Multistream: leaving the tab mutes its tiles instead of playing on behind it.',
+        'Live, VOD and clip cards: Enter or Space opens them, like a click (keyboard navigation).',
+      ],
+      es: [
+        'Reacciones bajo un anuncio: se perdían (error del servidor) — vuelven a registrarse.',
+        'Reproductor: los atajos de teclado (espacio, flechas, M, F, T…), el icono de pantalla completa y la resincronización sonido/imagen al volver a la pestaña funcionan en cada vídeo, no solo en el primero.',
+        'Un fallo de red ya no se repite en bucle: tras tres intentos, una pantalla de error con «Actualizar».',
+        'Multistream: salir de la pestaña silencia sus mosaicos en vez de seguir sonando por detrás.',
+        'Tarjetas de directos, VODs y clips: Intro o Espacio las abre, como un clic (navegación por teclado).',
+      ],
+    },
+  },
   {
     version: '2026.10.17c',
     items: {

@@ -77,6 +77,12 @@ export const store = {
 
   removeHistory(term) {
     this.history = this.history.filter((h) => h.term !== term)
+    // La position et la durée partent avec : sans cela, la VOD « oubliée »
+    // reprenait à l'ancien endroit si on la rouvrait par un lien, et ses deux
+    // clés restaient pour toujours dans le stockage.
+    try { localStorage.removeItem(`vod_progress_${term}`) } catch {}
+    const lengths = read('tu_lengths', {})
+    if (term in lengths) { delete lengths[term]; write('tu_lengths', lengths) }
     this.saveHistory()
   },
 
