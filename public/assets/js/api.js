@@ -112,8 +112,11 @@ if (RELAY_BASE && !isDown(RELAY_BASE)) {
  * répondent d'abord, les Workers écartés en dernier recours.
  * Une réponse d'erreur du Worker lui-même (404 « VOD introuvable »…) n'est
  * pas une panne : un autre Worker dirait la même chose.
+ * Un délai par défaut borne l'attente : un Worker qui ne répond jamais (un
+ * amont figé derrière lui) laissait l'écran sur « Connexion… » sans fin ;
+ * l'appelant affiche alors une erreur réseau, avec un bouton pour réessayer.
  */
-export async function workerJson(path, { timeout = 0 } = {}) {
+export async function workerJson(path, { timeout = 25_000 } = {}) {
   const bases = LOOKUP_BASES.filter((b) => !isDown(b))
   const failed = []
   for (const base of [...bases, ...LOOKUP_BASES.filter((b) => !bases.includes(b))]) {
@@ -283,12 +286,6 @@ export async function getFollowedLogins(userId) {
 const CAT_FIELDS = 'id name displayName slug boxArtURL(width: 188, height: 250) viewersCount'
 const catFrom = (n) => ({ id: n.id, name: n.displayName || n.name, slug: n.slug || '', box: n.boxArtURL || '', viewers: n.viewersCount ?? null })
 
-/** Une catégorie par son nom d'adresse (« just-chatting », comme sur Twitch). */
-export async function getCategoryBySlug(slug) {
-  const data = await gql(`query($s: String!) { game(slug: $s) { ${CAT_FIELDS} } }`, { s: slug })
-  return data?.game ? catFrom(data.game) : null
-}
-
 // Pagination. En GQL public, Twitch exige un jeton d'intégrité dès la 2e page
 // (« failed integrity check », requête persistée comprise) : « Charger plus »
 // ne ramenait rien. On prend donc d'un coup les 100 premiers (le maximum
@@ -381,19 +378,6 @@ export async function getCategoryStreams(id, cursor = null) {
     for (const s of page.items) if (!s.avatar) s.avatar = avatars[s.login] ?? ''
   }
   return page
-}
-
-/** Lesquelles de ces chaînes sont en live (suivis sans compte), par GQL public. */
-export async function getLiveByLogins(logins) {
-  const out = []
-  for (let i = 0; i < logins.length; i += 100) {
-    const data = await gql(`query($l: [String!]) { users(logins: $l) { login displayName profileImageURL(width: 50)
-      stream { title viewersCount createdAt previewImageURL(width: 440, height: 248) game { id displayName } } } }`, { l: logins.slice(i, i + 100) })
-    for (const u of data?.users ?? []) {
-      if (u?.stream) out.push(streamFromGQL({ ...u.stream, broadcaster: u }))
-    }
-  }
-  return out.sort((a, b) => b.viewers - a.viewers)
 }
 
 export function streamFromHelix(s) {
@@ -565,11 +549,6 @@ export async function validateToken(token) {
     // Hors ligne : on ne déconnecte pas pour autant.
     return { userId: null, login: null, scopes: [], offline: true }
   }
-}
-
-export async function getMe() {
-  const data = await helix('users')
-  return data?.data?.[0] ?? null
 }
 
 export async function getFollowedStreams(userId) {

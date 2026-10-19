@@ -99,6 +99,15 @@ function reslimTiles() {
 export function multiShown() {
   if (!sideLoaded) { sideLoaded = true; loadMultiSidebar() }
   renderEmpty()
+  // Les tuiles ont été mises en pause en quittant l'onglet : la tuile au son
+  // reprend (focusStream relance celle qui a le focus).
+  if (focused) focusStream(focused)
+}
+
+/** Quitter l'onglet Multi : sans cela, la tuile au son continuait de jouer
+ *  derrière une vue masquée, sans le moindre bouton pour l'arrêter. */
+export function pauseMulti() {
+  for (const m of tiles) m.player.video.pause()
 }
 
 /** Rafraîchit les textes statiques après un changement de langue. */

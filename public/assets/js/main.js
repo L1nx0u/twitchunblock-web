@@ -39,7 +39,7 @@ import {
   exportData, loadAnnouncement, openInSheet, openSettings,
   renderAnnouncement, renderSettingsAccount,
 } from './settings.js'
-import { bindMulti, multiShown, refreshMultiTexts } from './multi.js'
+import { bindMulti, multiShown, pauseMulti, refreshMultiTexts } from './multi.js'
 
 // ── Démarrage ──────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', boot)
@@ -226,6 +226,9 @@ export function setTab(tab) {
   if (tab === 'channel') renderRecentChannels()
   if (tab === 'categories' && !cat.current && (cat.tab === 'followed' || Date.now() - cat.loaded > 120_000)) loadCategories()
   if (tab === 'multi') multiShown()
+  // Ailleurs, les tuiles du multistream se taisent : elles continueraient
+  // sinon à jouer derrière la vue masquée.
+  else pauseMulti()
   window.scrollTo({ top: 0 })
 }
 
@@ -268,6 +271,18 @@ function bindGlobal() {
     }
     const act = e.target.closest('[data-action]')?.dataset.action
     if (act) actions[act]?.(e)
+  })
+
+  // Cartes et puces sont focusables (tabindex="0") : sans ceci, la tabulation
+  // les atteignait mais Entrée et Espace n'ouvraient rien.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    // Un vrai bouton (dont la croix d'une carte) gère déjà Entrée et Espace.
+    if (e.target.closest('button, a, input, select, textarea, [contenteditable]')) return
+    const el = e.target.closest('[data-live], [data-vod], [data-clip], [data-cat], [data-channel], [data-multi-head]')
+    if (!el) return
+    e.preventDefault()
+    el.click()
   })
 
   // Accueil
