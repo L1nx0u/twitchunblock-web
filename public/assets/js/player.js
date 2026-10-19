@@ -137,6 +137,7 @@ export class Player {
     this.hls = null
     this.links = {}
     this.kind = 'vod'
+    this.netRetries = 0
     this.quality = null
     this.hideTimer = null
     this.lastTap = 0
@@ -289,9 +290,6 @@ export class Player {
       if (this.o.keysActive ? this.o.keysActive() : this.root.contains(document.activeElement)) this.onKey(e)
     }
     this.onFsChange = () => this.syncFullscreen()
-    document.addEventListener('keydown', this.onKeyDown)
-    document.addEventListener('fullscreenchange', this.onFsChange)
-    document.addEventListener('webkitfullscreenchange', this.onFsChange)
 
     // Retour sur l'onglet. En arrière-plan, le navigateur ralentit le
     // chargement et met la vidéo de côté pendant que le son, lui, continue :
@@ -311,10 +309,27 @@ export class Player {
       const edge = this.liveEdge()
       if (edge !== null && edge - this.video.currentTime - was > 5) this.goLive()
     }
-    document.addEventListener('visibilitychange', this.onVisibility)
+    // Les quatre écouteurs du document (clavier, plein écran, retour
+    // d'onglet) sont posés d'un coup, une fois les quatre fonctions prêtes.
+    this.docOn = false
+    this.listenDocs()
 
     this.syncVolume()
     this.syncPlay()
+  }
+
+  /** Écouteurs posés sur le document : raccourcis clavier, changement de
+   *  plein écran, retour sur l'onglet. `destroy` les retire à la fin d'une
+   *  lecture — et le lecteur principal n'est jamais reconstruit : sans ce
+   *  rappel à chaque `load`, ils disparaissaient pour de bon après la toute
+   *  première vidéo (raccourcis morts, recollage son/image inerte). */
+  listenDocs() {
+    if (this.docOn) return
+    this.docOn = true
+    document.addEventListener('keydown', this.onKeyDown)
+    document.addEventListener('fullscreenchange', this.onFsChange)
+    document.addEventListener('webkitfullscreenchange', this.onFsChange)
+    document.addEventListener('visibilitychange', this.onVisibility)
   }
 
   // ── Chargement ─────────────────────────────────────────────────────────
@@ -326,6 +341,8 @@ export class Player {
    * @param {string} [o.quality]  qualité forcée (multistream : Auto)
    */
   load({ links, kind, startAt = 0, quality }) {
+    // `destroy` a retiré les écouteurs du document en fin de lecture.
+    this.listenDocs()
     this.links = links
     this.kind = kind
     this.root.dataset.kind = kind
@@ -347,6 +364,7 @@ export class Player {
     const v = this.video
     this.destroyHls()
     this.el.spinner.hidden = false
+    this.netRetries = 0
     if (!url) return
     const token = (this.attachToken = (this.attachToken ?? 0) + 1)
 
@@ -411,6 +429,9 @@ export class Player {
           if (end - this.video.currentTime > 2) this.video.currentTime = Math.max(0, end)
         } catch {}
       })
+      // Une lecture qui repart efface le compteur d'erreurs : seules celles
+      // qui s'enchaînent mènent à l'écran d'erreur.
+      hls.on(Hls.Events.FRAG_BUFFERED, () => { this.netRetries = 0 })
       // En « Auto » (playlist maître), hls.js choisit le débit : on affiche
       // lequel, sinon on ne sait jamais ce qu'on regarde vraiment.
       hls.on(Hls.Events.LEVEL_SWITCHED, (_e, d) => {
@@ -439,8 +460,13 @@ export class Player {
           const failed = !data.response?.code || (down === RELAY_BASE && data.response.code >= 400)
           if (down && failed && this.o.onWorkerDown?.(down)) return
         }
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad()
-        else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError()
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          // La reprise est bornée : sans cela, un Worker au quota du jour
+          // épuisé — ou un CDN qui ne répond plus — relançait la lecture sans
+          // fin, cercle qui tourne à la place de l'écran d'erreur.
+          if (++this.netRetries > 3) { this.o.onError?.(); return }
+          hls.startLoad()
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError()
         else this.o.onError?.()
       })
     } else if (native) {
@@ -481,6 +507,7 @@ export class Player {
     document.removeEventListener('fullscreenchange', this.onFsChange)
     document.removeEventListener('webkitfullscreenchange', this.onFsChange)
     document.removeEventListener('visibilitychange', this.onVisibility)
+    this.docOn = false
     this.video.pause()
     this.video.removeAttribute('src')
     this.video.load()

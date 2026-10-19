@@ -17,6 +17,7 @@ import {
   jsonResponse,
   jsonError,
 } from '../worker.js'
+import worker from '../worker.js'
 
 describe('validation des entrées', () => {
   it('LOGIN_RE accepte les pseudos Twitch', () => {
@@ -171,5 +172,38 @@ describe('rateLimited', () => {
   it('sans adresse (dev local, Docker), jamais limité', () => {
     const bucket = `test-${Date.now()}-c`
     for (let i = 0; i < 5; i++) assert.equal(rateLimited(bucket, req(null), 1, 60_000), false)
+  })
+})
+
+describe('réactions aux annonces', () => {
+  // Fausse base D1 : seulement ce que store() lit, l'annonce en cours.
+  // Régression : sans les constantes REACTIONS / REACTION_PREFIX, la route
+  // levait un ReferenceError et répondait 500 à chaque réaction.
+  const env = () => {
+    const announcement = { id: 'ann1', title: 't', message: 'm', until: Date.now() + 3600_000 }
+    const row = { value: JSON.stringify(announcement), meta: null, expires: announcement.until }
+    const stmt = (sql) => ({
+      bind: () => ({
+        first: async () => (sql.includes('SELECT value, meta') ? row : undefined),
+        all: async () => ({ results: [] }),
+        run: async () => ({ success: true }),
+      }),
+    })
+    return { DB: { prepare: stmt, batch: async () => [] } }
+  }
+  const react = (body) => worker.fetch(new Request('https://w.test/api/announcement/react', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)' },
+    body: JSON.stringify(body),
+  }), env(), {})
+
+  it('enregistre une réaction sur l’annonce en cours', async () => {
+    const res = await react({ announcementId: 'ann1', id: '123e4567-e89b-42d3-a456-426614174000', emoji: '👍' })
+    assert.equal(res.status, 200)
+    assert.deepEqual(await res.json(), { ok: true, emoji: '👍' })
+  })
+  it('refuse un emoji hors de la liste', async () => {
+    const res = await react({ announcementId: 'ann1', id: '123e4567-e89b-42d3-a456-426614174000', emoji: '💀' })
+    assert.equal(res.status, 400)
   })
 })

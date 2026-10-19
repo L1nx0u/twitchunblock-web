@@ -56,7 +56,7 @@ export default {
             switch (url.pathname) {
                 case '/': return new Response("Twitch Proxy - Anti 403 Ready", { headers: RESPONSE_HEADERS });
                 case '/api/get-live': return await handleGetLive(url, request, workerOrigin);
-                case '/api/get-channel-videos': return await handleGetVideos(url);
+                case '/api/get-channel-videos': return await handleGetVideos(url, request);
                 case '/api/get-m3u8': return await handleGetM3U8(url, request, workerOrigin);
 
                 // Récupération de VODs supprimées (le navigateur ne peut joindre
@@ -79,7 +79,7 @@ export default {
                 // Retours (bug, idée) du site et de l'app
 
                 // Commandes Moobot pour le site (son API refuse les navigateurs)
-                case '/api/bot-commands/moobot': return await handleMoobotCommands(url);
+                case '/api/bot-commands/moobot': return await handleMoobotCommands(url, request);
                 case '/api/admin/announcement': return await handleAdminAnnouncement(request, env);
 
                 default:
@@ -222,11 +222,16 @@ export function cleanHistoryItem(it) {
 }
 
 // --- HANDLERS CLASSIQUES ---
-async function handleGetVideos(url) {
+async function handleGetVideos(url, request) {
     const name = (url.searchParams.get('name') || '').trim();
     const cursor = url.searchParams.get('cursor') || null;
     if (!LOGIN_RE.test(name)) return jsonError("Nom invalide", 400);
     if (cursor && !CURSOR_RE.test(cursor)) return jsonError("Curseur invalide", 400);
+    // Un appel = une requête GQL de 100 vidéos. Sans plafond, une boucle
+    // anonyme épuisait le quota du jour — celui qui sert aussi la vidéo — et
+    // faisait limiter l'adresse du Worker par Twitch : plus de listes pour
+    // personne. Même plafond que les autres routes coûteuses.
+    if (rateLimited('videos', request, 30, MINUTE)) return jsonError("Trop de requêtes", 429);
 
     const query = `query($login: String!, $after: Cursor) { user(login: $login) { profileImageURL(width: 70) videos(first: 100, type: ARCHIVE, sort: TIME, after: $after) { edges { node { id, title, publishedAt, lengthSeconds, viewCount, previewThumbnailURL(height: 180, width: 320) } } pageInfo { hasNextPage, endCursor } } } }`;
     
@@ -702,6 +707,13 @@ async function handleAdminSyncDelete(request, env) {
 //  d'elle-même (expirationTtl) : rien à nettoyer.
 // ═══════════════════════════════════════════════════════════════════════════
 const ANNOUNCEMENT_KEY = 'announcement';
+// Réactions (les emojis sous l'annonce) : les cinq mêmes que le site
+// (settings.js, ANN_REACTIONS), et le préfixe sous lequel la base range déjà
+// les réactions envoyées — le changer perdrait celles qui existent.
+// Ces deux lignes ont disparu lors d'une fusion avec l'amont, en gardant
+// leurs usages : toute réaction répondait 500 (ReferenceError).
+const REACTIONS = ['👍', '❤️', '🔥', '😂', '👎'];
+const REACTION_PREFIX = 'annr_';
 let announcementCache = null;   // { value, until } — l'app la relit à chaque ouverture
 
 async function readAnnouncement(env) {
@@ -814,9 +826,12 @@ async function countReactions(env, announcementId) {
 // Nightbot, StreamElements et Fossabot sont appelés directement par le site ;
 // Moobot n'autorise que moo.bot (CORS), d'où ce relais. Cache 10 min par chaîne.
 const moobotCache = new Map();   // chaîne → { at, body }
-async function handleMoobotCommands(url) {
+async function handleMoobotCommands(url, request) {
     const channel = String(url.searchParams.get('channel') || '').toLowerCase();
     if (!/^[a-z0-9_]{1,25}$/.test(channel)) return jsonError('Chaîne invalide', 400);
+    // Deux appels amont à moo.bot pour chaque chaîne pas encore en cache :
+    // une boucle sur des noms inventés tapait l'API de Moobot sans fin.
+    if (rateLimited('moobot', request, 30, MINUTE)) return jsonError('Trop de requêtes', 429);
     const hit = moobotCache.get(channel);
     if (hit && Date.now() - hit.at < 10 * 60 * 1000) {
         return new Response(hit.body, { headers: { ...RESPONSE_HEADERS, 'Content-Type': 'application/json' } });
