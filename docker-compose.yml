@@ -6,7 +6,7 @@
 # dépôt, on peut la construire soi-même avec `build: .` à la place de `image:`.
 services:
   twitchunblock:
-    image: ghcr.io/mxfia19/twitchunblock-web:latest
+    image: ghcr.io/l1nx0u/twitchunblock-web:latest
     container_name: twitchunblock
     restart: unless-stopped
     # Un petit init en premier processus : il transmet l'arrêt (docker stop)

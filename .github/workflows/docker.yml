@@ -35,7 +35,7 @@ concurrency:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # En minuscules : ghcr.io refuse les majuscules du nom de compte.
-  IMAGE: ghcr.io/mxfia19/twitchunblock-web
+  IMAGE: ghcr.io/l1nx0u/twitchunblock-web
 
 jobs:
   # Le site annonce la dernière version de l'extension TwitchUnblock Connect
