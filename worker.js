@@ -48,15 +48,15 @@ export default {
         try {
             switch (url.pathname) {
                 case '/': return new Response("Twitch Proxy - Anti 403 Ready", { headers: RESPONSE_HEADERS });
-                case '/api/get-live': return await handleGetLive(url, workerOrigin);
+                case '/api/get-live': return await handleGetLive(url, request, workerOrigin);
                 case '/api/get-channel-videos': return await handleGetVideos(url);
-                case '/api/get-m3u8': return await handleGetM3U8(url, workerOrigin);
+                case '/api/get-m3u8': return await handleGetM3U8(url, request, workerOrigin);
                 case '/api/proxy': return await handleProxy(url, request, env);
 
                 // Récupération de VODs supprimées (le navigateur ne peut joindre
                 // ni la source externe ni le CDN de Twitch : CORS). Voir plus bas.
-                case '/api/recover-list': return await handleRecoverList(url);
-                case '/api/recover-resolve': return await handleRecoverResolve(url, workerOrigin);
+                case '/api/recover-list': return await handleRecoverList(url, request);
+                case '/api/recover-resolve': return await handleRecoverResolve(url, request, workerOrigin);
                 
                 // Routes Sync (Sauvegarde Cloud)
                 case '/api/sync/get': return await handleSyncGet(url, request, env);
@@ -428,9 +428,13 @@ async function handleGetVideos(url) {
     } catch (e) { console.error(e); return jsonError("Twitch injoignable", 502); }
 }
 
-async function handleGetLive(url, workerOrigin) {
+const liveHits = new Map();
+
+async function handleGetLive(url, request, workerOrigin) {
     const login = (url.searchParams.get('name') || '').trim().toLowerCase();
     if (!LOGIN_RE.test(login)) return jsonError("Nom invalide", 400);
+    // Un appel = jusqu'à deux flux amont (Luminous puis Twitch) + GQL.
+    if (overLimitByClient(liveHits, request, 30, 60 * 1000)) return jsonError("Trop de requêtes", 429);
     const useProxy = true; // On force toujours le proxy pour les Lives (CORS)
     
     // Ordre des sources choisi dans les réglages : essayées l'une après
@@ -489,8 +493,12 @@ async function handleGetLive(url, workerOrigin) {
     }
 }
 
-async function handleGetM3U8(url, workerOrigin) {
+const vodHits = new Map();
+
+async function handleGetM3U8(url, request, workerOrigin) {
     const vodId = url.searchParams.get('id') || ''; if (!VOD_ID_RE.test(vodId)) return jsonError("ID invalide", 400);
+    // Le secours « storyboard » sonde jusqu'à ~20 adresses : on borne la route.
+    if (overLimitByClient(vodHits, request, 30, 60 * 1000)) return jsonError("Trop de requêtes", 429);
     const useProxy = url.searchParams.get('proxy') !== 'false';
     
     // --- 1. Tentative Normale ---
@@ -568,9 +576,12 @@ async function sha1hex(s) {
 // le site ne la confonde pas avec « rien à récupérer » (une chaîne inconnue
 // de la source, elle, répond 200 et une liste vide). `streams` reste une
 // liste vide : les anciens clients n'y voient pas de différence.
-async function handleRecoverList(url) {
+const recoverHits = new Map();
+
+async function handleRecoverList(url, request) {
     const channel = (url.searchParams.get('channel') || '').toLowerCase();
     if (!LOGIN_RE.test(channel)) return jsonError('Chaîne invalide', 400);
+    if (overLimitByClient(recoverHits, request, 20, 60 * 1000)) return jsonError('Trop de requêtes', 429);
     let arr;
     try {
         const r = await fetch(`https://api.vodvod.top/channels/@${channel}`,
@@ -612,13 +623,15 @@ async function firstRecoverHost(folder, hosts) {
 // GET /api/recover-resolve?login=&streamID=&epoch= — reconstruit la playlist.
 // Sondes plafonnées (décalage 0 sur tous les hôtes, puis ±1 sur les plus
 // courants) pour tenir sous la limite de sous-requêtes du plan gratuit.
-async function handleRecoverResolve(url, workerOrigin) {
+async function handleRecoverResolve(url, request, workerOrigin) {
     const login = (url.searchParams.get('login') || '').toLowerCase();
     const streamID = url.searchParams.get('streamID') || '';
     const epoch = parseInt(url.searchParams.get('epoch') || '', 10);
     if (!LOGIN_RE.test(login) || !VOD_ID_RE.test(streamID) || !Number.isFinite(epoch)) {
         return jsonError('Paramètres invalides', 400);
     }
+    // La résolution sonde des dizaines d'hôtes en parallèle : on la borne.
+    if (overLimitByClient(recoverHits, request, 20, 60 * 1000)) return jsonError('Trop de requêtes', 429);
     const useProxy = url.searchParams.get('proxy') !== 'false';
     const plans = [
         { offsets: [0], hosts: RECOVER_HOSTS },
@@ -976,12 +989,30 @@ function proxyResponseHeaders(res, type, sameBody) {
     return out;
 }
 
+/** Playlist reconnue avant récupération : extension, ou hôtes qui n'en
+ *  servent que des playlists (Luminous, variantes Twitch sans « .m3u8 »). */
+function isPlaylistTarget(target) {
+    if (target.includes('.m3u8')) return true;
+    try {
+        const h = new URL(target).hostname;
+        return h === 'luminous.dev' || h.endsWith('.luminous.dev') || h.endsWith('playlist.ttvnw.net');
+    } catch (e) { return false; }
+}
+
+const proxyPlaylistHits = new Map();
+
 async function handleProxy(url, request, env) {
     const target = url.searchParams.get('url'); if (!target) return new Response("URL manquante", { status: 400, headers: RESPONSE_HEADERS });
     // Adresse du spectateur pour la part de questions GQL (twitchVouches) ;
     // vide sur le relais du VPS, qui n'en transmet pas.
     const who = clientKey48(request);
     if (!(await proxyAllowed(target, who))) return new Response("Hôte non autorisé", { status: 403, headers: RESPONSE_HEADERS });
+    // Seules les playlists sont bornées : les segments partent en continu (un
+    // direct en consomme un toutes les quelques secondes) et un plafond par
+    // adresse y casserait la lecture derrière un NAT partagé.
+    if (isPlaylistTarget(target) && overLimitByClient(proxyPlaylistHits, request, 120, 60 * 1000)) {
+        return new Response("Trop de requêtes", { status: 429, headers: RESPONSE_HEADERS });
+    }
     const isVod = url.searchParams.get('isVod') === 'true', workerOrigin = url.origin;
 
     let fetchHeaders = { ...REQUEST_HEADERS };
@@ -2382,6 +2413,14 @@ function clientKey(request) {
     const right = tail ? tail.split(':') : [];
     const groups = tail === undefined ? left : [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right];
     return groups.slice(0, 4).map((g) => g.padStart(4, '0')).join(':') + '::/64';
+}
+
+/** Limite par adresse, seulement quand le Worker voit l'adresse du client
+ *  (Cloudflare) : derrière Docker, sans CF-Connecting-IP, tous les visiteurs
+ *  partageraient un seul compteur. */
+function overLimitByClient(map, request, max, period) {
+    const key = clientKey(request);
+    return Boolean(key) && overLimit(map, key, max, period);
 }
 
 /** Réseau d'une personne : le préfixe /48 de son adresse IPv6 (l'adresse
