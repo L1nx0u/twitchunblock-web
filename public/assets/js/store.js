@@ -38,7 +38,8 @@ export const DEFAULT_PREFS = {
   loadHistory: true,
   chatSize: 14,
   chatOpen: true,
-  shareUsage: true,
+  // Ce fork ne partage pas le comptage d'usage (voir usage.js).
+  shareUsage: false,
   chatSync: true,
   multiChat: true,   // multi-live : chat du direct qui a le son (grand écran)
   autoRaid: true,

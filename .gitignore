@@ -1,3 +1,6 @@
+# Cache local de `wrangler dev` / `wrangler deploy`
+.wrangler/
+
 # Version Firefox de l'extension, générée par extension/dev/build-firefox.mjs
 extension-firefox/
 

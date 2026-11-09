@@ -647,8 +647,12 @@ async function handleRecoverResolve(url, workerOrigin) {
 // distribution et y déposer une page, que le proxy resservait sous le domaine
 // du projet (en Docker, même origine que le site : elle lisait le jeton
 // Twitch). Seules passent les distributions de Twitch (TWITCH_CLOUDFRONT).
-const PROXY_HOSTS = ['ttvnw.net', 'jtvnw.net', 'twitch.tv', 'luminous.dev', 'twitchcdn.net', 'twitch-al.nadeko.net',
+// `twitch.tv` n'y figure pas : laisser passer tout le domaine ouvrait
+// gql.twitch.tv (relais gratuit vers l'API de Twitch). Les serveurs de VOD
+// utiles sont nommés à part, avec le dossier à empreinte exigé.
+const PROXY_HOSTS = ['ttvnw.net', 'jtvnw.net', 'luminous.dev', 'twitchcdn.net', 'twitch-al.nadeko.net',
     'lb-as.cdn-perfprod.com', 'twitch.nadeko.net'];
+const VOD_HOSTS = ['vod-secure.twitch.tv', 'vod-metro.twitch.tv', 'vod-pop-secure.twitch.tv'];
 
 // Distributions CloudFront des VODs de Twitch (archives, highlights, uploads,
 // aperçus) : celles de RECOVER_HOSTS. Sondées le 15/10/2026 sur 200 chaînes
@@ -824,6 +828,9 @@ async function proxyAllowed(target, who = '') {
     try { u = new URL(target); } catch (e) { return false; }
     if (u.protocol !== 'https:' || u.port || u.username || u.password) return false;
     if (u.hostname.endsWith('.cloudfront.net')) return twitchCloudfront(u, who);
+    // Serveurs de VOD de Twitch : seulement les dossiers
+    // « <empreinte>_<chaîne>_… », comme pour CloudFront.
+    if (VOD_HOSTS.includes(u.hostname)) return /^\/[0-9a-f]{20}_/.test(u.pathname);
     return PROXY_HOSTS.some((h) => u.hostname === h || u.hostname.endsWith('.' + h));
 }
 

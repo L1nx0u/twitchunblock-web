@@ -15,11 +15,17 @@
 //
 //  Désactivable dans les réglages : l'identifiant est alors effacé côté
 //  serveur.
+//
+//  Ce fork ne partage pas le comptage d'usage : aucun signal ne part. Le
+//  module reste là pour SITE_VERSION et installId (identifiant local des
+//  sondages et annonces), et pour que le reste du code n'ait pas à changer.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { API_URL } from './api.js'
 import { uid } from './util.js'
 import { connect, usageFields } from './connect.js'
+
+const TELEMETRY = false
 
 export const SITE_VERSION = '2026.11.07b'
 const ID_KEY = 'tu_install_id'
@@ -96,7 +102,7 @@ function visibleFor(ms) {
 /** Compteurs de lecture (« live_as », « vod_fail »…), envoyés avec le
  *  signal suivant puis remis à zéro. Jamais de chaîne ni de titre. */
 export function count(event, enabled) {
-  if (!enabled) return
+  if (!TELEMETRY || !enabled) return
   try {
     const all = JSON.parse(localStorage.getItem(EV_KEY) || '{}')
     all[event] = (all[event] || 0) + 1
@@ -141,6 +147,7 @@ function clearSent(sent, key = EV_KEY, read = pendingEvents) {
  *  pas partager » et réinscrivait l'identifiant qui venait d'être effacé. */
 let inflight = null
 export async function ping(enabled) {
+  if (!TELEMETRY) return
   if (inflight) return inflight
   inflight = pingOnce(enabled).finally(() => { inflight = null })
   return inflight
@@ -195,7 +202,7 @@ export function pingNow(enabled) {
 /** Refus du comptage : on efface l'identifiant côté serveur. */
 export async function forget() {
   try {
-    await post({ id: installId(), forget: true })
+    if (TELEMETRY) await post({ id: installId(), forget: true })
     localStorage.removeItem(LAST_KEY)
     localStorage.removeItem(EV_KEY)
     localStorage.removeItem(ADH_KEY)
@@ -204,6 +211,7 @@ export async function forget() {
 
 /** Chiffres agrégés. `null` si le Worker n'a pas encore les routes. */
 export async function fetchStats() {
+  if (!TELEMETRY) return null
   const res = await fetch(`${API_URL}/api/stats`, { cache: 'no-store' })
   if (!res.ok) return null
   return res.json()

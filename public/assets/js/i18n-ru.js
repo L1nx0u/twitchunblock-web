@@ -495,7 +495,7 @@ export const RU = {
   source_site: 'Исходный код сайта',
   source_app: 'Исходный код приложения для iOS',
   credits: 'Авторы',
-  made_by: 'Разработчик:',
+  made_by: 'Разработчик:', forked_by: 'Форк от',
   thanks: 'Благодарности:',
   not_affiliated: 'Независимый проект, не связанный с Twitch.',
   usage: 'Статистика',

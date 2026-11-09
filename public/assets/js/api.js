@@ -47,7 +47,9 @@ const CUSTOM = normalizeWorker(store.prefs.customWorker)
 const CUSTOM_ALL = Boolean(CUSTOM && store.prefs.customWorkerAll)
 export const CUSTOM_WORKER = CUSTOM
 
-const OFFICIAL_URL = CFG.apiUrl === 'same-origin' ? location.origin : (CFG.apiUrl || 'https://test2.kurzmathis4.workers.dev')
+// Ce fork ne se rabat jamais sur le Worker du projet d'origine : sans
+// config.js, il parle à sa propre origine (le cas Docker).
+const OFFICIAL_URL = CFG.apiUrl === 'same-origin' ? location.origin : (CFG.apiUrl || location.origin)
 export const API_URL = CUSTOM_ALL ? CUSTOM : OFFICIAL_URL
 
 // ── Workers de secours ─────────────────────────────────────────────────────
@@ -59,7 +61,7 @@ export const API_URL = CUSTOM_ALL ? CUSTOM : OFFICIAL_URL
 // comptage et annonces restent sur le principal : leurs données y sont.
 // Une instance avec sa propre adresse (config.js) n'hérite pas des secours
 // officiels : elle donne les siens dans `fallbackApiUrls`, ou aucun.
-const DEFAULT_FALLBACK_URLS = ['https://test2-fallback.vxcraftmanpetit.workers.dev']
+const DEFAULT_FALLBACK_URLS = []
 const FALLBACK_URLS = CFG.fallbackApiUrls ?? (CFG.apiUrl ? [] : DEFAULT_FALLBACK_URLS)
 const originOf = (u) => { try { return new URL(u).origin } catch { return null } }
 /** Le principal d'abord, puis les secours (et le Worker personnel), dans l'ordre. */
@@ -86,7 +88,7 @@ const LOOKUP_BASES = CUSTOM
 // Une instance avec sa propre adresse
 // (config.js) n'hérite pas du relais officiel : elle donne le sien dans
 // `relayUrl`, ou aucun.
-const DEFAULT_RELAY_URL = 'https://relais.mxfia19.duckdns.org'
+const DEFAULT_RELAY_URL = ''
 // Avec un Worker personnel, pas de relais officiel : la vidéo ne repasse
 // pas par l'infrastructure du projet.
 export const RELAY_BASE = CUSTOM ? null : originOf(CFG.relayUrl ?? (CFG.apiUrl ? '' : DEFAULT_RELAY_URL))
@@ -285,10 +287,10 @@ export async function workerJson(path, { timeout = 0, avoid = null } = {}) {
  *  Décidé ici plutôt que par chaque visiteur. La lecture sur le site, elle,
  *  passe toujours par le proxy : le CDN des VODs n'accepte que twitch.tv. */
 export const EXTERNAL_LINKS_VIA_PROXY = true
-export const GITHUB_URL = 'https://github.com/MXFia19/TwitchUnblock-Web'
+export const GITHUB_URL = 'https://github.com/L1nx0u/twitchunblock-web'
+// L'app iOS reste celle de l'auteur d'origine : il n'existe pas de fork côté app.
 export const APP_GITHUB_URL = 'https://github.com/MXFia19/TwitchUnblock'
-export const DISCORD_URL = 'https://discord.gg/cEsMRdxsVq'
-export const HELIX_CLIENT_ID = CFG.twitchClientId || 'uyvqdqrz614y5wx5l4kev6c4ln7u9a'
+export const HELIX_CLIENT_ID = CFG.twitchClientId || ''
 export const GQL_CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko'
 /** Client-ID public de l'app Android de Twitch (la technique d'Xtra). Twitch
  *  n'exige le jeton d'intégrité dès la 2e page d'une liste que pour le
@@ -297,7 +299,7 @@ export const GQL_CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko'
  *  lecture, les fiches ou le chat, qui restent sur GQL_CLIENT_ID. */
 const GQL_NEXT_CLIENT_ID = 'kd1unb4b3q4t58fwlpcbzcbnm76a8fp'
 /** Seule adresse de retour déclarée chez Twitch : elle ne doit pas changer. */
-export const REDIRECT_URI = CFG.redirectUri || 'https://test2-fawn-eta.vercel.app/'
+export const REDIRECT_URI = CFG.redirectUri || `${location.origin}/`
 /** `chat:read` / `chat:edit` en plus de l'ancien périmètre : sans eux, l'IRC
  *  refuse le jeton et on ne peut que lire le chat en anonyme. */
 export const SCOPES = ['user:read:follows', 'chat:read', 'chat:edit']

@@ -530,7 +530,7 @@ export const ZH_HANT = {
   source_site: '網站原始碼',
   source_app: 'iOS App 原始碼',
   credits: '致謝',
-  made_by: '作者',
+  made_by: '作者', forked_by: '分支作者',
   thanks: '感謝',
   not_affiliated: '獨立專案，與 Twitch 無隸屬關係。',
   usage: '使用量',

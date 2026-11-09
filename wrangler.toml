@@ -1,29 +1,31 @@
-name = "test2"
+name = "twitchunblock"
 main = "worker.js"
 compatibility_date = "2024-01-01"
-# Variables posées dans le tableau de bord Cloudflare (FEEDBACK_WEBHOOK,
-# SITE_ORIGINS, ADMIN_TWITCH_IDS…) : sans ceci, chaque déploiement depuis
-# `main` effaçait celles de type « Texte » (les « Secrets », eux, restent).
+# Variables posées dans le tableau de bord Cloudflare : sans ceci, chaque
+# déploiement depuis `main` effaçait celles de type « Texte » (les
+# « Secrets », eux, restent).
 keep_vars = true
 
-# Notifications de live du site (Web Push) : un passage par minute (lives lus
-# une minute sur deux, envois à chaque fois).
+# Domaine à soi : échappe aux blocages VPN sur *.workers.dev. Le domaine est
+# sur le même compte Cloudflare (zone l1nx0u.me) ; Cloudflare crée le
+# certificat et l'entrée DNS tout seul.
+routes = [
+  { pattern = "api.l1nx0u.me", custom_domain = true }
+]
+
+# Notifications de live du site (Web Push) : un passage par minute.
 [triggers]
 crons = ["* * * * *"]
 
-# Notifications ntfy de l'app iOS : publiées par le relais du VPS, ntfy.sh
-# refusant les adresses partagées des Workers (worker.js, NTFY_RELAY). Le
-# relais n'accepte que les lots signés par la clé push de ce Worker.
-#
-# Administrateur des outils de /stats (compte mxfia19) : le Worker n'en a
-# plus aucun par défaut. ADMIN_TWITCH_IDS, si elle est posée dans le tableau
-# de bord (Texte ou Secret), passe avant. Nom à part exprès : une variable
-# d'ici qui porterait le nom d'un secret ou d'une variable du tableau de bord
-# la remplacerait à chaque déploiement depuis main. Pour son propre Worker,
-# mettre le sien (ou poser ADMIN_TWITCH_IDS).
+# Ce fork n'utilise ni le relais ntfy ni le Worker du projet d'origine.
+# ADMIN_TWITCH_IDS : compte Twitch du propriétaire (outils d'administration).
+# TWITCH_CLIENT_ID : application Twitch du fork (ses jetons ouvrent aussi les
+# outils d'administration).
+# SITE_ORIGINS : origine du site dont les comptages seraient acceptés.
 [vars]
-NTFY_RELAY = "https://relais.mxfia19.duckdns.org"
-OFFICIAL_ADMIN_TWITCH_IDS = "839837720"
+ADMIN_TWITCH_IDS = "790650657"
+TWITCH_CLIENT_ID = "fjzr1s7efdp43ra0om22g1taktj6ek"
+SITE_ORIGINS = "https://twitchunblock-web.vercel.app"
 
 [observability]
 enabled = false
@@ -40,31 +42,30 @@ enabled = false
 persist = true
 head_sampling_rate = 1
 
-# Base D1 : tout le stockage (sauvegardes, comptage, annonces, réactions).
+# Base D1 : tout le stockage (sauvegardes, annonces, réactions, retours).
 # La table est créée par le Worker au premier appel (CREATE TABLE IF NOT EXISTS).
 [[d1_databases]]
 binding = "DB"
 database_name = "twitchunblock"
-database_id = "b586defd-3216-425b-9c13-e75abd8dbd13"
+database_id = "9c479a4a-5beb-4e14-b5bd-762737428339"
 
 # Version déployée (identifiant, date) : le bot du relais la compare au
-# dernier commit de main qui change worker.js, et prévient quand le Worker a
-# du retard (worker.js, workerVersion). Une liaison, rien à poser.
+# dernier commit de main qui change worker.js.
 [version_metadata]
 binding = "CF_VERSION_METADATA"
 
 # Worker de secours, sur un AUTRE compte Cloudflare : le quota gratuit
-# (100 000 requêtes par jour) est par compte. Déployé sous le nom
-# « test2-fallback » avec `npx wrangler deploy --env fallback`.
-# Sans base D1 — un environnement n'hérite pas des liaisons — : il ne sert que
-# ce qui n'en dépend pas (lives, VODs, relais vidéo, Moobot). Voir README,
-# « Fallback Worker ».
+# (100 000 requêtes par jour) est par compte. Déployé avec
+# `npx wrangler deploy --env fallback` (sans base D1 — un environnement
+# n'hérite pas des liaisons).
 [env.fallback]
 workers_dev = true
 
 # Un environnement n'hérite pas non plus des variables.
 [env.fallback.vars]
-OFFICIAL_ADMIN_TWITCH_IDS = "839837720"
+ADMIN_TWITCH_IDS = "790650657"
+TWITCH_CLIENT_ID = "fjzr1s7efdp43ra0om22g1taktj6ek"
+SITE_ORIGINS = "https://twitchunblock-web.vercel.app"
 
 # Le secours n'a pas de base : pas de tâche planifiée.
 [env.fallback.triggers]

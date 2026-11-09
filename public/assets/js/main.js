@@ -6348,12 +6348,6 @@ function openSettings(page = 'menu') {
       </div>
       <input type="file" id="import-file" accept="application/json,.json" hidden>
     </div>
-    <div class="sheet-section" data-cat="data">
-      <h3>${esc(t('usage'))}</h3>
-      <div class="usage-stats" id="usage-stats"><p class="muted small">${esc(t('loading'))}</p></div>
-      <a class="sheet-row" href="/stats" target="_blank" rel="noopener">${icon('trending', 18)}<span>${esc(t('usage_details'))}</span>${icon('external', 16)}</a>
-      ${toggle('set-usage', t('share_usage'), p.shareUsage, t('share_usage_sub'))}
-    </div>
     <div class="sheet-section" data-cat="expert">
       <h3>${esc(t('expert'))}</h3>
       <div class="setting setting-col">
@@ -6374,7 +6368,6 @@ function openSettings(page = 'menu') {
       <div class="sheet-group">
         <a class="sheet-row" href="${api.GITHUB_URL}" target="_blank" rel="noopener">${icon('github', 18)}<span>${esc(t('source_site'))}</span>${icon('external', 16)}</a>
         <a class="sheet-row" href="${api.APP_GITHUB_URL}" target="_blank" rel="noopener">${icon('github', 18)}<span>${esc(t('source_app'))}</span>${icon('external', 16)}</a>
-        <a class="sheet-row" href="${api.DISCORD_URL}" target="_blank" rel="noopener">${icon('discord', 18)}<span>${esc(t('discord_join'))}</span>${icon('external', 16)}</a>
         <button class="sheet-row" type="button" data-action="feedback">${icon('bug', 18)}<span>${esc(t('feedback'))}</span></button>
         <button class="sheet-row" type="button" data-action="errlog">${icon('terminal', 18)}<span>${esc(t('errlog_title'))}${errorCount() ? ` (${errorCount()})` : ''}</span></button>
         <button class="sheet-row" type="button" data-action="whats-new">${icon('sparkles', 18)}<span>${esc(t('changelog'))}</span></button>
@@ -6383,7 +6376,6 @@ function openSettings(page = 'menu') {
       ${creditsHtml()}
     </div>`)
   renderSettingsAccount()
-  renderUsageStats()
   showSettingsPage(page)
   // Session et réglages de l'extension relus : la section suit (onChange).
   // Coupée aussi : la connexion a pu être rallumée dans sa fenêtre, qui ne
@@ -6541,11 +6533,6 @@ function openSettings(page = 'menu') {
       renderTopLocal()
       loadTop('local')
       return
-    }
-    if (id === 'set-usage') {
-      p.shareUsage = e.target.checked
-      if (p.shareUsage) usage.ping(() => store.prefs.shareUsage)
-      else usage.forget()
     }
     store.savePrefs()
     chat.applyPrefs()
@@ -6983,27 +6970,6 @@ function renderPoll() {
     try { localStorage.setItem(POLL_DISMISSED, JSON.stringify([...dismissed, p.id].slice(-20))) } catch {}
     box.hidden = true
   }
-}
-
-/** Combien de gens utilisent le site et l'app : aujourd'hui, 7 et 30 jours. */
-async function renderUsageStats() {
-  const box = $('#usage-stats')
-  if (!box) return
-  let s = null
-  try { s = await usage.fetchStats() } catch {}
-  if (!$('#usage-stats')) return
-  if (!s) { box.innerHTML = `<p class="muted small">${esc(t('usage_unavailable'))}</p>`; return }
-  const web = s.platforms?.web ?? { today: 0, week: 0, month: 0 }
-  const ios = s.platforms?.ios ?? { today: s.today, week: s.week, month: s.month }
-  const row = (label, k) => `
-    <div class="usage-cell">
-      <span class="usage-label">${esc(label)}</span>
-      <strong>${esc(formatViewers(s[k] ?? 0))}</strong>
-      <span class="usage-split">${icon('globe', 12)} ${esc(formatViewers(web[k] ?? 0))} · iOS ${esc(formatViewers(ios[k] ?? 0))}</span>
-    </div>`
-  box.innerHTML = `
-    <div class="usage-grid">${row(t('usage_today'), 'today')}${row(t('usage_week'), 'week')}${row(t('usage_month'), 'month')}</div>
-    <p class="muted small">${esc(t('usage_note'))}</p>`
 }
 
 function renderSettingsAccount() {
